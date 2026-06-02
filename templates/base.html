@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ИИ-помощник ФГУП "ДИД"{% endblock %}</title>
+    <link rel="icon" href="/static/img/favicon.png" type="image/png">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/png">
+    <link rel="stylesheet" href="/static/css/style.css">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <header class="header">
+        <div class="header-brand">
+            <img src="/static/img/logo.png" alt="Логотип ФГУП «Дирекция по инвестиционной деятельности»" class="logo-img">
+            <h1 class="logo-text">ИИ-помощник ФГУП "ДИД"</h1>
+        </div>
+        <nav class="nav">
+            <a href="/economist" class="nav-link {% if active == 'economist' %}active{% endif %}">Экономист</a>
+            <a href="/secretary" class="nav-link {% if active == 'secretary' %}active{% endif %}">Секретарь</a>
+            <a href="/lawyer" class="nav-link {% if active == 'lawyer' %}active{% endif %}">Юрист</a>
+        </nav>
+    </header>
+
+    <main class="main">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="footer">
+        <span>ФГУП "ДИД"</span>
+    </footer>
+
+    <script src="/static/js/common.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,61 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Окружение и секреты
+.env
+.env.*
+!.env.example
+
+# Виртуальное окружение
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.cursor/
+
+# ОС
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Данные приложения (не коммитить)
+chroma_data/
+models/
+economist/uploaded/*
+!economist/uploaded/.gitkeep
+secretary/uploaded/*
+!secretary/uploaded/.gitkeep
+lawyer/uploaded/*
+!lawyer/uploaded/.gitkeep
+
+# Загружаемые пользователем файлы
+*.xlsx
+*.xls
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+*.pdf
+*.docx
+
+# Логи и отладка
+*.log
+scripts/_debug*
+
+# Кэш HuggingFace / torch (если появится в проекте)
+.cache/
+*.pt
+*.onnx

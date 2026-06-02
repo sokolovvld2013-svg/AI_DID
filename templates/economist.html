@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+
+{% block title %}Экономист — ИИ-помощник ФГУП "ДИД"{% endblock %}
+
+
+
+{% block content %}
+
+<section class="module-header">
+
+    <h2>Экономист</h2>
+
+    <p>Помогу с выбором статьи по описанию расхода, определением лимитов ПД по статье или объекту, фактическим расходам по статье.</p>
+
+</section>
+
+
+
+<div class="grid-2">
+
+    <aside class="sidebar">
+
+        <div class="card">
+
+            <h3>Факт</h3>
+
+            {% if fact_sheet_url %}
+
+            <p class="sheet-link-block">
+
+                <a href="{{ fact_sheet_url }}" class="btn btn-secondary sheet-open-btn" target="_blank" rel="noopener noreferrer">
+
+                    Открыть таблицу
+
+                </a>
+
+            </p>
+
+            <p class="hint">Таблица открыта на редактирование.</p>
+
+            {% else %}
+
+            <p class="hint muted">Ссылка на таблицу не настроена. Добавьте в <code>.env</code>:</p>
+
+            <p class="hint muted"><code>ECONOMIST_FACT_SHEET_URL=https://docs.google.com/spreadsheets/d/…/edit</code></p>
+
+            {% endif %}
+
+        </div>
+
+
+
+        <div class="card history-card">
+
+            <h3>История запросов</h3>
+
+            <ul class="history-list" id="history-list">
+
+                {% for item in history %}
+
+                <li>
+
+                    <time>{{ item.timestamp }}</time>
+
+                    <p class="history-query">{{ item['query'][:80] }}{% if item['query']|length > 80 %}...{% endif %}</p>
+
+                </li>
+
+                {% else %}
+
+                <li class="muted">Нет запросов</li>
+
+                {% endfor %}
+
+            </ul>
+
+        </div>
+
+    </aside>
+
+
+
+    <section class="chat-section card">
+
+        <h3>Чат</h3>
+
+        <div class="chat-messages" id="chat-messages">
+
+            <div class="message bot">
+
+                <p>Примеры вопросов, на которые я могу ответить:</p>
+                <ul class="chat-examples">
+                    <li>Какую статью использовать при хранениии яхты?</li>
+                    <li>Хочу посмотреть факт по статье 2221 или по статье теплоснабжение.</li>
+                    <li>Выведи годовые лимиты по статьям по объекту Гороховая 2/6.</li>
+                </ul>
+                <p class="chat-disclaimer muted">Я стараюсь, но могу ошибаться. )</p>
+
+            </div>
+
+        </div>
+
+        <form class="chat-form" id="chat-form">
+
+            <input type="text" id="chat-input" placeholder="Введите вопрос..." autocomplete="off">
+
+            <button type="submit" class="btn btn-primary">Отправить</button>
+
+        </form>
+
+    </section>
+
+</div>
+
+{% endblock %}
+
+
+
+{% block scripts %}
+
+<script src="/static/js/economist.js?v=9"></script>
+
+{% endblock %}
+
+
