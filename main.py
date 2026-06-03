@@ -48,19 +48,29 @@ def _ensure_logo():
     if not LOGO_SOURCE.is_file():
         logger.warning("Файл логотипа не найден: %s", LOGO_SOURCE)
         return
+    
+    # Проверка: если пути одинаковые - пропускаем
+    if LOGO_SOURCE.resolve() == STATIC_LOGO.resolve():
+        return
+    
     STATIC_LOGO.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(LOGO_SOURCE, STATIC_LOGO)
     logger.info("Логотип обновлён: %s", STATIC_LOGO)
 
 
 def _ensure_favicon():
-    """Копирует фавиконку в static/img для отдачи через StaticFiles."""
+    """Копирует favicon в static/img для отдачи через StaticFiles."""
     if not FAVICON_SOURCE.is_file():
-        logger.warning("Файл фавиконки не найден: %s", FAVICON_SOURCE)
+        logger.warning("Файл favicon не найден: %s", FAVICON_SOURCE)
         return
+    
+    # Проверка: если пути одинаковые - пропускаем
+    if FAVICON_SOURCE.resolve() == STATIC_FAVICON.resolve():
+        return
+    
     STATIC_FAVICON.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(FAVICON_SOURCE, STATIC_FAVICON)
-    logger.info("Фавиконка обновлена: %s", STATIC_FAVICON)
+    logger.info("Favicon обновлён: %s", STATIC_FAVICON)
 
 
 @asynccontextmanager
