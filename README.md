@@ -33,7 +33,7 @@ DEEPSEEK_API_KEY=ваш_ключ
 
 При первом запуске:
 
-1. **Whisper** — модель `small` скачается автоматически (несколько сотен МБ).
+1. **Whisper** — по умолчанию модель `base` (меньше и быстрее `small` на CPU); скачается автоматически.
 2. **Эмбеддинги** — модель `paraphrase-multilingual-MiniLM-L12-v2` (~400 МБ). Если `huggingface.co` недоступен:
    - быстро: `EMBEDDING_PROVIDER=openai` в `.env` (нужен `OPENAI_API_KEY`);
    - офлайн: `scripts\download_embedding_model.bat`, затем `EMBEDDING_LOCAL_FILES_ONLY=1`;
@@ -95,7 +95,7 @@ git push -u origin main
    ```
 4. Для офлайн-эмбеддингов заранее скачайте модель в `models/` или укажите `EMBEDDING_PROVIDER=openai`.
 5. Первый запуск RapidOCR скачает ONNX-модели (~десятки МБ) — учтите при деплое.
-6. **Секретарь (Whisper):** `pip install faster-whisper` и системный `ffmpeg` (`sudo apt install -y ffmpeg`). Первый запуск скачает модель Whisper (~500 МБ для `small`).
+6. **Секретарь (Whisper):** `pip install faster-whisper` и системный `ffmpeg` (`sudo apt install -y ffmpeg`). Первый запуск скачает модель (~150 МБ для `base`). На слабом VPS: `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1`; при старте можно `WHISPER_PRELOAD=true`.
 
 6. **OCR: процесс `Killed`** — не хватает оперативной памяти на VPS. В `.env` на сервере:
    ```env
@@ -124,7 +124,10 @@ git push -u origin main
 | `HF_ENDPOINT` | зеркало HuggingFace, напр. `https://hf-mirror.com` |
 | `EMBEDDING_LOCAL_FILES_ONLY` | `1` — не обращаться к huggingface.co |
 | `LOCAL_EMBEDDING_MODEL` | путь `models/paraphrase-multilingual-MiniLM-L12-v2` |
-| `WHISPER_MODEL_SIZE` | `small`, `medium`, `large-v3` |
+| `WHISPER_MODEL_SIZE` | `tiny`, `base` (по умолчанию), `small`, `medium`, `large-v3` |
+| `WHISPER_BEAM_SIZE` | `1` — быстро на CPU; `5` — точнее, медленнее |
+| `WHISPER_CPU_THREADS` | `0` = все ядра; или число потоков |
+| `WHISPER_PRELOAD` | `true` — загрузить модель при старте uvicorn |
 | `MAX_EXCEL_SIZE` | лимит Excel (байты) |
 | `MAX_AUDIO_SIZE` | лимит аудио |
 | `MAX_DOCUMENT_SIZE` | лимит документов |
@@ -149,5 +152,6 @@ git push -u origin main
 ## Примечания
 
 - История запросов хранится в памяти и сбрасывается при перезапуске сервера.
-- Для GPU-транскрибации укажите `WHISPER_DEVICE=cuda` и `WHISPER_COMPUTE_TYPE=float16`.
+- Для GPU-транскрибации: `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE=float16`, можно `WHISPER_MODEL_SIZE=small`.
+- После смены `WHISPER_MODEL_SIZE` перезапустите uvicorn (модель кэшируется в памяти процесса).
 - Без API-ключей LLM-модули (Секретарь, Юрист) не смогут формировать ответы; Экономист работает без LLM для расчётов.

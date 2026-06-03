@@ -17,6 +17,7 @@ from config import (
     SECRETARY_UPLOAD_DIR,
     STATIC_FAVICON,
     STATIC_LOGO,
+    WHISPER_PRELOAD,
 )
 from economist.router import router as economist_router
 from lawyer.doc_processor import pymupdf_available
@@ -75,6 +76,13 @@ async def lifespan(app: FastAPI):
             "Модуль Юрист: не установлен pymupdf — многие PDF не прочитаются. "
             "Выполните: venv\\Scripts\\pip install pymupdf pdfplumber"
         )
+    if WHISPER_PRELOAD:
+        try:
+            from secretary.transcriber import preload_model
+
+            preload_model()
+        except Exception as e:
+            logger.warning("Предзагрузка Whisper не удалась: %s", e)
     logger.info("Приложение запущено")
     yield
     logger.info("Приложение остановлено")

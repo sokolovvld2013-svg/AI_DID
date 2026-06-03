@@ -74,10 +74,26 @@ def resolve_local_embedding_model() -> str:
 
 LOCAL_EMBEDDING_MODEL = resolve_local_embedding_model()
 
-# Whisper
-WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "small")
+# Whisper (Секретарь): на CPU VPS — base + beam_size=1 заметно быстрее small + beam 5
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "base")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")
+WHISPER_BEAM_SIZE = max(1, int(os.getenv("WHISPER_BEAM_SIZE", "1")))
+WHISPER_CPU_THREADS = int(os.getenv("WHISPER_CPU_THREADS", "0"))  # 0 = все ядра CPU
+WHISPER_VAD_FILTER = os.getenv("WHISPER_VAD_FILTER", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+WHISPER_CONDITION_ON_PREVIOUS = os.getenv(
+    "WHISPER_CONDITION_ON_PREVIOUS", "false"
+).strip().lower() in ("1", "true", "yes")
+WHISPER_PRELOAD = os.getenv("WHISPER_PRELOAD", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+WHISPER_LOG_EVERY_N_SEGMENTS = max(1, int(os.getenv("WHISPER_LOG_EVERY_N_SEGMENTS", "15")))
 
 # Лимиты загрузки (байты)
 MAX_EXCEL_SIZE = int(os.getenv("MAX_EXCEL_SIZE", 20 * 1024 * 1024))
