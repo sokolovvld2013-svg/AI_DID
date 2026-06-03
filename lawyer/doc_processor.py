@@ -457,7 +457,7 @@ def _read_pdf_rapidocr_subprocess(path: Path) -> tuple[list[dict[str, Any]], str
         return [], _OCR_OOM_HINT
 
     if status == "err":
-        return [], pages if isinstance(pages, str) else str(pages)
+        return [], str(err) if err else "OCR завершился с ошибкой"
     return pages, err
 
 
@@ -542,14 +542,14 @@ def _read_pdf_rapidocr_impl(path: Path) -> tuple[list[dict[str, Any]], str | Non
                         pages.append({"page": i + 1, "text": text})
                     elif i == 0:
                         logger.info("RapidOCR: на 1-й странице текст не найден")
-                    if (i + 1) % 3 == 0 or i + 1 == n_pages:
-                        logger.info("RapidOCR: обработано %d/%d стр.", i + 1, n_pages)
+                    if (i + 1) % 3 == 0 or i + 1 == ocr_limit:
+                        logger.info("RapidOCR: обработано %d/%d стр.", i + 1, ocr_limit)
                 except Exception as page_err:
                     failed_pages += 1
                     logger.warning(
                         "RapidOCR: страница %d/%d — %s",
                         i + 1,
-                        len(doc),
+                        ocr_limit,
                         page_err,
                     )
                     gc.collect()
