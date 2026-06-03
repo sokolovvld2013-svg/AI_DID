@@ -13,6 +13,33 @@ function stripSiteUrls(text) {
 }
 
 let _confirmUi = null;
+let _processingBanner = null;
+
+function _ensureProcessingBanner() {
+    if (_processingBanner) return _processingBanner;
+
+    const el = document.createElement('div');
+    el.id = 'app-file-processing-banner';
+    el.className = 'file-processing-banner hidden';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.innerHTML =
+        '<span class="file-processing-banner__spinner" aria-hidden="true"></span>' +
+        '<span class="file-processing-banner__text"></span>';
+
+    const main = document.querySelector('.main');
+    if (main) {
+        main.insertBefore(el, main.firstChild);
+    } else {
+        document.body.appendChild(el);
+    }
+
+    _processingBanner = {
+        el,
+        textEl: el.querySelector('.file-processing-banner__text'),
+    };
+    return _processingBanner;
+}
 
 function _ensureConfirmUi() {
     if (_confirmUi) return _confirmUi;
@@ -106,11 +133,25 @@ const App = {
     /** Подсветка зоны загрузки и статуса во время обработки файла на сервере. */
     setFileProcessing({ statusId, progressId, zoneId, active, message }) {
         this.showProgress(progressId, active);
+        const zone = zoneId ? document.getElementById(zoneId) : null;
+        const card = zone?.closest('.card') || null;
+        const banner = _ensureProcessingBanner();
+
         if (active) {
             this.setStatus(statusId, message, 'loading', { zoneId });
-        } else if (zoneId) {
-            const zone = document.getElementById(zoneId);
+            if (card) card.classList.add('is-file-processing');
+            document.body.classList.add('app-file-processing');
+
+            banner.textEl.textContent = stripSiteUrls(message) || 'Идёт обработка файла…';
+            banner.el.classList.remove('hidden');
+
+            const statusEl = statusId ? document.getElementById(statusId) : null;
+            statusEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
             if (zone) zone.classList.remove('is-processing');
+            if (card) card.classList.remove('is-file-processing');
+            document.body.classList.remove('app-file-processing');
+            banner.el.classList.add('hidden');
         }
     },
 
