@@ -9,8 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
     loadChatHistory();
 
     async function uploadDoc(file) {
-        App.setStatus('upload-status', `Загрузка: ${file.name}…`, '');
-        App.showProgress('upload-progress', true);
+        App.setFileProcessing({
+            statusId: 'upload-status',
+            progressId: 'upload-progress',
+            zoneId: 'doc-drop',
+            active: true,
+            message: `Обработка файла: ${file.name}… (извлечение текста и индексация)`,
+        });
         try {
             const data = await App.uploadFile('/lawyer/upload', file);
             const name = safeText(data.filename) || file.name;
@@ -18,12 +23,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 'upload-status',
                 `✓ Загружен: ${name} (${data.chunks} фрагментов в базе)`,
                 'ok',
+                { zoneId: 'doc-drop' },
             );
             await refreshFiles();
         } catch (e) {
-            App.setStatus('upload-status', safeText(e.message) || 'Ошибка загрузки', 'error');
+            App.setStatus(
+                'upload-status',
+                safeText(e.message) || 'Ошибка загрузки',
+                'error',
+                { zoneId: 'doc-drop' },
+            );
         } finally {
-            App.showProgress('upload-progress', false);
+            App.setFileProcessing({
+                statusId: 'upload-status',
+                progressId: 'upload-progress',
+                zoneId: 'doc-drop',
+                active: false,
+                message: '',
+            });
         }
     }
 

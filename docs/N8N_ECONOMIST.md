@@ -180,6 +180,23 @@ curl -X POST "https://ваш-n8n.example/webhook/economist" ^
 | 404 «not registered for POST» | В n8n у Webhook указан **GET** — смените на **POST** или `N8N_ECONOMIST_WEBHOOK_METHOD=GET` |
 | 404 на webhook | Workflow не **Active** или неверный URL (Test вместо Production) |
 | 500 «Unused Respond to Webhook» | Лишний узел Respond to Webhook — оставьте **один** в конце цепочки; удалите дубликаты |
+| OAuth: *invalid, expired, revoked* | Переподключите credential Google/Microsoft в n8n (см. ниже) |
+
+### OAuth: «authorization grant … invalid, expired, revoked»
+
+Так пишет n8n, когда **протухли или сбросились** учётные данные узла (часто **Google Sheets**, **Google Drive**, Gmail).
+
+**Что сделать в n8n:**
+
+1. Откройте workflow **Экономист** → узел с Google (Sheets / Drive) → **Credential**.
+2. **Credentials** (меню слева) → найдите нужный Google OAuth2 → **Reconnect** / удалите и создайте заново.
+3. При создании credential в Google Cloud Console:
+   - тип **OAuth client ID** → **Web application**;
+   - **Authorized redirect URIs** — скопируйте **точный** Redirect URL из окна n8n (для self-hosted часто `https://ваш-n8n/oauth/callback`).
+4. После переподключения: **Execute workflow** на тестовом сообщении — узел Google должен стать зелёным.
+5. Убедитесь, что в конце цепочки срабатывает **Respond to Webhook** с JSON `answer` или Expression для таблицы.
+
+Пока OAuth в n8n красный, приложение получит **HTTP 200 с пустым телом** — это следствие, а не ошибка Python.
 
 ### Ошибка «Unused Respond to Webhook node»
 

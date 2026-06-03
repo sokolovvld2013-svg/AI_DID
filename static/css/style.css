@@ -154,6 +154,15 @@ body {
     background: var(--accent-soft);
 }
 
+.upload-zone.is-processing {
+    border-color: var(--accent);
+    border-style: solid;
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    pointer-events: none;
+    opacity: 0.95;
+}
+
 .upload-zone p { margin-bottom: 0.5rem; font-size: 0.9rem; color: var(--text); }
 .hint { font-size: 0.8rem !important; color: var(--text-muted) !important; line-height: 1.45; }
 
@@ -279,12 +288,17 @@ body {
     background: var(--accent);
     width: 0%;
     transition: width 0.3s;
-    animation: pulse 1.5s infinite;
 }
 
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.65; }
+.progress.active .progress-bar {
+    width: 35%;
+    animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+    0% { margin-left: 0; }
+    50% { margin-left: 40%; }
+    100% { margin-left: 65%; }
 }
 
 .progress.hidden, .hidden { display: none !important; }
@@ -294,10 +308,53 @@ body {
     color: var(--text-muted);
     margin-top: 0.75rem;
     min-height: 1.25rem;
-    line-height: 1.4;
+    line-height: 1.45;
+    padding: 0.35rem 0.5rem;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
-.status.error { color: var(--danger); font-weight: 500; }
-.status.ok { color: var(--success); font-weight: 600; }
+
+.status.loading {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.65rem 0.85rem;
+    background: var(--accent-soft);
+    border-color: var(--accent-muted);
+    color: var(--text);
+    font-weight: 500;
+}
+
+.status.loading::before {
+    content: '';
+    flex-shrink: 0;
+    width: 1rem;
+    height: 1rem;
+    margin-top: 0.12rem;
+    border: 2px solid var(--accent-muted);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: status-spin 0.75s linear infinite;
+}
+
+@keyframes status-spin {
+    to { transform: rotate(360deg); }
+}
+
+.status.error {
+    color: var(--danger);
+    font-weight: 500;
+    background: rgba(220, 38, 38, 0.08);
+    border-color: rgba(220, 38, 38, 0.25);
+}
+
+.status.ok {
+    color: var(--success);
+    font-weight: 600;
+    background: rgba(22, 163, 74, 0.08);
+    border-color: rgba(22, 163, 74, 0.25);
+}
 
 .chat-section {
     display: flex;

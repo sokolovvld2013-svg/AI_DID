@@ -135,7 +135,13 @@ def get_embedder() -> BaseEmbedder:
         if EMBEDDING_PROVIDER == "openai":
             if not OPENAI_API_KEY:
                 raise RuntimeError("EMBEDDING_PROVIDER=openai, но OPENAI_API_KEY не задан")
-            _embedder = OpenAIEmbedder()
+            try:
+                _embedder = OpenAIEmbedder()
+            except ModuleNotFoundError:
+                raise RuntimeError(
+                    "EMBEDDING_PROVIDER=openai, но пакет openai не установлен. "
+                    "Выполните: pip install openai — или в .env укажите EMBEDDING_PROVIDER=local"
+                ) from None
         else:
             _embedder = LocalEmbedder()
     return _embedder

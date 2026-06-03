@@ -4,6 +4,7 @@
 (Tesseract, LibreOffice, MS Word, Poppler).
 """
 
+import gc
 import html as html_module
 import logging
 import re
@@ -11,7 +12,14 @@ import uuid
 from pathlib import Path
 from typing import Any, Callable
 
-from config import MAX_LAWYER_PAGES
+from config import (
+    LAWYER_OCR_MAX_PAGES,
+    LAWYER_OCR_MAX_SIDE,
+    LAWYER_OCR_SCALE,
+    LAWYER_OCR_SUBPROCESS,
+    LAWYER_OCR_TIMEOUT_SEC,
+    MAX_LAWYER_PAGES,
+)
 from lawyer.text_encoding import repair_citation_text, repair_text, text_quality_score
 
 logger = logging.getLogger(__name__)
@@ -404,7 +412,62 @@ def _get_rapidocr_engine() -> Any:
     return _rapidocr_engine
 
 
+_OCR_OOM_HINT = (
+    "OCR прерван (нехватает RAM на сервере). В .env: LAWYER_OCR_SCALE=1.0, "
+    "LAWYER_OCR_MAX_SIDE=1200, добавьте swap 2 ГБ или загрузите DOCX."
+)
+
+
+def _rapidocr_worker(path_str: str, out_queue: Any) -> None:
+    """Точка входа дочернего процесса OCR."""
+    try:
+        pages, err = _read_pdf_rapidocr_impl(Path(path_str))
+        out_queue.put(("ok", pages, err))
+    except Exception as e:
+        out_queue.put(("err", [], str(e)))
+
+
+def _read_pdf_rapidocr_subprocess(path: Path) -> tuple[list[dict[str, Any]], str | None]:
+    """OCR в отдельном процессе: при Killed/OOM основной сервер остаётся жив."""
+    import multiprocessing as mp
+
+    ctx = mp.get_context("spawn")
+    queue: Any = ctx.Queue()
+    proc = ctx.Process(
+        target=_rapidocr_worker,
+        args=(str(path.resolve()), queue),
+        daemon=True,
+    )
+    proc.start()
+    proc.join(timeout=LAWYER_OCR_TIMEOUT_SEC)
+
+    if proc.is_alive():
+        proc.terminate()
+        proc.join(10)
+        logger.warning("RapidOCR: таймаут %d с", LAWYER_OCR_TIMEOUT_SEC)
+        return [], f"OCR превысил лимит времени ({LAWYER_OCR_TIMEOUT_SEC} с)."
+
+    if proc.exitcode not in (0, None):
+        logger.warning("RapidOCR subprocess exitcode=%s", proc.exitcode)
+        return [], _OCR_OOM_HINT
+
+    try:
+        status, pages, err = queue.get(timeout=5)
+    except Exception:
+        return [], _OCR_OOM_HINT
+
+    if status == "err":
+        return [], pages if isinstance(pages, str) else str(pages)
+    return pages, err
+
+
 def _read_pdf_rapidocr(path: Path) -> tuple[list[dict[str, Any]], str | None]:
+    if LAWYER_OCR_SUBPROCESS:
+        return _read_pdf_rapidocr_subprocess(path)
+    return _read_pdf_rapidocr_impl(path)
+
+
+def _read_pdf_rapidocr_impl(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     """OCR для PDF-сканов (RapidOCR + PyMuPDF, только pip-пакеты)."""
     try:
         import fitz
@@ -414,29 +477,61 @@ def _read_pdf_rapidocr(path: Path) -> tuple[list[dict[str, Any]], str | None]:
 
     try:
         engine = _get_rapidocr_engine()
-    except ImportError:
-        return [], "установите: pip install rapidocr-onnxruntime opencv-python-headless"
+    except ImportError as e:
+        logger.warning("RapidOCR ImportError: %s", e)
+        err = str(e)
+        if "libGL" in err:
+            hint = (
+                "На сервере установлен opencv-python вместо headless. Выполните: "
+                "pip uninstall -y opencv-python && "
+                "pip install opencv-python-headless"
+            )
+        else:
+            hint = (
+                "pip install rapidocr-onnxruntime onnxruntime opencv-python-headless"
+            )
+        return [], f"OCR не запущен ({err}). {hint}"
     except Exception as e:
+        logger.warning("RapidOCR init failed: %s", e)
         return [], f"RapidOCR не запустился: {e}"
 
     pages: list[dict[str, Any]] = []
     ocr_error: str | None = None
-    scale = 2.0
+    scale = max(0.8, min(LAWYER_OCR_SCALE, 3.0))
+    max_side = max(800, min(LAWYER_OCR_MAX_SIDE, 3200))
     failed_pages = 0
 
     try:
         with fitz.open(path) as doc:
-            if len(doc) > MAX_LAWYER_PAGES:
+            n_pages = len(doc)
+            if n_pages == 0:
+                return [], "PDF не содержит страниц или файл повреждён при загрузке"
+            if n_pages > MAX_LAWYER_PAGES:
                 raise ValueError(f"PDF превышает лимит {MAX_LAWYER_PAGES} страниц")
 
-            logger.info("RapidOCR: распознавание %d стр.", len(doc))
-            for i in range(len(doc)):
+            ocr_limit = (
+                min(n_pages, LAWYER_OCR_MAX_PAGES)
+                if LAWYER_OCR_MAX_PAGES > 0
+                else n_pages
+            )
+            logger.info(
+                "RapidOCR: %d/%d стр., scale=%.2f, max_side=%d — %s",
+                ocr_limit,
+                n_pages,
+                scale,
+                max_side,
+                path.name,
+            )
+            for i in range(ocr_limit):
                 try:
-                    pix = _page_pixmap_rgb(doc[i], scale=scale)
+                    pix = _page_pixmap_rgb(doc[i], scale=scale, max_side=max_side)
                     img = _pixmap_to_numpy(pix)
-                    pix = None  # освободить память
+                    del pix
 
                     result, _elapsed = engine(img)
+                    del img
+                    gc.collect()
+
                     lines: list[str] = []
                     if result:
                         for item in result:
@@ -447,6 +542,8 @@ def _read_pdf_rapidocr(path: Path) -> tuple[list[dict[str, Any]], str | None]:
                         pages.append({"page": i + 1, "text": text})
                     elif i == 0:
                         logger.info("RapidOCR: на 1-й странице текст не найден")
+                    if (i + 1) % 3 == 0 or i + 1 == n_pages:
+                        logger.info("RapidOCR: обработано %d/%d стр.", i + 1, n_pages)
                 except Exception as page_err:
                     failed_pages += 1
                     logger.warning(
@@ -455,8 +552,15 @@ def _read_pdf_rapidocr(path: Path) -> tuple[list[dict[str, Any]], str | None]:
                         len(doc),
                         page_err,
                     )
+                    gc.collect()
+            if n_pages > ocr_limit:
+                tail = (
+                    f" Распознаны только первые {ocr_limit} из {n_pages} стр. "
+                    f"(LAWYER_OCR_MAX_PAGES). Для полного текста загрузите DOCX."
+                )
+                ocr_error = (ocr_error or "") + tail
             if failed_pages and not pages:
-                ocr_error = f"OCR не распознал ни одной из {len(doc)} страниц"
+                ocr_error = f"OCR не распознал ни одной из {ocr_limit} страниц"
             elif failed_pages:
                 ocr_error = f"пропущено страниц: {failed_pages}"
     except ValueError:
@@ -566,6 +670,13 @@ def _read_pdf(path: Path) -> list[dict[str, Any]]:
                 ("pypdf", _read_pdf_pypdf),
                 ("PyMuPDF-repair", _read_pdf_pymupdf_repair),
             ])
+        else:
+            # Скан: перед тяжёлым OCR пробуем другие извлекатели
+            steps.extend([
+                ("pypdfium2", _read_pdf_pdfium),
+                ("pdfplumber", _read_pdf_pdfplumber),
+                ("PyMuPDF-repair", _read_pdf_pymupdf_repair),
+            ])
     else:
         hints.append("не установлен pymupdf — pip install pymupdf")
         steps.extend([
@@ -600,6 +711,7 @@ def _read_pdf(path: Path) -> list[dict[str, Any]]:
         logger.info("PDF (RapidOCR): %d стр. — %s", len(pages), path.name)
         return pages
     if ocr_err:
+        logger.warning("PDF RapidOCR не дал текста (%s): %s", path.name, ocr_err)
         hints.append(ocr_err)
 
     hints.extend(_diagnose_empty_pdf(path))
@@ -617,12 +729,15 @@ def _pdf_failure_message(path: Path) -> str:
             "Перезапустите сервер."
         )
     if _last_pdf_hints and any(
-        "скан" in h or "RapidOCR: не установлен" in h for h in _last_pdf_hints
+        "скан" in h or "RapidOCR" in h or "OCR" in h for h in _last_pdf_hints
     ):
+        detail = "; ".join(_last_pdf_hints[:4])
         return (
-            "PDF без текстового слоя (скан). Установите OCR на Python:\n"
-            "pip install rapidocr-onnxruntime opencv-python-headless\n"
-            "Либо загрузите DOCX с тем же содержимым."
+            "PDF без текстового слоя (скан). На сервере не удалось распознать текст.\n"
+            "Если в логе «Killed» — не хватает RAM: добавьте swap, уменьшите "
+            "LAWYER_OCR_SCALE=1.0 и LAWYER_OCR_MAX_SIDE=1200 в .env, либо загрузите DOCX.\n"
+            "OCR: pip install rapidocr-onnxruntime onnxruntime opencv-python-headless\n"
+            f"Диагностика: {detail}"
         )
     base = (
         "Не удалось извлечь текст из PDF средствами Python. "

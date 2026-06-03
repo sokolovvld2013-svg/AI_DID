@@ -102,15 +102,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         document.getElementById('audio-name').textContent = file.name;
 
-        App.showProgress('upload-progress', true);
-
-        App.setStatus(
-
-            'upload-status',
-
-            'Транскрибация и формирование протокола... Не закрывайте страницу (5–15 мин).',
-
-        );
+        App.setFileProcessing({
+            statusId: 'upload-status',
+            progressId: 'upload-progress',
+            zoneId: 'audio-drop',
+            active: true,
+            message: 'Транскрибация и формирование протокола… Не закрывайте страницу (5–15 мин).',
+        });
 
         if (output) output.innerHTML = '<p class="muted">Обработка...</p>';
 
@@ -128,7 +126,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showProtocol(data.protocol, data.filename);
 
-            App.setStatus('upload-status', 'Готово', 'ok');
+            App.setStatus('upload-status', 'Готово', 'ok', { zoneId: 'audio-drop' });
 
             await refreshHistory();
 
@@ -142,14 +140,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (output) output.innerHTML = `<p class="status error">${msg}</p>`;
 
-            App.setStatus('upload-status', msg, 'error');
+            App.setStatus('upload-status', msg, 'error', { zoneId: 'audio-drop' });
 
             await loadLatestProtocol();
 
         } finally {
-
-            App.showProgress('upload-progress', false);
-
+            App.setFileProcessing({
+                statusId: 'upload-status',
+                progressId: 'upload-progress',
+                zoneId: 'audio-drop',
+                active: false,
+                message: '',
+            });
         }
 
     }
@@ -172,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (!fileId) return;
 
-        App.setStatus('upload-status', 'Загрузка протокола...');
+        App.setStatus('upload-status', 'Загрузка протокола…', 'loading');
 
         try {
 

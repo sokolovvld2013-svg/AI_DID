@@ -84,6 +84,18 @@ MAX_EXCEL_SIZE = int(os.getenv("MAX_EXCEL_SIZE", 20 * 1024 * 1024))
 MAX_AUDIO_SIZE = int(os.getenv("MAX_AUDIO_SIZE", 100 * 1024 * 1024))
 MAX_DOCUMENT_SIZE = int(os.getenv("MAX_DOCUMENT_SIZE", 50 * 1024 * 1024))
 MAX_LAWYER_PAGES = int(os.getenv("MAX_LAWYER_PAGES", 200))
+# OCR PDF-сканов: меньше scale/max_side — меньше RAM (на VPS: 1.0 и 1200)
+LAWYER_OCR_SCALE = float(os.getenv("LAWYER_OCR_SCALE", "1.0"))
+LAWYER_OCR_MAX_SIDE = int(os.getenv("LAWYER_OCR_MAX_SIDE", "1200"))
+# 0 = все страницы; на слабом VPS можно 6–8
+LAWYER_OCR_MAX_PAGES = int(os.getenv("LAWYER_OCR_MAX_PAGES", "0"))
+# OCR в отдельном процессе — при OOM не падает весь uvicorn
+LAWYER_OCR_SUBPROCESS = os.getenv("LAWYER_OCR_SUBPROCESS", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+LAWYER_OCR_TIMEOUT_SEC = int(os.getenv("LAWYER_OCR_TIMEOUT_SEC", "900"))
 # Восстановление читаемого русского в блоке «Источники» (LLM, если OCR/PDF исказил текст)
 LAWYER_CITATION_LLM_REPAIR = os.getenv("LAWYER_CITATION_LLM_REPAIR", "true").strip().lower() in (
     "1",

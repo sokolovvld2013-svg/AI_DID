@@ -12,7 +12,14 @@ _model = None
 def _get_model():
     global _model
     if _model is None:
-        from faster_whisper import WhisperModel
+        try:
+            from faster_whisper import WhisperModel
+        except ModuleNotFoundError as e:
+            raise RuntimeError(
+                "Не установлен faster-whisper. На сервере выполните: "
+                "pip install faster-whisper — или pip install -r requirements.txt. "
+                "Также нужен ffmpeg: sudo apt install -y ffmpeg"
+            ) from e
 
         logger.info(
             "Загрузка Whisper: size=%s, device=%s",

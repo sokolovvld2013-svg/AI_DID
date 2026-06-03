@@ -95,6 +95,23 @@ git push -u origin main
    ```
 4. Для офлайн-эмбеддингов заранее скачайте модель в `models/` или укажите `EMBEDDING_PROVIDER=openai`.
 5. Первый запуск RapidOCR скачает ONNX-модели (~десятки МБ) — учтите при деплое.
+6. **Секретарь (Whisper):** `pip install faster-whisper` и системный `ffmpeg` (`sudo apt install -y ffmpeg`). Первый запуск скачает модель Whisper (~500 МБ для `small`).
+
+6. **OCR: процесс `Killed`** — не хватает оперативной памяти на VPS. В `.env` на сервере:
+   ```env
+   LAWYER_OCR_SCALE=1.0
+   LAWYER_OCR_MAX_SIDE=1200
+   ```
+   Либо добавьте swap (`fallocate -l 2G /swapfile && ...`), либо загружайте **DOCX** вместо скан-PDF.
+
+7. **OCR на Linux (ошибка `libGL.so.1`)** — часто ставится лишний `opencv-python`. Исправление:
+   ```bash
+   source venv/bin/activate
+   pip uninstall -y opencv-python
+   pip install --force-reinstall opencv-python-headless
+   bash scripts/fix_opencv_server.sh
+   ```
+   Либо системный пакет (если headless не помог): `sudo apt install -y libgl1 libglib2.0-0`
 
 Внешние программы для модуля Юрист **не используются** — только пакеты из `requirements.txt`.
 

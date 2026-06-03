@@ -56,6 +56,9 @@ async def upload_audio(file: UploadFile = File(...)):
     except LLMUserFacingError as e:
         logger.warning("Ошибка LLM при обработке аудио: %s", e.original or e)
         raise HTTPException(500, e.user_message) from e
+    except RuntimeError as e:
+        logger.warning("Ошибка транскрибации: %s", e)
+        raise HTTPException(500, str(e)) from e
     except Exception as e:
         logger.exception("Ошибка обработки аудио")
         raise HTTPException(500, "Ошибка обработки аудио. Попробуйте другой файл.") from e

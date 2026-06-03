@@ -84,14 +84,34 @@ const App = {
 
     showProgress(id, show = true) {
         const el = document.getElementById(id);
-        if (el) el.classList.toggle('hidden', !show);
+        if (!el) return;
+        el.classList.toggle('hidden', !show);
+        el.classList.toggle('active', show);
     },
 
-    setStatus(id, text, type = '') {
+    setStatus(id, text, type = '', options = {}) {
         const el = document.getElementById(id);
         if (!el) return;
-        el.textContent = text;
-        el.className = 'status ' + type;
+        el.textContent = stripSiteUrls(text);
+        el.className = type ? `status ${type}` : 'status';
+        el.dataset.status = type || 'idle';
+
+        const zoneId = options.zoneId;
+        if (zoneId) {
+            const zone = document.getElementById(zoneId);
+            if (zone) zone.classList.toggle('is-processing', type === 'loading');
+        }
+    },
+
+    /** Подсветка зоны загрузки и статуса во время обработки файла на сервере. */
+    setFileProcessing({ statusId, progressId, zoneId, active, message }) {
+        this.showProgress(progressId, active);
+        if (active) {
+            this.setStatus(statusId, message, 'loading', { zoneId });
+        } else if (zoneId) {
+            const zone = document.getElementById(zoneId);
+            if (zone) zone.classList.remove('is-processing');
+        }
     },
 
     addMessage(containerId, text, role = 'bot') {
