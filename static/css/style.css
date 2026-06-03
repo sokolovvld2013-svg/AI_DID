@@ -157,10 +157,98 @@ body {
 .upload-zone.is-processing {
     border-color: var(--accent);
     border-style: solid;
-    background: var(--accent-soft);
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    border-width: 3px;
+    background: linear-gradient(135deg, #d4e8f8 0%, var(--accent-soft) 100%);
+    box-shadow:
+        0 0 0 4px rgba(53, 111, 168, 0.22),
+        inset 0 0 0 1px rgba(53, 111, 168, 0.15);
     pointer-events: none;
-    opacity: 0.95;
+    animation: upload-zone-pulse 1.6s ease-in-out infinite;
+    position: relative;
+}
+
+.upload-zone.is-processing::after {
+    content: '⏳ Обработка файла…';
+    display: block;
+    margin-top: 0.75rem;
+    padding: 0.45rem 0.65rem;
+    border-radius: calc(var(--radius) - 2px);
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid var(--accent-muted);
+    color: var(--accent-hover);
+    font-size: 0.9rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+@keyframes upload-zone-pulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(53, 111, 168, 0.18); }
+    50% { box-shadow: 0 0 0 7px rgba(53, 111, 168, 0.32); }
+}
+
+.card.is-file-processing {
+    border-color: var(--accent);
+    box-shadow:
+        0 0 0 3px rgba(53, 111, 168, 0.2),
+        var(--shadow-md);
+}
+
+.card.is-file-processing > h3::after {
+    content: ' — обработка…';
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.85em;
+}
+
+body.app-file-processing {
+    cursor: wait;
+}
+
+body.app-file-processing .upload-zone.is-processing * {
+    cursor: wait;
+}
+
+.file-processing-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.9rem 1.25rem;
+    margin: -2rem -2rem 1.5rem;
+    background: linear-gradient(90deg, #2a5a88 0%, var(--accent) 55%, #4a8cc4 100%);
+    color: #fff;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    animation: banner-glow 2s ease-in-out infinite;
+}
+
+@media (max-width: 900px) {
+    .file-processing-banner {
+        margin: -2rem -1rem 1.25rem;
+        font-size: 0.92rem;
+    }
+}
+
+.file-processing-banner__spinner {
+    flex-shrink: 0;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 3px solid rgba(255, 255, 255, 0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: status-spin 0.7s linear infinite;
+}
+
+.file-processing-banner__text {
+    flex: 1;
+    min-width: 0;
+}
+
+@keyframes banner-glow {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.08); }
 }
 
 .upload-zone p { margin-bottom: 0.5rem; font-size: 0.9rem; color: var(--text); }
@@ -276,23 +364,28 @@ body {
 }
 
 .progress {
-    height: 4px;
+    height: 8px;
     background: var(--border-light);
-    border-radius: 2px;
+    border-radius: 4px;
     overflow: hidden;
-    margin: 0.5rem 0;
+    margin: 0.65rem 0;
+    border: 1px solid var(--accent-muted);
 }
 
 .progress-bar {
     height: 100%;
-    background: var(--accent);
+    background: linear-gradient(90deg, var(--accent-hover), var(--accent-muted));
     width: 0%;
     transition: width 0.3s;
 }
 
+.progress.active {
+    box-shadow: 0 0 8px rgba(53, 111, 168, 0.35);
+}
+
 .progress.active .progress-bar {
-    width: 35%;
-    animation: progress-slide 1.4s ease-in-out infinite;
+    width: 45%;
+    animation: progress-slide 1.2s ease-in-out infinite;
 }
 
 @keyframes progress-slide {
@@ -318,24 +411,33 @@ body {
 .status.loading {
     display: flex;
     align-items: flex-start;
-    gap: 0.6rem;
-    padding: 0.65rem 0.85rem;
-    background: var(--accent-soft);
-    border-color: var(--accent-muted);
+    gap: 0.65rem;
+    padding: 0.75rem 0.9rem;
+    background: #e3f0fa;
+    border: 2px solid var(--accent);
+    border-left-width: 5px;
     color: var(--text);
-    font-weight: 500;
+    font-weight: 600;
+    font-size: 0.95rem;
+    box-shadow: var(--shadow-sm);
+    animation: status-loading-pulse 2s ease-in-out infinite;
+}
+
+@keyframes status-loading-pulse {
+    0%, 100% { background: #e3f0fa; }
+    50% { background: #d4e8f8; }
 }
 
 .status.loading::before {
     content: '';
     flex-shrink: 0;
-    width: 1rem;
-    height: 1rem;
-    margin-top: 0.12rem;
-    border: 2px solid var(--accent-muted);
-    border-top-color: var(--accent);
+    width: 1.15rem;
+    height: 1.15rem;
+    margin-top: 0.1rem;
+    border: 3px solid var(--accent-muted);
+    border-top-color: var(--accent-hover);
     border-radius: 50%;
-    animation: status-spin 0.75s linear infinite;
+    animation: status-spin 0.65s linear infinite;
 }
 
 @keyframes status-spin {
