@@ -85,13 +85,17 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
         cm = int(hit.get("core_matches") or 0)
         sem = float(hit.get("semantic_score") or 0)
 
-        if cm >= need_core and (score >= min_score or kw >= 3.0):
+        if core and cm >= len(core):
             return True
-        if cm >= 1 and kw >= 5.0:
+        if cm >= need_core and (score >= min_score or kw >= 4.0):
             return True
-        if not core and (score >= 0.25 or sem >= 0.5):
+        if len(core) >= 2 and cm >= 2 and kw >= 3.0:
             return True
-        if score >= min_score and sem >= 0.4:
+        if cm >= 1 and kw >= 6.0:
+            return True
+        if not core and (score >= 0.28 or sem >= 0.52):
+            return True
+        if score >= min_score and sem >= 0.42 and cm >= 1:
             return True
         return False
 

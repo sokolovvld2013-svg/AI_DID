@@ -207,6 +207,8 @@ kill 12345
 | `N8N_ECONOMIST_WEBHOOK_URL` | Production URL webhook n8n для чата |
 | `N8N_ECONOMIST_TIMEOUT` | таймаут ответа n8n, сек (по умолчанию 120) |
 | `LAWYER_CITATION_LLM_REPAIR` | `true` — восстанавливать русский текст в блоке «Источники» через LLM при искажениях PDF/OCR |
+| `LAWYER_RETRIEVE_K` / `LAWYER_RETRIEVE_K_MAX` | сколько чанков просматривать при поиске (48 / 180; для больших TXT растёт автоматически) |
+| `LAWYER_MIN_COMBINED_SCORE` | порог отсечения слабых фрагментов (по умолчанию `0.12`) |
 | `APP_TIMEZONE` | часовой пояс истории действий (по умолчанию `Europe/Moscow`) |
 
 ## Структура

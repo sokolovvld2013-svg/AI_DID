@@ -1,5 +1,6 @@
 """RAG для юридической базы знаний."""
 import logging
+import os
 from typing import Any
 
 import chromadb
@@ -10,11 +11,13 @@ from lawyer.search_utils import (
     combined_score,
     core_query_tokens,
     count_core_matches,
+    enrich_query_for_embedding,
     expand_query_phrases,
     expand_query_tokens,
     keyword_score,
     min_core_matches_required,
     phrase_bonus,
+    reciprocal_rank_fusion,
 )
 from lawyer.text_encoding import repair_citation_text, repair_text
 
@@ -22,17 +25,19 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "lawyer_kb"
 # Сколько кандидатов собрать перед отбором в контекст LLM
-RETRIEVE_K = 48
+RETRIEVE_K = int(os.getenv("LAWYER_RETRIEVE_K", "48"))
+RETRIEVE_K_MAX = int(os.getenv("LAWYER_RETRIEVE_K_MAX", "180"))
 # Сколько фрагментов отдать в LLM
-CONTEXT_K = 6
+CONTEXT_K = int(os.getenv("LAWYER_CONTEXT_K", "6"))
 # Минимальный комбинированный score (отсекаем явный мусор)
-MIN_COMBINED_SCORE = 0.08
+MIN_COMBINED_SCORE = float(os.getenv("LAWYER_MIN_COMBINED_SCORE", "0.12"))
 # Порог для показа источника (доля от лучшего score)
-MIN_CITATION_SCORE_RATIO = 0.45
+MIN_CITATION_SCORE_RATIO = float(os.getenv("LAWYER_CITATION_SCORE_RATIO", "0.4"))
 # Минимум кандидатов с каждого файла при нескольких документах в базе
-PER_FILE_SEMANTIC_K = 18
+PER_FILE_SEMANTIC_K = int(os.getenv("LAWYER_PER_FILE_SEMANTIC_K", "24"))
 # Полный перебор чанков для ключевых слов (если база небольшая)
-KEYWORD_SCAN_MAX_CHUNKS = 8000
+KEYWORD_SCAN_MAX_CHUNKS = int(os.getenv("LAWYER_KEYWORD_SCAN_MAX", "12000"))
+NEIGHBOR_SEEDS = 10
 
 
 def _chunk_key(meta: dict[str, Any]) -> str:
@@ -193,6 +198,76 @@ class LawyerRAG:
                 "keyword_score": 0.0,
             }
 
+    def _effective_retrieve_k(self) -> int:
+        """Больше кандидатов в больших базах (иначе теряются релевантные чанки)."""
+        total = self._collection.count()
+        if total <= RETRIEVE_K:
+            return total
+        scaled = max(RETRIEVE_K, min(RETRIEVE_K_MAX, total // 6))
+        return min(total, scaled)
+
+    def _attach_neighbor_chunks(
+        self,
+        merged: dict[str, dict[str, Any]],
+        core: list[str],
+        query_tokens: list[str],
+    ) -> None:
+        """Соседние чанки того же файла — контекст вокруг точного попадания."""
+        seeds = sorted(
+            merged.values(),
+            key=lambda h: (
+                h.get("core_matches", 0),
+                h.get("score", 0),
+                h.get("keyword_score", 0),
+            ),
+            reverse=True,
+        )[:NEIGHBOR_SEEDS]
+
+        neighbor_ids: list[str] = []
+        for hit in seeds:
+            fid = hit.get("file_id") or ""
+            idx = int(hit.get("chunk_index") or 0)
+            if not fid:
+                continue
+            for delta in (-1, 1):
+                nid = f"{fid}_{idx + delta}"
+                if nid not in merged:
+                    neighbor_ids.append(nid)
+
+        if not neighbor_ids:
+            return
+
+        try:
+            part = self._collection.get(
+                ids=neighbor_ids,
+                include=["documents", "metadatas"],
+            )
+        except Exception as e:
+            logger.debug("Соседние чанки: %s", e)
+            return
+
+        for doc, meta in zip(
+            part.get("documents") or [],
+            part.get("metadatas") or [],
+        ):
+            if not doc or not meta:
+                continue
+            cid = _chunk_key(meta)
+            ks = keyword_score(query_tokens, doc)
+            cm = count_core_matches(core, doc) if core else 0
+            merged[cid] = {
+                "id": cid,
+                "text": doc,
+                "filename": meta.get("filename", ""),
+                "page": int(meta.get("page") or 1),
+                "chunk_index": meta.get("chunk_index", 0),
+                "file_id": meta.get("file_id", ""),
+                "semantic_score": 0.35,
+                "keyword_score": ks,
+                "core_matches": cm,
+                "neighbor": True,
+            }
+
     def _semantic_candidates_scoped(
         self,
         query: str,
@@ -208,7 +283,11 @@ class LawyerRAG:
         merged: dict[str, dict[str, Any]] = {}
         where = {"file_id": file_id} if file_id else None
 
-        for phrase in expand_query_phrases(query):
+        phrases = expand_query_phrases(query)
+        if enrich_query_for_embedding(query) not in phrases:
+            phrases.insert(0, enrich_query_for_embedding(query))
+
+        for phrase in phrases:
             query_emb = self.embedder.embed_query(phrase)
             kwargs: dict[str, Any] = {
                 "query_embeddings": [query_emb],
@@ -339,8 +418,9 @@ class LawyerRAG:
 
         query_tokens = expand_query_tokens(query)
         core = core_query_tokens(query)
-        candidates = self._semantic_candidates(query, RETRIEVE_K)
-        kw = self._keyword_candidates(query_tokens)
+        retrieve_k = self._effective_retrieve_k()
+        candidates = self._semantic_candidates(query, retrieve_k)
+        kw = self._keyword_candidates(query_tokens, limit=max(60, retrieve_k // 2))
 
         for cid, hit in kw.items():
             if cid in candidates:
@@ -351,7 +431,11 @@ class LawyerRAG:
             else:
                 candidates[cid] = hit
 
+        self._attach_neighbor_chunks(candidates, core, query_tokens)
+
         for hit in candidates.values():
+            if "score" not in hit:
+                hit["semantic_score"] = float(hit.get("semantic_score") or 0.0)
             ks = hit["keyword_score"] + phrase_bonus(core, hit["text"])
             hit["keyword_score"] = ks
             core_n = count_core_matches(core, hit["text"])
@@ -363,18 +447,35 @@ class LawyerRAG:
                 ratio,
             )
 
+        sem_ranked = sorted(
+            candidates.values(),
+            key=lambda h: h["semantic_score"],
+            reverse=True,
+        )
+        kw_ranked = sorted(
+            candidates.values(),
+            key=lambda h: h["keyword_score"],
+            reverse=True,
+        )
+        rrf = reciprocal_rank_fusion(
+            [[h["id"] for h in sem_ranked], [h["id"] for h in kw_ranked]]
+        )
+        for hit in candidates.values():
+            hit["rrf"] = rrf.get(hit["id"], 0.0)
+
         ranked = sorted(
             candidates.values(),
             key=lambda h: (
+                h.get("core_matches", 0) >= len(core) if core else False,
                 h.get("core_matches", 0),
                 h["score"],
+                h.get("rrf", 0.0),
                 h["keyword_score"],
                 h["semantic_score"],
             ),
             reverse=True,
         )
 
-        # Сначала фрагменты, где есть все слова запроса (бизнес + план)
         if len(core) >= 2:
             strong = [h for h in ranked if h.get("core_matches", 0) >= len(core)]
             if strong:
@@ -384,21 +485,33 @@ class LawyerRAG:
         pool = [
             h
             for h in ranked
-            if h["score"] >= MIN_COMBINED_SCORE
-            or h.get("core_matches", 0) >= min_core
-            or float(h.get("keyword_score") or 0) >= 3.0
+            if h.get("core_matches", 0) >= min_core
+            or (
+                h["score"] >= MIN_COMBINED_SCORE
+                and (
+                    h.get("core_matches", 0) >= 1
+                    or float(h.get("keyword_score") or 0) >= 4.0
+                )
+            )
         ]
+        if not pool and ranked:
+            pool = [
+                h
+                for h in ranked[: max(top_k * 3, 12)]
+                if h.get("core_matches", 0) >= 1
+                or float(h.get("keyword_score") or 0) >= 2.0
+            ]
         if not pool and ranked:
             pool = ranked[: max(top_k * 2, len(self._files) * 3)]
         else:
-            pool = pool[: max(top_k * 4, len(self._files) * 6)]
+            pool = pool[: max(top_k * 5, len(self._files) * 8, retrieve_k // 3)]
 
-        # Сильные совпадения по словам — в начало, даже если эмбеддинг слабый
         pool.sort(
             key=lambda h: (
                 h.get("core_matches", 0),
                 h.get("keyword_score", 0),
                 h["score"],
+                h.get("rrf", 0.0),
             ),
             reverse=True,
         )
@@ -408,10 +521,11 @@ class LawyerRAG:
         best = filtered[0] if filtered else {}
         files_in_result = {h.get("file_id") for h in filtered}
         logger.info(
-            "Поиск «%s»: core=%s, кандидатов=%d, в контекст=%d, "
+            "Поиск «%s»: core=%s, retrieve_k=%d, кандидатов=%d, в контекст=%d, "
             "файлов=%d, score=%.3f, kw=%.1f, core_match=%s/%s",
             query[:50],
             core,
+            retrieve_k,
             len(candidates),
             len(filtered),
             len(files_in_result),
@@ -430,6 +544,7 @@ class LawyerRAG:
                 "chunk_index": h.get("chunk_index", 0),
                 "score": h["score"],
                 "keyword_score": h["keyword_score"],
+                "semantic_score": h.get("semantic_score", 0.0),
                 "core_matches": h.get("core_matches", 0),
             }
             for h in filtered
