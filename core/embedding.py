@@ -118,9 +118,29 @@ class OpenAIEmbedder(BaseEmbedder):
     def embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
+
         prepared = _prepare_texts(texts)
-        resp = self._client.embeddings.create(input=prepared, model=self._model)
-        return [item.embedding for item in resp.data]
+        all_rows: list[list[float]] = []
+        total = len(prepared)
+
+        if total > EMBED_BATCH_SIZE:
+            logger.info(
+                "OpenAI embeddings: %d фрагментов, пакетами по %d (лимит API ~300k токенов/запрос)",
+                total,
+                EMBED_BATCH_SIZE,
+            )
+
+        for start in range(0, total, EMBED_BATCH_SIZE):
+            batch = prepared[start : start + EMBED_BATCH_SIZE]
+            resp = self._client.embeddings.create(input=batch, model=self._model)
+            ordered = sorted(resp.data, key=lambda item: item.index)
+            all_rows.extend(item.embedding for item in ordered)
+
+        if len(all_rows) != total:
+            raise RuntimeError(
+                f"OpenAI вернул {len(all_rows)} векторов вместо {total}"
+            )
+        return all_rows
 
     def embed_query(self, text: str) -> List[float]:
         return self.embed([text])[0]

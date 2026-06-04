@@ -1,7 +1,6 @@
 """Формирование протокола совещания через LLM."""
 import logging
-from datetime import datetime
-
+from core.app_time import format_history_timestamp
 from core.llm_client import get_llm
 
 logger = logging.getLogger(__name__)
@@ -37,7 +36,7 @@ def build_protocol(transcript: str, filename: str = "") -> str:
     llm = get_llm()
     prompt = (
         f"Имя файла записи: {filename}\n"
-        f"Дата обработки: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n\n"
+        f"Дата обработки: {format_history_timestamp()}\n\n"
         f"Транскрипт совещания:\n\n{transcript}"
     )
     logger.info("Генерация протокола, длина транскрипта=%d", len(transcript))

@@ -1,10 +1,10 @@
 """In-memory история запросов по модулям."""
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from config import HISTORY_SIZE
+from core.app_time import format_history_timestamp
 
 
 @dataclass
@@ -24,7 +24,7 @@ class ModuleHistory:
 
     def add(self, query: str, response: str, **extra: Any) -> HistoryEntry:
         entry = HistoryEntry(
-            timestamp=datetime.now().isoformat(timespec="seconds"),
+            timestamp=format_history_timestamp(),
             query=query,
             response=response,
             extra=extra,
