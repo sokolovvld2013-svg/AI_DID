@@ -15,8 +15,10 @@ from lawyer.search_utils import (
     expand_query_phrases,
     expand_query_tokens,
     keyword_score,
+    keyword_score_core,
     min_core_matches_required,
     phrase_bonus,
+    query_phrase_score,
     reciprocal_rank_fusion,
 )
 from lawyer.text_encoding import repair_citation_text, repair_text
@@ -74,7 +76,16 @@ def _balance_hits_by_file(
     seen: set[str] = set()
 
     for fid in file_ids:
-        for hit in (by_file.get(fid) or [])[:min_per_file]:
+        pool = sorted(
+            by_file.get(fid) or [],
+            key=lambda h: (
+                h.get("phrase_score", 0),
+                h.get("core_matches", 0),
+                h.get("score", 0),
+            ),
+            reverse=True,
+        )
+        for hit in pool[:min_per_file]:
             key = _hit_key(hit)
             if key in seen:
                 continue
@@ -112,16 +123,43 @@ class LawyerRAG:
         return self._embedder
 
     def _load_file_registry(self) -> None:
-        if self._collection.count() == 0:
+        count = self._collection.count()
+        if count == 0:
+            self._files.clear()
             return
         try:
-            all_meta = self._collection.get(include=["metadatas"])
-            for meta in all_meta.get("metadatas", []) or []:
-                if meta:
-                    fid = meta.get("file_id")
-                    fname = meta.get("filename")
-                    if fid and fname:
-                        self._files[fid] = fname
+            found: dict[str, str] = {}
+            batch_size = 5000
+            offset = 0
+            while offset < count:
+                part = self._collection.get(
+                    include=["metadatas"],
+                    limit=min(batch_size, count - offset),
+                    offset=offset,
+                )
+                offset += batch_size
+                for meta in part.get("metadatas", []) or []:
+                    if meta:
+                        fid = meta.get("file_id")
+                        fname = meta.get("filename")
+                        if fid and fname:
+                            found[fid] = fname
+            self._files = found
+        except TypeError:
+            # Старые версии Chroma без offset
+            try:
+                part = self._collection.get(
+                    include=["metadatas"],
+                    limit=count,
+                )
+                for meta in part.get("metadatas", []) or []:
+                    if meta:
+                        fid = meta.get("file_id")
+                        fname = meta.get("filename")
+                        if fid and fname:
+                            self._files[fid] = fname
+            except Exception as e:
+                logger.warning("Не удалось восстановить реестр файлов: %s", e)
         except Exception as e:
             logger.warning("Не удалось восстановить реестр файлов: %s", e)
 
@@ -453,6 +491,7 @@ class LawyerRAG:
         if self._collection.count() == 0:
             return []
 
+        self._load_file_registry()
         query_tokens = expand_query_tokens(query)
         core = core_query_tokens(query)
         retrieve_k = self._effective_retrieve_k()
@@ -473,15 +512,23 @@ class LawyerRAG:
         for hit in candidates.values():
             if "score" not in hit:
                 hit["semantic_score"] = float(hit.get("semantic_score") or 0.0)
-            ks = hit["keyword_score"] + phrase_bonus(core, hit["text"])
-            hit["keyword_score"] = ks
-            core_n = count_core_matches(core, hit["text"])
+            text = hit.get("text") or ""
+            ps = query_phrase_score(query, core, text)
+            core_kw = keyword_score_core(core, text) if core else 0.0
+            hit["phrase_score"] = ps
+            hit["keyword_score"] = (
+                core_kw
+                + phrase_bonus(core, text)
+                + min(float(hit.get("keyword_score") or 0.0), 12.0)
+            )
+            core_n = count_core_matches(core, text)
             hit["core_matches"] = core_n
             ratio = (core_n / len(core)) if core else 0.0
             hit["score"] = combined_score(
                 hit["semantic_score"],
-                ks,
+                hit["keyword_score"],
                 ratio,
+                phrase_score=ps,
             )
 
         sem_ranked = sorted(
@@ -503,6 +550,7 @@ class LawyerRAG:
         ranked = sorted(
             candidates.values(),
             key=lambda h: (
+                h.get("phrase_score", 0),
                 h.get("core_matches", 0) >= len(core) if core else False,
                 h.get("core_matches", 0),
                 h["score"],
@@ -512,6 +560,10 @@ class LawyerRAG:
             ),
             reverse=True,
         )
+
+        phrase_strong = [h for h in ranked if h.get("phrase_score", 0) >= 25]
+        if phrase_strong:
+            ranked = phrase_strong + [h for h in ranked if h not in phrase_strong]
 
         if len(core) >= 2:
             strong = [h for h in ranked if h.get("core_matches", 0) >= len(core)]
@@ -559,14 +611,16 @@ class LawyerRAG:
         files_in_result = {h.get("file_id") for h in filtered}
         logger.info(
             "Поиск «%s»: core=%s, retrieve_k=%d, кандидатов=%d, в контекст=%d, "
-            "файлов=%d, score=%.3f, kw=%.1f, core_match=%s/%s",
+            "файлов в базе=%d, в ответе=%d, score=%.3f, phrase=%.0f, kw=%.1f, core=%s/%s",
             query[:50],
             core,
             retrieve_k,
             len(candidates),
             len(filtered),
+            len(self._files),
             len(files_in_result),
             best.get("score", 0),
+            best.get("phrase_score", 0),
             best.get("keyword_score", 0),
             best.get("core_matches", 0),
             len(core),
@@ -582,6 +636,7 @@ class LawyerRAG:
                 "score": h["score"],
                 "keyword_score": h["keyword_score"],
                 "semantic_score": h.get("semantic_score", 0.0),
+                "phrase_score": h.get("phrase_score", 0.0),
                 "core_matches": h.get("core_matches", 0),
             }
             for h in filtered
