@@ -1,6 +1,7 @@
 """Исправление кодировки имён файлов и текста (OCR, multipart, PDF)."""
 
 import re
+from pathlib import Path
 from urllib.parse import unquote
 
 _URL_PATTERN = re.compile(
@@ -484,6 +485,74 @@ def repair_text(text: str) -> str:
     else:
         result = original
     return _fix_homoglyph_latin(result)
+
+
+# Типичные кодировки TXT с Windows / 1С / старых редакторов
+_TEXT_FILE_ENCODINGS = ("utf-8-sig", "utf-8", "cp1251", "cp866", "koi8-r", "mac_cyrillic")
+_GARBLED_TXT_MARKERS = ("пїЅ", "пї", "ï¿½", "Ð", "Ñ")
+
+
+def _decoding_quality(s: str) -> tuple[int, int, int]:
+    """Чем выше кортеж — тем вероятнее нормальная русская кодировка."""
+    penalty = s.count("\ufffd") * 50
+    for marker in _GARBLED_TXT_MARKERS:
+        penalty += s.count(marker) * 20
+    penalty += _mojibake_penalty(s)
+    return (
+        _ru_plausibility(s),
+        _cyrillic_score(s),
+        -penalty,
+    )
+
+
+def decode_text_bytes(data: bytes) -> str:
+    """Подбор кодировки для сырого содержимого TXT (UTF-8, CP1251, …)."""
+    if not data:
+        return ""
+
+    candidates: list[str] = []
+
+    if data.startswith(b"\xff\xfe"):
+        _try_decode(data, "utf-16-le", candidates)
+    elif data.startswith(b"\xfe\xff"):
+        _try_decode(data, "utf-16-be", candidates)
+    else:
+        for enc in _TEXT_FILE_ENCODINGS:
+            _try_decode(data, enc, candidates)
+
+    if not candidates:
+        for enc in ("utf-8", "cp1251", "latin-1"):
+            try:
+                candidates.append(data.decode(enc, errors="replace"))
+            except UnicodeDecodeError:
+                continue
+
+    if not candidates:
+        return ""
+
+    return max(candidates, key=_decoding_quality)
+
+
+def _try_decode(data: bytes, encoding: str, out: list[str]) -> None:
+    try:
+        out.append(data.decode(encoding, errors="strict"))
+    except UnicodeDecodeError:
+        pass
+
+
+def decode_text_file(path: Path) -> str:
+    """Чтение TXT с автоопределением кодировки и repair_text."""
+    text = decode_text_bytes(path.read_bytes())
+    if not text.strip():
+        return ""
+    text = repair_text(text)
+    quality = _decoding_quality(text)
+    if quality[1] < 15 and (text.count("\ufffd") > 5 or any(m in text for m in _GARBLED_TXT_MARKERS)):
+        raise ValueError(
+            "TXT: текст не читается — сохраните файл в кодировке UTF-8 "
+            "(в Блокноте: «Сохранить как» → UTF-8) или Windows-1251 (кириллица)."
+        )
+    return text
 
 
 def decode_upload_filename(name: str | None) -> str:

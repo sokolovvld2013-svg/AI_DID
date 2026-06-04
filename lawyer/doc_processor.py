@@ -20,7 +20,12 @@ from config import (
     LAWYER_OCR_TIMEOUT_SEC,
     MAX_LAWYER_PAGES,
 )
-from lawyer.text_encoding import repair_citation_text, repair_text, text_quality_score
+from lawyer.text_encoding import (
+    decode_text_file,
+    repair_citation_text,
+    repair_text,
+    text_quality_score,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -782,7 +787,7 @@ def _read_docx(path: Path) -> list[dict[str, Any]]:
 
 
 def _read_txt(path: Path) -> list[dict[str, Any]]:
-    text = _clean_text(path.read_text(encoding="utf-8", errors="replace"))
+    text = _clean_text(decode_text_file(path))
     if not text:
         raise ValueError("TXT-файл пуст")
     return [{"page": 1, "text": text}]
