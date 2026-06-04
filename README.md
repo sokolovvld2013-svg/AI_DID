@@ -97,14 +97,16 @@ git push -u origin main
 5. Первый запуск RapidOCR скачает ONNX-модели (~десятки МБ) — учтите при деплое.
 6. **Секретарь (Whisper):** `pip install faster-whisper` и системный `ffmpeg` (`sudo apt install -y ffmpeg`). Первый запуск скачает модель (~150 МБ для `base`). На слабом VPS: `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1`; при старте можно `WHISPER_PRELOAD=true`.
 
-6. **OCR: процесс `Killed`** — не хватает оперативной памяти на VPS. В `.env` на сервере:
+7. **Юрист (DOCX):** нужен пакет `python-docx` (`pip install python-docx` или полный `pip install -r requirements.txt`). Без него DOCX не читается.
+
+8. **OCR: процесс `Killed`** — не хватает оперативной памяти на VPS. В `.env` на сервере:
    ```env
    LAWYER_OCR_SCALE=1.0
    LAWYER_OCR_MAX_SIDE=1200
    ```
    Либо добавьте swap (`fallocate -l 2G /swapfile && ...`), либо загружайте **DOCX** вместо скан-PDF.
 
-7. **OCR на Linux (ошибка `libGL.so.1`)** — часто ставится лишний `opencv-python`. Исправление:
+9. **OCR на Linux (ошибка `libGL.so.1`)** — часто ставится лишний `opencv-python`. Исправление:
    ```bash
    source venv/bin/activate
    pip uninstall -y opencv-python

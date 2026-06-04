@@ -32,7 +32,14 @@ CHARS_PER_PAGE_ESTIMATE = 2400
 _last_pdf_hints: list[str] = []
 
 _PYMUPDF_MISSING: bool | None = None
+_DOCX_MISSING: bool | None = None
 _rapidocr_engine: Any = None
+
+_DOCX_INSTALL_HINT = (
+    "Не установлен python-docx (импорт docx). На сервере: "
+    "source venv/bin/activate && pip install python-docx "
+    "или pip install -r requirements.txt"
+)
 
 
 def pymupdf_available() -> bool:
@@ -44,6 +51,17 @@ def pymupdf_available() -> bool:
         except ImportError:
             _PYMUPDF_MISSING = True
     return not _PYMUPDF_MISSING
+
+
+def docx_available() -> bool:
+    global _DOCX_MISSING
+    if _DOCX_MISSING is None:
+        try:
+            import docx  # noqa: F401
+            _DOCX_MISSING = False
+        except ImportError:
+            _DOCX_MISSING = True
+    return not _DOCX_MISSING
 
 
 def _chars_in_pages(pages: list[dict[str, Any]]) -> int:
@@ -750,7 +768,10 @@ def _pdf_failure_message(path: Path) -> str:
 
 
 def _read_docx(path: Path) -> list[dict[str, Any]]:
-    from docx import Document
+    try:
+        from docx import Document
+    except ModuleNotFoundError as e:
+        raise RuntimeError(_DOCX_INSTALL_HINT) from e
 
     doc = Document(str(path))
     full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
