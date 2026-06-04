@@ -20,7 +20,7 @@ from config import (
     WHISPER_PRELOAD,
 )
 from economist.router import router as economist_router
-from lawyer.doc_processor import pymupdf_available
+from lawyer.doc_processor import docx_available, pymupdf_available
 from lawyer.router import router as lawyer_router
 from secretary.router import router as secretary_router
 
@@ -75,6 +75,11 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "Модуль Юрист: не установлен pymupdf — многие PDF не прочитаются. "
             "Выполните: venv\\Scripts\\pip install pymupdf pdfplumber"
+        )
+    if not docx_available():
+        logger.warning(
+            "Модуль Юрист: не установлен python-docx — загрузка DOCX недоступна. "
+            "Выполните: pip install python-docx"
         )
     if WHISPER_PRELOAD:
         try:
