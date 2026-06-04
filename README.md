@@ -180,6 +180,7 @@ kill 12345
 | Эмбеддинги офлайн | Модель в `models/` или `EMBEDDING_PROVIDER=openai`. |
 | RapidOCR | При первом OCR скачаются ONNX-модели (~десятки МБ). |
 | Загрузка большого TXT/DOCX, ошибка `max_tokens_per_request` | Обновите код (`git pull`) — эмбеддинги OpenAI идут пакетами. Либо `EMBEDDING_PROVIDER=local`. |
+| TXT с «пїЅпїЅ…» вместо русского текста | Файл в CP1251, а читался как UTF-8. После `git pull` кодировка подбирается автоматически; надёжнее сохранить TXT в **UTF-8**. |
 | OCR: `Killed` в логе | Мало RAM. В `.env`: `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, swap 2 ГБ или загрузка DOCX вместо скан-PDF. |
 | OCR: `libGL.so.1` | `pip uninstall -y opencv-python && pip install opencv-python-headless`, см. `scripts/fix_opencv_server.sh`. |
 
