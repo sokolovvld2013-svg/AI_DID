@@ -18,9 +18,12 @@ from lawyer.search_utils import (
     keyword_score_core,
     min_core_matches_required,
     phrase_bonus,
+    core_stems_proximity_score,
     query_phrase_score_with_context,
     query_search_substrings,
+    query_stem_search_terms,
     reciprocal_rank_fusion,
+    stem_match_count,
 )
 from lawyer.text_encoding import repair_citation_text, repair_text
 
@@ -498,8 +501,11 @@ class LawyerRAG:
         merged: dict[str, dict[str, Any]] = {}
         file_ids = list(self._files.keys()) or [None]
 
-        for phrase in query_search_substrings(query, core):
-            if len(phrase) < 10:
+        search_terms = list(query_search_substrings(query, core))
+        search_terms.extend(query_stem_search_terms(core))
+
+        for phrase in search_terms:
+            if len(phrase) < 8:
                 continue
             for fid in file_ids:
                 try:
@@ -537,12 +543,44 @@ class LawyerRAG:
                 nhit = candidates.get(f"{fid}_{idx + delta}")
                 if nhit:
                     neighbors.append(nhit.get("text") or "")
+            merged = " ".join([hit.get("text") or ""] + neighbors)
             hit["phrase_score"] = query_phrase_score_with_context(
                 query,
                 core,
                 hit.get("text") or "",
                 neighbors,
             )
+            hit["stem_score"] = core_stems_proximity_score(core, merged)
+
+    def _pool_seed_per_file(
+        self,
+        candidates: dict[str, dict[str, Any]],
+        per_file: int = 4,
+    ) -> list[dict[str, Any]]:
+        """Лучшие чанки с каждого файла — в пул до общей фильтрации."""
+        if len(self._files) <= 1:
+            return []
+
+        by_file: dict[str, list[dict[str, Any]]] = {}
+        for hit in candidates.values():
+            fid = hit.get("file_id") or ""
+            if fid:
+                by_file.setdefault(fid, []).append(hit)
+
+        seed: list[dict[str, Any]] = []
+        for fid in self._files:
+            pool = sorted(
+                by_file.get(fid, []),
+                key=lambda h: (
+                    h.get("phrase_score", 0),
+                    h.get("stem_score", 0),
+                    h.get("core_matches", 0),
+                    h["score"],
+                ),
+                reverse=True,
+            )
+            seed.extend(pool[:per_file])
+        return seed
 
     def _inject_best_per_file(
         self,
@@ -550,9 +588,17 @@ class LawyerRAG:
         candidates: dict[str, dict[str, Any]],
         limit: int,
     ) -> list[dict[str, Any]]:
-        """В пул — лучший чанк с каждого файла (по phrase_score), если его ещё нет."""
+        """В пул — лучший чанк с каждого файла (фраза или близкие основы слов)."""
         if len(self._files) <= 1:
             return pool
+
+        def _rank_key(h: dict[str, Any]) -> tuple:
+            return (
+                h.get("phrase_score", 0),
+                h.get("stem_score", 0),
+                h.get("core_matches", 0),
+                h["score"],
+            )
 
         best_by_file: dict[str, dict[str, Any]] = {}
         for hit in candidates.values():
@@ -560,7 +606,7 @@ class LawyerRAG:
             if not fid:
                 continue
             prev = best_by_file.get(fid)
-            if prev is None or hit.get("phrase_score", 0) > prev.get("phrase_score", 0):
+            if prev is None or _rank_key(hit) > _rank_key(prev):
                 best_by_file[fid] = hit
 
         seen = {_hit_key(h) for h in pool}
@@ -572,7 +618,7 @@ class LawyerRAG:
             key = _hit_key(hit)
             if key in seen:
                 continue
-            if hit.get("phrase_score", 0) <= 0:
+            if hit.get("phrase_score", 0) <= 0 and hit.get("stem_score", 0) < 20:
                 continue
             prefix.append(hit)
             seen.add(key)
@@ -619,8 +665,11 @@ class LawyerRAG:
                 hit["semantic_score"] = float(hit.get("semantic_score") or 0.0)
             text = hit.get("text") or ""
             ps = float(hit.get("phrase_score") or 0.0)
+            ss = float(hit.get("stem_score") or 0.0)
             core_kw = keyword_score_core(core, text) if core else 0.0
-            hit["phrase_score"] = ps
+            hit["phrase_score"] = max(ps, ss)
+            hit["stem_score"] = ss
+            hit["stem_matches"] = stem_match_count(core, text)
             hit["keyword_score"] = (
                 core_kw
                 + phrase_bonus(core, text)
@@ -656,17 +705,21 @@ class LawyerRAG:
             candidates.values(),
             key=lambda h: (
                 h.get("phrase_score", 0),
+                h.get("stem_score", 0),
+                h.get("stem_matches", 0),
                 h.get("core_matches", 0) >= len(core) if core else False,
                 h.get("core_matches", 0),
                 h["score"],
                 h.get("rrf", 0.0),
-                h["keyword_score"],
-                h["semantic_score"],
             ),
             reverse=True,
         )
 
-        phrase_strong = [h for h in ranked if h.get("phrase_score", 0) >= 20]
+        phrase_strong = [
+            h
+            for h in ranked
+            if h.get("phrase_score", 0) >= 20 or h.get("stem_score", 0) >= 28
+        ]
         if phrase_strong:
             ranked = phrase_strong + [h for h in ranked if h not in phrase_strong]
         elif len(core) >= 2:
@@ -680,15 +733,21 @@ class LawyerRAG:
                 ranked = strong + [h for h in ranked if h not in strong]
 
         min_core = min_core_matches_required(core)
-        pool = [
+        pool_seed = self._pool_seed_per_file(candidates)
+        seen_seed = {_hit_key(h) for h in pool_seed}
+        pool = list(pool_seed) + [
             h
             for h in ranked
-            if h.get("core_matches", 0) >= min_core
-            or (
-                h["score"] >= MIN_COMBINED_SCORE
-                and (
-                    h.get("core_matches", 0) >= 1
-                    or float(h.get("keyword_score") or 0) >= 4.0
+            if _hit_key(h) not in seen_seed
+            and (
+                h.get("core_matches", 0) >= min_core
+                or h.get("stem_score", 0) >= 25
+                or (
+                    h["score"] >= MIN_COMBINED_SCORE
+                    and (
+                        h.get("core_matches", 0) >= 1
+                        or float(h.get("keyword_score") or 0) >= 4.0
+                    )
                 )
             )
         ]
@@ -709,6 +768,7 @@ class LawyerRAG:
         pool.sort(
             key=lambda h: (
                 h.get("phrase_score", 0),
+                h.get("stem_score", 0),
                 h.get("core_matches", 0),
                 h.get("keyword_score", 0),
                 h["score"],
@@ -723,7 +783,7 @@ class LawyerRAG:
         files_in_result = {h.get("file_id") for h in filtered}
         logger.info(
             "Поиск «%s»: core=%s, retrieve_k=%d, кандидатов=%d, в контекст=%d, "
-            "файлов в базе=%d, в ответе=%d, score=%.3f, phrase=%.0f, kw=%.1f, core=%s/%s",
+            "файлов в базе=%d, в ответе=%d, score=%.3f, phrase=%.0f, stem=%.0f, kw=%.1f, core=%s/%s",
             query[:50],
             core,
             retrieve_k,
@@ -733,6 +793,7 @@ class LawyerRAG:
             len(files_in_result),
             best.get("score", 0),
             best.get("phrase_score", 0),
+            best.get("stem_score", 0),
             best.get("keyword_score", 0),
             best.get("core_matches", 0),
             len(core),
@@ -749,6 +810,7 @@ class LawyerRAG:
                 "keyword_score": h["keyword_score"],
                 "semantic_score": h.get("semantic_score", 0.0),
                 "phrase_score": h.get("phrase_score", 0.0),
+                "stem_score": h.get("stem_score", 0.0),
                 "core_matches": h.get("core_matches", 0),
             }
             for h in filtered
