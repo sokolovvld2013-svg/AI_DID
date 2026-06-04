@@ -85,7 +85,10 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
         cm = int(hit.get("core_matches") or 0)
         sem = float(hit.get("semantic_score") or 0)
 
-        if core and cm >= len(core):
+        stem = float(hit.get("stem_score") or 0)
+        if stem >= 28 or float(hit.get("phrase_score") or 0) >= 20:
+            return True
+        if core and cm >= len(core) and stem >= 15:
             return True
         if cm >= need_core and (score >= min_score or kw >= 4.0):
             return True
@@ -126,6 +129,7 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
                 by_file.get(fid) or [],
                 key=lambda h: (
                     h.get("phrase_score", 0),
+                    h.get("stem_score", 0),
                     h.get("core_matches", 0),
                     h.get("score", 0),
                 ),

@@ -30,6 +30,8 @@ _TOKEN_ALIASES: dict[str, list[str]] = {
 
 # Длина общего префикса для «закупок» / «закупка» и т.п.
 _RU_PREFIX_MIN = 5
+# Окно в символах: основы слов запроса рядом («ограниченным» / «ограниченного»)
+_STEM_PROXIMITY_SPAN = 180
 
 _RE_TOKEN = re.compile(r"[\wа-яё]+", re.IGNORECASE)
 
@@ -161,10 +163,84 @@ def count_core_matches(core: list[str], document: str) -> int:
         if _token_in_document(t, doc_lower, doc_tokens):
             matched += 1
             continue
-        # OCR: «бизнес» как «бизн» / разрыв «бизнес план» → «бизнес-план»
+        if len(t) >= 4 and word_stem(t) in doc_lower:
+            matched += 1
+            continue
         if len(t) >= 4 and t[:4] in doc_lower.replace("-", "").replace(" ", ""):
             matched += 1
     return matched
+
+
+def word_stem(word: str) -> str:
+    """Грубая основа для падежей: распространением → распространен."""
+    w = word.lower().strip()
+    if len(w) >= 10:
+        return w[:9]
+    if len(w) >= 7:
+        return w[:7]
+    if len(w) >= 5:
+        return w[:5]
+    return w
+
+
+def stems_in_order(words: list[str], document: str) -> bool:
+    """Основы слов запроса в том же порядке (между ними — любой текст)."""
+    if not words:
+        return False
+    doc = normalize_match_text(document)
+    pos = 0
+    matched = 0
+    for w in words:
+        if len(w) < 2 or w in _STOP_WORDS:
+            continue
+        stem = word_stem(w)
+        idx = doc.find(stem, pos)
+        if idx < 0:
+            return False
+        matched += 1
+        pos = idx + max(3, len(stem))
+    return matched >= 2
+
+
+def core_stems_proximity_score(core: list[str], document: str) -> float:
+    """Основы всех ключевых слов в пределах короткого фрагмента текста."""
+    if not core or not document:
+        return 0.0
+    doc = normalize_match_text(document)
+    positions: list[int] = []
+    for w in core:
+        if len(w) < 4:
+            continue
+        p = doc.find(word_stem(w))
+        if p < 0:
+            return 0.0
+        positions.append(p)
+    need = len([w for w in core if len(w) >= 4])
+    if len(positions) < need or need == 0:
+        return 0.0
+    span = max(positions) - min(positions)
+    if span <= _STEM_PROXIMITY_SPAN:
+        return 40.0 + 12.0 * len(positions)
+    if span <= _STEM_PROXIMITY_SPAN * 3:
+        return 22.0
+    return 0.0
+
+
+def query_stem_search_terms(core: list[str]) -> list[str]:
+    """Подстроки для Chroma $contains (основы длинных слов)."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for w in core:
+        stem = word_stem(w)
+        if len(stem) >= 6 and stem not in seen:
+            seen.add(stem)
+            out.append(stem)
+    if len(core) >= 2:
+        pair = f"{word_stem(core[-2])} {word_stem(core[-1])}"
+        if len(pair.replace(" ", "")) >= 10 and pair not in seen:
+            seen.add(pair)
+            out.append(pair)
+    return out
 
 
 def core_words_in_order(core: list[str], document: str) -> bool:
@@ -224,6 +300,14 @@ def query_phrase_score(query: str, core: list[str], document: str) -> float:
         if core_words_in_order(core, doc):
             score = max(score, 45.0)
 
+    tokens = [t for t in tokenize(query) if len(t) >= 2]
+    if stems_in_order(tokens, doc):
+        score = max(score, 55.0)
+
+    stem_near = core_stems_proximity_score(core, doc)
+    if stem_near:
+        score = max(score, stem_near)
+
     return score
 
 
@@ -239,8 +323,26 @@ def query_phrase_score_with_context(
         merged = normalize_match_text(
             " ".join([chunk_text] + [t for t in context_texts if t])
         )
-        score = max(score, query_phrase_score(query, core, merged))
+        score = max(
+            score,
+            query_phrase_score(query, core, merged),
+            core_stems_proximity_score(core, merged),
+        )
     return score
+
+
+def stem_match_count(core: list[str], document: str) -> int:
+    """Сколько ключевых слов найдено по основе (для ранжирования)."""
+    if not core or not document:
+        return 0
+    doc = normalize_match_text(document)
+    n = 0
+    for w in core:
+        if len(w) < 3:
+            continue
+        if word_stem(w) in doc:
+            n += 1
+    return n
 
 
 def keyword_score_core(core: list[str], document: str) -> float:
