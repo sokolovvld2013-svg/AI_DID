@@ -167,6 +167,55 @@ def count_core_matches(core: list[str], document: str) -> int:
     return matched
 
 
+def core_words_in_order(core: list[str], document: str) -> bool:
+    """Ключевые слова встречаются в документе в том же порядке (между ними могут быть другие слова)."""
+    if not core:
+        return False
+    doc = normalize_match_text(document)
+    pos = 0
+    for word in core:
+        idx = doc.find(word, pos)
+        if idx < 0:
+            return False
+        pos = idx + len(word)
+    return True
+
+
+def query_phrase_score(query: str, core: list[str], document: str) -> float:
+    """Бонус за точную или порядковую фразу (важно для «…для служебного пользования»)."""
+    if not document:
+        return 0.0
+    doc = normalize_match_text(document)
+    q = normalize_match_text(query)
+    score = 0.0
+
+    if len(q) >= 10 and q in doc:
+        score += 80.0
+
+    if len(core) >= 2:
+        tight = " ".join(core)
+        if tight in doc:
+            score += 60.0
+        if core_words_in_order(core, doc):
+            score += 45.0
+        tail = " ".join(core[-2:])
+        if len(tail) >= 8 and tail in doc:
+            score += 35.0
+        if len(core) >= 3:
+            head = " ".join(core[:3])
+            if head in doc:
+                score += 25.0
+
+    return score
+
+
+def keyword_score_core(core: list[str], document: str) -> float:
+    """Совпадение только по значимым словам запроса (без раздувания expand_query_tokens)."""
+    if not core:
+        return 0.0
+    return keyword_score(core, document)
+
+
 def keyword_score(query_tokens: list[str], document: str) -> float:
     if not query_tokens or not document:
         return 0.0
@@ -216,12 +265,20 @@ def phrase_bonus(core: list[str], document: str) -> float:
     return 0.0
 
 
-def combined_score(semantic: float, keyword: float, core_match_ratio: float) -> float:
+def combined_score(
+    semantic: float,
+    keyword: float,
+    core_match_ratio: float,
+    phrase_score: float = 0.0,
+) -> float:
+    phrase_boost = min(phrase_score / 80.0, 1.0) * 0.5
     kw_norm = min(keyword / 18.0, 1.0)
     core_r = min(core_match_ratio, 1.0)
+    if phrase_boost >= 0.35:
+        return min(1.0, phrase_boost + 0.15 * kw_norm + 0.1 * semantic + core_r * 0.15)
     # Полное совпадение терминов запроса — главный сигнал для регламентов и положений
     if core_r >= 1.0:
-        return min(1.0, 0.1 * semantic + 0.35 * kw_norm + 0.55)
+        return min(1.0, 0.1 * semantic + 0.35 * kw_norm + 0.55 + phrase_boost)
     if core_r >= 0.66:
         return min(1.0, 0.15 * semantic + 0.45 * kw_norm + core_r * 0.4)
     if kw_norm >= 0.2 or core_r >= 0.5:

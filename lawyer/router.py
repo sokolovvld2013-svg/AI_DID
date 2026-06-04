@@ -122,7 +122,16 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
             return f"{h.get('file_id')}_{h.get('chunk_index')}"
 
         for fid in sorted(file_ids_in_hits):
-            for h in (by_file.get(fid) or [])[:min_per_file]:
+            pool = sorted(
+                by_file.get(fid) or [],
+                key=lambda h: (
+                    h.get("phrase_score", 0),
+                    h.get("core_matches", 0),
+                    h.get("score", 0),
+                ),
+                reverse=True,
+            )
+            for h in pool[:min_per_file]:
                 uid = _hit_uid(h)
                 if uid in seen_keys:
                     continue
