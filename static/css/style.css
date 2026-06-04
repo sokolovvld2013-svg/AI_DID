@@ -414,12 +414,10 @@ body.app-file-processing .upload-zone.is-processing * {
     gap: 0.65rem;
     padding: 0.75rem 0.9rem;
     background: #e3f0fa;
-    border: 2px solid var(--accent);
-    border-left-width: 5px;
+    border: 1px solid var(--accent-muted);
     color: var(--text);
     font-weight: 600;
     font-size: 0.95rem;
-    box-shadow: var(--shadow-sm);
     animation: status-loading-pulse 2s ease-in-out infinite;
 }
 
