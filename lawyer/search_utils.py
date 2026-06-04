@@ -17,7 +17,19 @@ _TOKEN_ALIASES: dict[str, list[str]] = {
     "планн": ["план"],
     "приказ": ["приказа", "приказе"],
     "положен": ["положение", "положения", "положении"],
+    "закуп": ["закупка", "закупки", "закупок", "закупке", "закупках", "закупочная"],
+    "закупк": ["закупка", "закупки", "закупок"],
+    "договор": ["договора", "договору", "договором", "договоры"],
+    "поставщик": ["поставщика", "поставщиком", "поставщики"],
+    "контракт": ["контракта", "контракту", "контракты"],
+    "стать": ["статья", "статьи", "статье", "статью"],
+    "пункт": ["пункта", "пункте", "пункты"],
+    "срок": ["срока", "сроки", "сроков"],
+    "ответствен": ["ответственность", "ответственности"],
 }
+
+# Длина общего префикса для «закупок» / «закупка» и т.п.
+_RU_PREFIX_MIN = 5
 
 _RE_TOKEN = re.compile(r"[\wа-яё]+", re.IGNORECASE)
 
@@ -65,27 +77,51 @@ def expand_query_tokens(query: str) -> list[str]:
 
 def expand_query_phrases(query: str) -> list[str]:
     q = query.strip()
-    phrases = [q]
+    phrases = [q, enrich_query_for_embedding(query)]
     low = normalize_match_text(q)
     words = [w for w in low.split() if len(w) >= 2 and w not in _STOP_WORDS]
+    core = core_query_tokens(query)
     variants = [
         low,
         low.replace("бизне", "бизнес"),
         re.sub(r"\s+", " ", low),
         low.replace(" ", "-"),
         low.replace(" ", ""),
+        " ".join(core),
+        "-".join(core),
     ]
     for i in range(len(words) - 1):
         variants.append(f"{words[i]} {words[i + 1]}")
     if len(words) >= 3:
         for i in range(len(words) - 2):
             variants.append(f"{words[i]} {words[i + 1]} {words[i + 2]}")
+    for t in core:
+        if len(t) >= 4:
+            variants.append(t)
     seen: set[str] = set()
     for p in variants:
         if p and p not in seen:
             seen.add(p)
             phrases.append(p)
     return phrases
+
+
+def enrich_query_for_embedding(query: str) -> str:
+    """Усиленный текст запроса для эмбеддинга (ключевые слова дважды)."""
+    q = query.strip()
+    core = core_query_tokens(query)
+    if not core:
+        return q
+    extra = " ".join(core)
+    return f"{q}. Ключевые термины: {extra}. {extra}"
+
+
+def _shared_prefix_len(a: str, b: str, min_len: int = _RU_PREFIX_MIN) -> int:
+    n = min(len(a), len(b))
+    i = 0
+    while i < n and a[i] == b[i]:
+        i += 1
+    return i if i >= min_len else 0
 
 
 def _token_in_document(token: str, doc_lower: str, doc_tokens: list[str]) -> bool:
@@ -99,8 +135,13 @@ def _token_in_document(token: str, doc_lower: str, doc_tokens: list[str]) -> boo
         return True
     if len(token) >= 3 and token[:3] in compact:
         return True
+    prefix = token[:_RU_PREFIX_MIN] if len(token) >= _RU_PREFIX_MIN else ""
+    if prefix and prefix in doc_lower:
+        return True
     for dt in doc_tokens:
         if token == dt:
+            return True
+        if prefix and _shared_prefix_len(token, dt) >= _RU_PREFIX_MIN:
             return True
         if len(token) >= 4 and len(dt) >= 4 and token[:4] == dt[:4]:
             return True
@@ -167,19 +208,34 @@ def phrase_bonus(core: list[str], document: str) -> float:
         return 0.0
     n = count_core_matches(core, document)
     if n == len(core):
-        return 6.0
-    if n >= len(core) - 1 and n >= 1:
-        return 2.0
+        return 12.0
+    if n >= len(core) - 1 and n >= 2:
+        return 5.0
+    if n >= 1:
+        return 1.5
     return 0.0
 
 
 def combined_score(semantic: float, keyword: float, core_match_ratio: float) -> float:
-    kw_norm = min(keyword / 12.0, 1.0)
-    core_boost = min(core_match_ratio, 1.0) * 0.3
-    # Явное совпадение слов важнее «похожести» эмбеддинга на искажённом OCR-тексте
-    if kw_norm >= 0.25 or core_match_ratio >= 0.5:
-        return min(1.0, 0.2 * semantic + 0.6 * kw_norm + core_boost)
-    return min(1.0, 0.55 * semantic + 0.3 * kw_norm + core_boost)
+    kw_norm = min(keyword / 18.0, 1.0)
+    core_r = min(core_match_ratio, 1.0)
+    # Полное совпадение терминов запроса — главный сигнал для регламентов и положений
+    if core_r >= 1.0:
+        return min(1.0, 0.1 * semantic + 0.35 * kw_norm + 0.55)
+    if core_r >= 0.66:
+        return min(1.0, 0.15 * semantic + 0.45 * kw_norm + core_r * 0.4)
+    if kw_norm >= 0.2 or core_r >= 0.5:
+        return min(1.0, 0.2 * semantic + 0.55 * kw_norm + core_r * 0.3)
+    return min(1.0, 0.5 * semantic + 0.25 * kw_norm + core_r * 0.2)
+
+
+def reciprocal_rank_fusion(rank_lists: list[list[str]], k: int = 60) -> dict[str, float]:
+    """RRF: объединение ранжирований (семантика + ключевые слова)."""
+    scores: dict[str, float] = {}
+    for ranked in rank_lists:
+        for i, key in enumerate(ranked):
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + i + 1)
+    return scores
 
 
 def min_core_matches_required(core: list[str]) -> int:
@@ -189,5 +245,7 @@ def min_core_matches_required(core: list[str]) -> int:
     if len(core) == 1:
         return 1
     if len(core) == 2:
-        return 1
-    return max(1, (len(core) + 1) // 2)
+        return 2
+    if len(core) == 3:
+        return 2
+    return max(2, (len(core) * 2 + 2) // 3)
