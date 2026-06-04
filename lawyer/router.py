@@ -101,9 +101,41 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
 
     picked = [h for h in hits if _is_relevant(h)]
 
-    # Несколько документов в базе: добавить лучший фрагмент из другого файла
+    # Несколько документов: в контекст LLM — лучшие фрагменты с каждого файла
     file_ids_in_hits = {h.get("file_id") for h in hits if h.get("file_id")}
     if len(file_ids_in_hits) > 1:
+        picked_ids = {h.get("file_id") for h in picked}
+        min_per_file = max(1, CONTEXT_K // len(file_ids_in_hits))
+        if CONTEXT_K >= 4:
+            min_per_file = max(2, min_per_file)
+
+        by_file: dict[str, list[dict]] = {}
+        for h in hits:
+            fid = h.get("file_id") or ""
+            if fid:
+                by_file.setdefault(fid, []).append(h)
+
+        diversified: list[dict] = []
+        seen_keys: set[str] = set()
+
+        def _hit_uid(h: dict) -> str:
+            return f"{h.get('file_id')}_{h.get('chunk_index')}"
+
+        for fid in sorted(file_ids_in_hits):
+            for h in (by_file.get(fid) or [])[:min_per_file]:
+                uid = _hit_uid(h)
+                if uid in seen_keys:
+                    continue
+                diversified.append(h)
+                seen_keys.add(uid)
+
+        for h in picked:
+            uid = _hit_uid(h)
+            if uid not in seen_keys:
+                diversified.append(h)
+                seen_keys.add(uid)
+        picked = diversified
+
         picked_ids = {h.get("file_id") for h in picked}
         for h in hits:
             if len(picked) >= CONTEXT_K:
@@ -111,7 +143,11 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
             fid = h.get("file_id")
             if not fid or fid in picked_ids:
                 continue
-            if h.get("core_matches", 0) >= 1 or float(h.get("keyword_score") or 0) >= 2:
+            if (
+                h.get("core_matches", 0) >= 1
+                or float(h.get("keyword_score") or 0) >= 2.0
+                or float(h.get("score") or 0) >= min_score * 0.7
+            ):
                 picked.append(h)
                 picked_ids.add(fid)
 

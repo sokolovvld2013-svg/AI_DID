@@ -53,7 +53,7 @@ def _balance_hits_by_file(
     file_ids: list[str],
     limit: int,
 ) -> list[dict[str, Any]]:
-    """Не отдавать весь топ одному файлу, если в базе несколько документов."""
+    """Равномерно: несколько лучших чанков с каждого файла, не только с самого большого."""
     if limit <= 0 or not hits:
         return []
     if len(file_ids) <= 1:
@@ -65,14 +65,21 @@ def _balance_hits_by_file(
         if fid in by_file:
             by_file[fid].append(hit)
 
+    n_files = len(file_ids)
+    min_per_file = max(1, limit // n_files)
+    if limit >= 4 and n_files >= 2:
+        min_per_file = max(2, min_per_file)
+
     balanced: list[dict[str, Any]] = []
     seen: set[str] = set()
 
     for fid in file_ids:
-        pool = by_file.get(fid) or []
-        if pool:
-            balanced.append(pool[0])
-            seen.add(_hit_key(pool[0]))
+        for hit in (by_file.get(fid) or [])[:min_per_file]:
+            key = _hit_key(hit)
+            if key in seen:
+                continue
+            balanced.append(hit)
+            seen.add(key)
 
     for hit in hits:
         if len(balanced) >= limit:
@@ -321,7 +328,7 @@ class LawyerRAG:
 
         merged: dict[str, dict[str, Any]] = {}
         per_file_n = min(
-            max(PER_FILE_SEMANTIC_K, n // len(file_ids) + 4),
+            max(PER_FILE_SEMANTIC_K, n // len(file_ids) + 8),
             self._collection.count(),
         )
         for fid in file_ids:
@@ -337,79 +344,109 @@ class LawyerRAG:
         )
         return merged
 
+    def _merge_keyword_hit(
+        self,
+        merged: dict[str, dict[str, Any]],
+        doc: str,
+        meta: dict[str, Any],
+        query_tokens: list[str],
+    ) -> None:
+        cid = _chunk_key(meta)
+        ks = keyword_score(query_tokens, doc)
+        if ks <= 0:
+            return
+        prev = merged.get(cid)
+        if prev is None or ks > prev["keyword_score"]:
+            merged[cid] = {
+                "id": cid,
+                "text": doc,
+                "filename": meta.get("filename", ""),
+                "page": int(meta.get("page") or 1),
+                "chunk_index": meta.get("chunk_index", 0),
+                "file_id": meta.get("file_id", ""),
+                "semantic_score": prev["semantic_score"] if prev else 0.0,
+                "keyword_score": ks,
+            }
+
+    def _keyword_candidates_scoped(
+        self,
+        query_tokens: list[str],
+        limit: int,
+        *,
+        file_id: str | None = None,
+    ) -> dict[str, dict[str, Any]]:
+        if not query_tokens:
+            return {}
+
+        merged: dict[str, dict[str, Any]] = {}
+        seen_ids: set[str] = set()
+        where_file = {"file_id": file_id} if file_id else None
+
+        for token in query_tokens:
+            if len(token) < 3:
+                continue
+            try:
+                kwargs: dict[str, Any] = {
+                    "where_document": {"$contains": token},
+                    "include": ["documents", "metadatas"],
+                    "limit": limit,
+                }
+                if where_file:
+                    kwargs["where"] = where_file
+                part = self._collection.get(**kwargs)
+            except Exception:
+                part = None
+            if not part or not part.get("ids"):
+                continue
+            for doc, meta in zip(part["documents"], part["metadatas"]):
+                cid = _chunk_key(meta)
+                if cid in seen_ids:
+                    continue
+                seen_ids.add(cid)
+                self._merge_keyword_hit(merged, doc or "", meta, query_tokens)
+
+        try:
+            kwargs = {"include": ["documents", "metadatas"]}
+            if where_file:
+                kwargs["where"] = where_file
+            all_data = self._collection.get(**kwargs)
+        except Exception:
+            all_data = None
+
+        docs = (all_data or {}).get("documents") or []
+        if docs and len(docs) <= KEYWORD_SCAN_MAX_CHUNKS:
+            for doc, meta in zip(docs, (all_data or {}).get("metadatas") or []):
+                if doc:
+                    self._merge_keyword_hit(merged, doc, meta, query_tokens)
+
+        return merged
+
     def _keyword_candidates(
         self,
         query_tokens: list[str],
         limit: int = 40,
     ) -> dict[str, dict[str, Any]]:
-        """Кандидаты по совпадению слов (опечатки, «бизне» → «бизнес»)."""
+        """Кандидаты по словам; при нескольких файлах — отдельно по каждому."""
         if not query_tokens:
             return {}
 
-        count = self._collection.count()
-        if count == 0:
+        if self._collection.count() == 0:
             return {}
 
+        file_ids = list(self._files.keys())
+        if len(file_ids) <= 1:
+            return self._keyword_candidates_scoped(query_tokens, limit)
+
         merged: dict[str, dict[str, Any]] = {}
-        seen_ids: set[str] = set()
-
-        # Подстрока в Chroma для длинных токенов
-        for token in query_tokens:
-            if len(token) < 3:
-                continue
-            try:
-                part = self._collection.get(
-                    where_document={"$contains": token},
-                    include=["documents", "metadatas"],
-                    limit=limit,
-                )
-            except Exception:
-                part = None
-            if part and part.get("ids"):
-                for doc, meta in zip(part["documents"], part["metadatas"]):
-                    cid = _chunk_key(meta)
-                    if cid in seen_ids:
-                        continue
-                    seen_ids.add(cid)
-                    ks = keyword_score(query_tokens, doc or "")
-                    if ks > 0:
-                        merged[cid] = {
-                            "id": cid,
-                            "text": doc,
-                            "filename": meta.get("filename", ""),
-                            "page": int(meta.get("page") or 1),
-                            "chunk_index": meta.get("chunk_index", 0),
-                            "file_id": meta.get("file_id", ""),
-                            "semantic_score": 0.0,
-                            "keyword_score": ks,
-                        }
-
-        # Полный перебор при небольшой базе — надёжнее для опечаток и OCR
-        if count <= KEYWORD_SCAN_MAX_CHUNKS:
-            all_data = self._collection.get(include=["documents", "metadatas"])
-            for doc, meta in zip(
-                all_data.get("documents") or [],
-                all_data.get("metadatas") or [],
-            ):
-                if not doc:
-                    continue
-                cid = _chunk_key(meta)
-                ks = keyword_score(query_tokens, doc)
-                if ks <= 0:
-                    continue
+        per_limit = max(25, limit // len(file_ids) + 8)
+        for fid in file_ids:
+            sub = self._keyword_candidates_scoped(
+                query_tokens, per_limit, file_id=fid
+            )
+            for cid, hit in sub.items():
                 prev = merged.get(cid)
-                if prev is None or ks > prev["keyword_score"]:
-                    merged[cid] = {
-                        "id": cid,
-                        "text": doc,
-                        "filename": meta.get("filename", ""),
-                        "page": int(meta.get("page") or 1),
-                        "chunk_index": meta.get("chunk_index", 0),
-                        "file_id": meta.get("file_id", ""),
-                        "semantic_score": prev["semantic_score"] if prev else 0.0,
-                        "keyword_score": ks,
-                    }
-
+                if prev is None or hit["keyword_score"] > prev["keyword_score"]:
+                    merged[cid] = hit
         return merged
 
     def search(self, query: str, top_k: int = CONTEXT_K) -> list[dict[str, Any]]:
