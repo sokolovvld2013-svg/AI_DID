@@ -18,7 +18,8 @@ from lawyer.search_utils import (
     keyword_score_core,
     min_core_matches_required,
     phrase_bonus,
-    query_phrase_score,
+    query_phrase_score_with_context,
+    query_search_substrings,
     reciprocal_rank_fusion,
 )
 from lawyer.text_encoding import repair_citation_text, repair_text
@@ -487,6 +488,99 @@ class LawyerRAG:
                     merged[cid] = hit
         return merged
 
+    def _phrase_contains_candidates(
+        self,
+        query: str,
+        core: list[str],
+        limit_per_phrase: int = 15,
+    ) -> dict[str, dict[str, Any]]:
+        """Прямой поиск подстроки в Chroma — не теряется из‑за границ чанков при ранжировании."""
+        merged: dict[str, dict[str, Any]] = {}
+        file_ids = list(self._files.keys()) or [None]
+
+        for phrase in query_search_substrings(query, core):
+            if len(phrase) < 10:
+                continue
+            for fid in file_ids:
+                try:
+                    kwargs: dict[str, Any] = {
+                        "where_document": {"$contains": phrase},
+                        "include": ["documents", "metadatas"],
+                        "limit": limit_per_phrase,
+                    }
+                    if fid:
+                        kwargs["where"] = {"file_id": fid}
+                    part = self._collection.get(**kwargs)
+                except Exception:
+                    continue
+                if not part or not part.get("ids"):
+                    continue
+                for doc, meta in zip(part["documents"], part["metadatas"]):
+                    if not doc or not meta:
+                        continue
+                    self._merge_semantic_hit(merged, doc, meta, 0.12)
+
+        return merged
+
+    def _refresh_phrase_scores(
+        self,
+        candidates: dict[str, dict[str, Any]],
+        query: str,
+        core: list[str],
+    ) -> None:
+        """Пересчёт phrase_score с учётом соседних чанков (фраза через границу 600 символов)."""
+        for cid, hit in list(candidates.items()):
+            fid = hit.get("file_id") or ""
+            idx = int(hit.get("chunk_index") or 0)
+            neighbors: list[str] = []
+            for delta in (-1, 1):
+                nhit = candidates.get(f"{fid}_{idx + delta}")
+                if nhit:
+                    neighbors.append(nhit.get("text") or "")
+            hit["phrase_score"] = query_phrase_score_with_context(
+                query,
+                core,
+                hit.get("text") or "",
+                neighbors,
+            )
+
+    def _inject_best_per_file(
+        self,
+        pool: list[dict[str, Any]],
+        candidates: dict[str, dict[str, Any]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """В пул — лучший чанк с каждого файла (по phrase_score), если его ещё нет."""
+        if len(self._files) <= 1:
+            return pool
+
+        best_by_file: dict[str, dict[str, Any]] = {}
+        for hit in candidates.values():
+            fid = hit.get("file_id") or ""
+            if not fid:
+                continue
+            prev = best_by_file.get(fid)
+            if prev is None or hit.get("phrase_score", 0) > prev.get("phrase_score", 0):
+                best_by_file[fid] = hit
+
+        seen = {_hit_key(h) for h in pool}
+        prefix: list[dict[str, Any]] = []
+        for fid in self._files:
+            hit = best_by_file.get(fid)
+            if not hit:
+                continue
+            key = _hit_key(hit)
+            if key in seen:
+                continue
+            if hit.get("phrase_score", 0) <= 0:
+                continue
+            prefix.append(hit)
+            seen.add(key)
+
+        prefix_keys = {_hit_key(p) for p in prefix}
+        combined = prefix + [h for h in pool if _hit_key(h) not in prefix_keys]
+        return combined[: max(limit * 3, len(self._files) * 4)]
+
     def search(self, query: str, top_k: int = CONTEXT_K) -> list[dict[str, Any]]:
         if self._collection.count() == 0:
             return []
@@ -497,6 +591,16 @@ class LawyerRAG:
         retrieve_k = self._effective_retrieve_k()
         candidates = self._semantic_candidates(query, retrieve_k)
         kw = self._keyword_candidates(query_tokens, limit=max(60, retrieve_k // 2))
+        phrase_hits = self._phrase_contains_candidates(query, core)
+
+        for cid, hit in phrase_hits.items():
+            if cid in candidates:
+                candidates[cid]["semantic_score"] = max(
+                    candidates[cid]["semantic_score"],
+                    hit["semantic_score"],
+                )
+            else:
+                candidates[cid] = hit
 
         for cid, hit in kw.items():
             if cid in candidates:
@@ -508,12 +612,13 @@ class LawyerRAG:
                 candidates[cid] = hit
 
         self._attach_neighbor_chunks(candidates, core, query_tokens)
+        self._refresh_phrase_scores(candidates, query, core)
 
         for hit in candidates.values():
             if "score" not in hit:
                 hit["semantic_score"] = float(hit.get("semantic_score") or 0.0)
             text = hit.get("text") or ""
-            ps = query_phrase_score(query, core, text)
+            ps = float(hit.get("phrase_score") or 0.0)
             core_kw = keyword_score_core(core, text) if core else 0.0
             hit["phrase_score"] = ps
             hit["keyword_score"] = (
@@ -561,12 +666,16 @@ class LawyerRAG:
             reverse=True,
         )
 
-        phrase_strong = [h for h in ranked if h.get("phrase_score", 0) >= 25]
+        phrase_strong = [h for h in ranked if h.get("phrase_score", 0) >= 20]
         if phrase_strong:
             ranked = phrase_strong + [h for h in ranked if h not in phrase_strong]
-
-        if len(core) >= 2:
-            strong = [h for h in ranked if h.get("core_matches", 0) >= len(core)]
+        elif len(core) >= 2:
+            # Без точной фразы — не выталкиваем в топ чанки только с разрозненными словами
+            strong = sorted(
+                [h for h in ranked if h.get("core_matches", 0) >= len(core)],
+                key=lambda h: (h.get("phrase_score", 0), h["score"]),
+                reverse=True,
+            )
             if strong:
                 ranked = strong + [h for h in ranked if h not in strong]
 
@@ -595,8 +704,11 @@ class LawyerRAG:
         else:
             pool = pool[: max(top_k * 5, len(self._files) * 8, retrieve_k // 3)]
 
+        pool = self._inject_best_per_file(pool, candidates, top_k)
+
         pool.sort(
             key=lambda h: (
+                h.get("phrase_score", 0),
                 h.get("core_matches", 0),
                 h.get("keyword_score", 0),
                 h["score"],
