@@ -181,31 +181,65 @@ def core_words_in_order(core: list[str], document: str) -> bool:
     return True
 
 
+def query_search_substrings(query: str, core: list[str]) -> list[str]:
+    """Подстроки для поиска в Chroma и в тексте (включая «для» и окна из запроса)."""
+    seen: set[str] = set()
+    out: list[str] = []
+
+    def add(s: str) -> None:
+        s = normalize_match_text(s)
+        if len(s) >= 8 and s not in seen:
+            seen.add(s)
+            out.append(s)
+
+    add(query)
+    tokens = tokenize(query)
+    for i in range(len(tokens)):
+        for j in range(i + 2, min(i + 10, len(tokens) + 1)):
+            add(" ".join(tokens[i:j]))
+
+    if len(core) >= 2:
+        add(" ".join(core))
+        add(" ".join(core[-2:]))
+        add(" ".join(core[-3:]))
+    if len(core) >= 4:
+        add(f"{core[0]} {core[1]} для {core[2]} {core[3]}")
+        add(f"{core[1]} для {' '.join(core[2:])}")
+
+    return sorted(out, key=len, reverse=True)
+
+
 def query_phrase_score(query: str, core: list[str], document: str) -> float:
     """Бонус за точную или порядковую фразу (важно для «…для служебного пользования»)."""
     if not document:
         return 0.0
     doc = normalize_match_text(document)
-    q = normalize_match_text(query)
     score = 0.0
 
-    if len(q) >= 10 and q in doc:
-        score += 80.0
+    for sub in query_search_substrings(query, core):
+        if sub in doc:
+            score = max(score, 50.0 + min(len(sub), 40))
 
     if len(core) >= 2:
-        tight = " ".join(core)
-        if tight in doc:
-            score += 60.0
         if core_words_in_order(core, doc):
-            score += 45.0
-        tail = " ".join(core[-2:])
-        if len(tail) >= 8 and tail in doc:
-            score += 35.0
-        if len(core) >= 3:
-            head = " ".join(core[:3])
-            if head in doc:
-                score += 25.0
+            score = max(score, 45.0)
 
+    return score
+
+
+def query_phrase_score_with_context(
+    query: str,
+    core: list[str],
+    chunk_text: str,
+    context_texts: list[str] | None = None,
+) -> float:
+    """Фраза может быть разорвана границей чанка — проверяем склейку с соседями."""
+    score = query_phrase_score(query, core, chunk_text)
+    if context_texts:
+        merged = normalize_match_text(
+            " ".join([chunk_text] + [t for t in context_texts if t])
+        )
+        score = max(score, query_phrase_score(query, core, merged))
     return score
 
 
