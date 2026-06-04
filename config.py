@@ -124,8 +124,9 @@ MAX_LAWYER_LLM_CONTEXT_CHARS = int(os.getenv("MAX_LAWYER_LLM_CONTEXT_CHARS", 280
 # ChromaDB
 CHROMA_PERSIST_DIR = BASE_DIR / os.getenv("CHROMA_PERSIST_DIR", "chroma_data")
 
-# История
+# История (время в списках — APP_TIMEZONE, по умолчанию Москва)
 HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", 5))
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Moscow").strip() or "Europe/Moscow"
 
 # Пути модулей
 ECONOMIST_UPLOAD_DIR = BASE_DIR / "economist" / "uploaded"

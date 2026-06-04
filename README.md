@@ -80,42 +80,110 @@ git remote add origin https://github.com/USER/REPO.git
 git push -u origin main
 ```
 
-## Развёртывание на сервере
+## Развёртывание на сервере (Linux / VPS)
 
-1. Python 3.11+ и виртуальное окружение:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate   # Linux
-   pip install -r requirements.txt
-   ```
-2. Скопируйте `.env` с ключами API, `N8N_ECONOMIST_WEBHOOK_URL` и т.д.
-3. Запуск (пример):
-   ```bash
-   uvicorn main:app --host 0.0.0.0 --port 8000
-   ```
-4. Для офлайн-эмбеддингов заранее скачайте модель в `models/` или укажите `EMBEDDING_PROVIDER=openai`.
-5. Первый запуск RapidOCR скачает ONNX-модели (~десятки МБ) — учтите при деплое.
-6. **Секретарь (Whisper):** `pip install faster-whisper` и системный `ffmpeg` (`sudo apt install -y ffmpeg`). Первый запуск скачает модель (~150 МБ для `base`). На слабом VPS: `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1`; при старте можно `WHISPER_PRELOAD=true`.
+Ниже — типичный цикл: установка, запуск, обновление кода, остановка процесса.
 
-7. **Юрист (DOCX):** нужен пакет `python-docx` (`pip install python-docx` или полный `pip install -r requirements.txt`). Без него DOCX не читается.
+### Подготовка
 
-8. **OCR: процесс `Killed`** — не хватает оперативной памяти на VPS. В `.env` на сервере:
-   ```env
-   LAWYER_OCR_SCALE=1.0
-   LAWYER_OCR_MAX_SIDE=1200
-   ```
-   Либо добавьте swap (`fallocate -l 2G /swapfile && ...`), либо загружайте **DOCX** вместо скан-PDF.
+```bash
+cd ~/AI_DID                    # каталог проекта на сервере
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
 
-9. **OCR на Linux (ошибка `libGL.so.1`)** — часто ставится лишний `opencv-python`. Исправление:
-   ```bash
-   source venv/bin/activate
-   pip uninstall -y opencv-python
-   pip install --force-reinstall opencv-python-headless
-   bash scripts/fix_opencv_server.sh
-   ```
-   Либо системный пакет (если headless не помог): `sudo apt install -y libgl1 libglib2.0-0`
+Создайте `.env` (по образцу `.env.example`): ключи API, `N8N_ECONOMIST_WEBHOOK_URL`, настройки Whisper и OCR.
 
-Внешние программы для модуля Юрист **не используются** — только пакеты из `requirements.txt`.
+Дополнительно на сервере:
+
+- `sudo apt install -y ffmpeg` — для модуля Секретарь;
+- `pip install python-docx` — если DOCX в Юристе не читается (должен ставиться из `requirements.txt`, но проверьте после деплоя).
+
+### Обновление кода с GitHub
+
+```bash
+cd ~/AI_DID
+git pull
+source venv/bin/activate
+pip install -r requirements.txt   # при изменении зависимостей
+```
+
+После обновления перезапустите uvicorn (см. ниже).
+
+### Запуск приложения
+
+Перейдите в каталог проекта и активируйте venv:
+
+```bash
+cd ~/AI_DID
+source venv/bin/activate
+```
+
+**Проверка в текущей сессии SSH** (процесс завершится при закрытии терминала):
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Для разработки на своём ПК можно добавить `--reload`; на сервере для постоянной работы **лучше без `--reload`**.
+
+**Фоновый запуск** — приложение продолжит работать после закрытия SSH:
+
+```bash
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 --reload > uvicorn.log 2>&1 &
+```
+
+- `nohup` и `&` — процесс не привязан к терминалу;
+- `> uvicorn.log 2>&1` — логи в файл `uvicorn.log` в каталоге проекта;
+- `--reload` — перезапуск при изменении файлов (удобно при правках на сервере; для «чистого» продакшена можно убрать).
+
+Проверка, что процесс поднялся:
+
+```bash
+tail -f uvicorn.log
+```
+
+В логе должно появиться: `Uvicorn running on http://0.0.0.0:8000`.
+
+### Доступ в браузере
+
+- Адрес **`http://0.0.0.0:8000`** в браузере не открывайте — это служебный bind «все интерфейсы».
+- Открывайте **`http://ПУБЛИЧНЫЙ_IP_СЕРВЕРА:8000`** (IP из панели хостинга).
+- Если страница не открывается — откройте порт **8000** в firewall / security group VPS.
+
+### Остановка и перезапуск
+
+**Найти процесс по порту 8000:**
+
+```bash
+lsof -i :8000
+```
+
+В колонке `PID` — номер процесса (например, `12345`).
+
+**Завершить процесс:**
+
+```bash
+kill 12345
+```
+
+Подставьте свой PID. Если процесс не завершился: `kill -9 12345`.
+
+После остановки снова запустите uvicorn (интерактивно или через `nohup`).
+
+### Зависимости и типичные проблемы
+
+| Ситуация | Что сделать |
+|----------|-------------|
+| Первый запуск Whisper | Скачается модель (~150 МБ для `base`). В `.env`: `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1`; опционально `WHISPER_PRELOAD=true`. |
+| Эмбеддинги офлайн | Модель в `models/` или `EMBEDDING_PROVIDER=openai`. |
+| RapidOCR | При первом OCR скачаются ONNX-модели (~десятки МБ). |
+| Загрузка большого TXT/DOCX, ошибка `max_tokens_per_request` | Обновите код (`git pull`) — эмбеддинги OpenAI идут пакетами. Либо `EMBEDDING_PROVIDER=local`. |
+| OCR: `Killed` в логе | Мало RAM. В `.env`: `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, swap 2 ГБ или загрузка DOCX вместо скан-PDF. |
+| OCR: `libGL.so.1` | `pip uninstall -y opencv-python && pip install opencv-python-headless`, см. `scripts/fix_opencv_server.sh`. |
+
+Внешние программы для модуля Юрист **не используются** (Tesseract, LibreOffice, Word, Poppler) — только пакеты из `requirements.txt`.
 
 ## Конфигурация
 
@@ -123,6 +191,7 @@ git push -u origin main
 |------------|----------|
 | `LLM_PROVIDER` | `gigachat` или `deepseek` |
 | `EMBEDDING_PROVIDER` | `local` или `openai` |
+| `EMBED_BATCH_SIZE` | размер пакета эмбеддингов (по умолчанию 16; для больших DOCX/TXT через OpenAI не увеличивайте сильно) |
 | `HF_ENDPOINT` | зеркало HuggingFace, напр. `https://hf-mirror.com` |
 | `EMBEDDING_LOCAL_FILES_ONLY` | `1` — не обращаться к huggingface.co |
 | `LOCAL_EMBEDDING_MODEL` | путь `models/paraphrase-multilingual-MiniLM-L12-v2` |
@@ -137,6 +206,7 @@ git push -u origin main
 | `N8N_ECONOMIST_WEBHOOK_URL` | Production URL webhook n8n для чата |
 | `N8N_ECONOMIST_TIMEOUT` | таймаут ответа n8n, сек (по умолчанию 120) |
 | `LAWYER_CITATION_LLM_REPAIR` | `true` — восстанавливать русский текст в блоке «Источники» через LLM при искажениях PDF/OCR |
+| `APP_TIMEZONE` | часовой пояс истории действий (по умолчанию `Europe/Moscow`) |
 
 ## Структура
 
