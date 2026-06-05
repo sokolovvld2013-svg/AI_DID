@@ -40,7 +40,7 @@ DEEPSEEK_API_KEY=ваш_ключ
    - офлайн: `scripts\download_embedding_model.bat`, затем `EMBEDDING_LOCAL_FILES_ONLY=1`;
    - зеркало: `HF_ENDPOINT=https://hf-mirror.com`, `HF_HUB_DOWNLOAD_TIMEOUT=300`.
 
-   При смене `EMBEDDING_PROVIDER` или модели эмбеддингов векторы в Chroma несовместимы — очистите индекс Юриста (кнопка в интерфейсе или `DELETE /lawyer/index`) и загрузите документы заново. Откат: верните прежний `EMBEDDING_PROVIDER` и снова переиндексируйте.
+   При смене `EMBEDDING_PROVIDER` или модели эмбеддингов векторы в Chroma несовместимы — очистите индекс Юриста (кнопка в интерфейсе или `DELETE /lawyer/index`) и загрузите документы заново. То же после смены `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP`.
 3. Создадутся папки `economist/uploaded`, `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
 
 ```bash
@@ -198,6 +198,7 @@ kill 12345
 | `LLM_PROVIDER` | `gigachat` или `deepseek` |
 | `EMBEDDING_PROVIDER` | `local`, `openai` или `gigachat` |
 | `GIGACHAT_EMBEDDING_MODEL` | `Embeddings` (по умолчанию) или `EmbeddingsGigaR` |
+| `GIGACHAT_MAX_EMBED_CHARS` | лимит символов на один embed-запрос GigaChat (~514 токенов; по умолчанию 950) |
 | `EMBED_BATCH_SIZE` | размер пакета эмбеддингов (по умолчанию 16; для больших DOCX/TXT через OpenAI не увеличивайте сильно) |
 | `HF_ENDPOINT` | зеркало HuggingFace, напр. `https://hf-mirror.com` |
 | `EMBEDDING_LOCAL_FILES_ONLY` | `1` — не обращаться к huggingface.co |
@@ -213,7 +214,15 @@ kill 12345
 | `N8N_ECONOMIST_WEBHOOK_URL` | Production URL webhook n8n для чата |
 | `N8N_ECONOMIST_TIMEOUT` | таймаут ответа n8n, сек (по умолчанию 120) |
 | `LAWYER_CITATION_LLM_REPAIR` | `true` — восстанавливать русский текст в блоке «Источники» через LLM при искажениях PDF/OCR |
-| `LAWYER_RETRIEVE_K` / `LAWYER_RETRIEVE_K_MAX` | сколько чанков просматривать при поиске (48 / 180; для больших TXT растёт автоматически) |
+| `LAWYER_RETRIEVE_K` / `LAWYER_RETRIEVE_K_MAX` | сколько чанков просматривать при поиске (80 / 180) |
+| `LAWYER_CONTEXT_K` | фрагментов в контексте LLM (по умолчанию 8) |
+| `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP` | размер чанка и перекрытие (1200 / 200); после смены — переиндексация |
+| `LAWYER_SEMANTIC_WEIGHT` | вес векторного score в ранжировании (0.45) |
+| `LAWYER_SEMANTIC_MIN_SCORE` | порог «чисто семантического» попадания (0.42) |
+| `LAWYER_SEMANTIC_TOP_K` | сколько лучших semantic-чанков всегда держать в пуле (6) |
+| `LAWYER_BALANCE_FILES` | `false` — не подмешивать слабые фрагменты с других файлов |
+| `LAWYER_LLM_QUERY_REWRITE` | `true` — LLM перефразирует вопрос только для embed_query |
+| `LAWYER_CONTEXT_MERGE_NEIGHBORS` | склеить ±N соседних чанков перед отправкой в LLM (1) |
 | `LAWYER_MIN_COMBINED_SCORE` | порог отсечения слабых фрагментов (по умолчанию `0.12`) |
 | `APP_TIMEZONE` | часовой пояс истории действий (по умолчанию `Europe/Moscow`) |
 

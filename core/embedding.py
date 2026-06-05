@@ -11,6 +11,7 @@ from config import (
     EMBEDDING_PROVIDER,
     GIGACHAT_CREDENTIALS,
     GIGACHAT_EMBEDDING_MODEL,
+    GIGACHAT_MAX_EMBED_CHARS,
     GIGACHAT_SCOPE,
     LOCAL_EMBEDDING_MODEL,
     OPENAI_API_KEY,
@@ -149,6 +150,23 @@ class OpenAIEmbedder(BaseEmbedder):
         return self.embed([text])[0]
 
 
+def _truncate_gigachat_embed_text(text: str, max_chars: int) -> str:
+    """Запасная обрезка под лимит GigaChat (~514 токенов), head+tail."""
+    if len(text) <= max_chars:
+        return text
+    if text.startswith("[") and "\n" in text:
+        header, body = text.split("\n", 1)
+        body_budget = max(180, max_chars - len(header) - 8)
+        if len(body) <= body_budget:
+            return f"{header}{body}"
+        head_len = max(100, body_budget * 2 // 3)
+        tail_len = max(60, body_budget - head_len - 5)
+        return f"{header}{body[:head_len]}\n...\n{body[-tail_len:]}"
+    head_len = max(140, (max_chars - 8) * 2 // 3)
+    tail_len = max(60, max_chars - head_len - 8)
+    return f"{text[:head_len]}\n...\n{text[-tail_len:]}"
+
+
 class GigaChatEmbedder(BaseEmbedder):
     def __init__(self):
         from gigachat import GigaChat
@@ -163,13 +181,31 @@ class GigaChatEmbedder(BaseEmbedder):
             verify_ssl_certs=False,
         )
         self._model = GIGACHAT_EMBEDDING_MODEL
-        logger.info("GigaChat embeddings: модель %s", self._model)
+        self._max_chars = GIGACHAT_MAX_EMBED_CHARS
+        logger.info(
+            "GigaChat embeddings: модель %s, max %d симв./запрос",
+            self._model,
+            self._max_chars,
+        )
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
 
-        prepared = _prepare_texts(texts)
+        raw_prepared = _prepare_texts(texts)
+        prepared = [
+            _truncate_gigachat_embed_text(s, self._max_chars) for s in raw_prepared
+        ]
+        truncated = sum(
+            1 for raw, prep in zip(raw_prepared, prepared) if len(prep) < len(raw)
+        )
+        if truncated:
+            logger.info(
+                "GigaChat: укорочено %d/%d текстов до %d симв. (лимит API ~514 токенов)",
+                truncated,
+                len(texts),
+                self._max_chars,
+            )
         all_rows: list[list[float]] = []
         total = len(prepared)
 

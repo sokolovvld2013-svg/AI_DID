@@ -32,6 +32,8 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 GIGACHAT_MODEL = os.getenv("GIGACHAT_MODEL", "GigaChat")
 GIGACHAT_EMBEDDING_MODEL = os.getenv("GIGACHAT_EMBEDDING_MODEL", "Embeddings")
+# GigaChat Embeddings: лимит ~514 токенов на текст (~950 симв. кириллицы с запасом)
+GIGACHAT_MAX_EMBED_CHARS = int(os.getenv("GIGACHAT_MAX_EMBED_CHARS", "950"))
 
 # Эмбеддинги: local | openai | gigachat
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()
@@ -113,6 +115,8 @@ LAWYER_OCR_SUBPROCESS = os.getenv("LAWYER_OCR_SUBPROCESS", "true").strip().lower
     "yes",
 )
 LAWYER_OCR_TIMEOUT_SEC = int(os.getenv("LAWYER_OCR_TIMEOUT_SEC", "900"))
+# Таймаут на одну страницу OCR (если зависла — пропуск и переход к следующей)
+LAWYER_OCR_PAGE_TIMEOUT_SEC = int(os.getenv("LAWYER_OCR_PAGE_TIMEOUT_SEC", "180"))
 # Восстановление читаемого русского в блоке «Источники» (LLM, если OCR/PDF исказил текст)
 LAWYER_CITATION_LLM_REPAIR = os.getenv("LAWYER_CITATION_LLM_REPAIR", "true").strip().lower() in (
     "1",
@@ -121,6 +125,27 @@ LAWYER_CITATION_LLM_REPAIR = os.getenv("LAWYER_CITATION_LLM_REPAIR", "true").str
 )
 MAX_LAWYER_CITATION_CHARS = int(os.getenv("MAX_LAWYER_CITATION_CHARS", 2500))
 MAX_LAWYER_LLM_CONTEXT_CHARS = int(os.getenv("MAX_LAWYER_LLM_CONTEXT_CHARS", 28000))
+
+# Юрист — чанки и векторный поиск
+LAWYER_CHUNK_SIZE = int(os.getenv("LAWYER_CHUNK_SIZE", "1200"))
+LAWYER_CHUNK_OVERLAP = int(os.getenv("LAWYER_CHUNK_OVERLAP", "200"))
+LAWYER_SEMANTIC_WEIGHT = float(os.getenv("LAWYER_SEMANTIC_WEIGHT", "0.45"))
+LAWYER_SEMANTIC_MIN_SCORE = float(os.getenv("LAWYER_SEMANTIC_MIN_SCORE", "0.42"))
+LAWYER_SEMANTIC_TOP_K = max(3, int(os.getenv("LAWYER_SEMANTIC_TOP_K", "6")))
+# false — в контекст идут лучшие по score, а не «по 2 с каждого файла»
+LAWYER_BALANCE_FILES = os.getenv("LAWYER_BALANCE_FILES", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+LAWYER_LLM_QUERY_REWRITE = os.getenv("LAWYER_LLM_QUERY_REWRITE", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+LAWYER_CONTEXT_MERGE_NEIGHBORS = max(
+    0, int(os.getenv("LAWYER_CONTEXT_MERGE_NEIGHBORS", "1"))
+)
 
 # ChromaDB
 CHROMA_PERSIST_DIR = BASE_DIR / os.getenv("CHROMA_PERSIST_DIR", "chroma_data")

@@ -11,6 +11,16 @@ _STOP_WORDS = frozenset(
     """.split()
 )
 
+# Слова формулировки вопроса — не требуем их в тексте документа
+_QUESTION_STOP = frozenset(
+    """
+    какие какой какая какое каким каких какую каков какова каковы
+    существует существуют существующий существующие
+    имеется имеются имеет имеют
+    перечислите назовите укажите опишите расскажите сообщите
+    """.split()
+)
+
 _TOKEN_ALIASES: dict[str, list[str]] = {
     "бизне": ["бизнес", "бизнеса", "бизнесу", "бизнес-план", "бизнес план"],
     "безнес": ["бизнес", "бизнес-план"],
@@ -26,6 +36,12 @@ _TOKEN_ALIASES: dict[str, list[str]] = {
     "пункт": ["пункта", "пункте", "пункты"],
     "срок": ["срока", "сроки", "сроков"],
     "ответствен": ["ответственность", "ответственности"],
+    "прем": ["премия", "премии", "премий", "премирование", "премирования", "премированию"],
+    "премий": ["премия", "премии", "прем", "премирование"],
+    "премии": ["премия", "премий", "прем", "премирование"],
+    "премия": ["премии", "премий", "прем", "премирование"],
+    "вид": ["виды", "вида", "видов", "виду"],
+    "виды": ["вид", "вида", "видов"],
 }
 
 # Длина общего префикса для «закупок» / «закупка» и т.п.
@@ -47,9 +63,19 @@ def normalize_match_text(text: str) -> str:
     return s.strip()
 
 
+def content_core_tokens(core: list[str]) -> list[str]:
+    """Значимые слова запроса без вводных «какие … существуют»."""
+    out = [w for w in core if w not in _QUESTION_STOP]
+    return out if out else list(core)
+
+
 def core_query_tokens(query: str) -> list[str]:
-    """Значимые слова запроса (без стоп-слов)."""
-    tokens = [t for t in tokenize(query) if len(t) >= 2 and t not in _STOP_WORDS]
+    """Значимые слова запроса (без стоп-слов и вводных слов вопроса)."""
+    tokens = [
+        t
+        for t in tokenize(query)
+        if len(t) >= 2 and t not in _STOP_WORDS and t not in _QUESTION_STOP
+    ]
     # Длинные слова важнее; короткие (2 буквы) — только если других нет
     long_t = [t for t in tokens if len(t) >= 3]
     return long_t if long_t else tokens
@@ -57,6 +83,7 @@ def core_query_tokens(query: str) -> list[str]:
 
 def expand_query_tokens(query: str) -> list[str]:
     tokens = tokenize(query)
+    core = core_query_tokens(query)
     expanded: set[str] = set()
     for t in tokens:
         if len(t) < 2:
@@ -68,6 +95,14 @@ def expand_query_tokens(query: str) -> list[str]:
                 expanded.add(part)
         if len(t) >= 4:
             expanded.add(t[:4])
+            expanded.add(word_stem(t))
+
+    for t in core:
+        expanded.add(t)
+        for alias in _TOKEN_ALIASES.get(t, []):
+            expanded.add(alias)
+        if len(t) >= 4:
+            expanded.add(word_stem(t))
 
     if len(tokens) >= 2:
         expanded.add("-".join(tokens))
@@ -100,6 +135,14 @@ def expand_query_phrases(query: str) -> list[str]:
     for t in core:
         if len(t) >= 4:
             variants.append(t)
+            variants.append(word_stem(t))
+    # «какие виды премий» → усилить фразу «виды прем…»
+    if "виды" in core or "вид" in core:
+        for w in content_core_tokens(core):
+            if w in ("виды", "вид"):
+                continue
+            variants.append(f"виды {w}")
+            variants.append(f"виды {word_stem(w)}")
     seen: set[str] = set()
     for p in variants:
         if p and p not in seen:
@@ -203,19 +246,21 @@ def stems_in_order(words: list[str], document: str) -> bool:
 
 
 def core_stems_proximity_score(core: list[str], document: str) -> float:
-    """Основы всех ключевых слов в пределах короткого фрагмента текста."""
+    """Основы ключевых слов (без «какие/существуют») в пределах короткого фрагмента."""
     if not core or not document:
         return 0.0
     doc = normalize_match_text(document)
+    content = content_core_tokens(core)
     positions: list[int] = []
-    for w in core:
-        if len(w) < 4:
+    for w in content:
+        if len(w) < 3:
             continue
         p = doc.find(word_stem(w))
-        if p < 0:
-            return 0.0
-        positions.append(p)
-    need = len([w for w in core if len(w) >= 4])
+        if p < 0 and len(w) >= 4:
+            p = doc.find(w)
+        if p >= 0:
+            positions.append(p)
+    need = min(2, len([w for w in content if len(w) >= 3]))
     if len(positions) < need or need == 0:
         return 0.0
     span = max(positions) - min(positions)
@@ -276,8 +321,15 @@ def query_search_substrings(query: str, core: list[str]) -> list[str]:
 
     if len(core) >= 2:
         add(" ".join(core))
+        add(" ".join(content_core_tokens(core)))
         add(" ".join(core[-2:]))
         add(" ".join(core[-3:]))
+    content = content_core_tokens(core)
+    if "виды" in content:
+        for w in content:
+            if w != "виды":
+                add(f"виды {w}")
+                add(f"виды {word_stem(w)}")
     if len(core) >= 4:
         add(f"{core[0]} {core[1]} для {core[2]} {core[3]}")
         add(f"{core[1]} для {' '.join(core[2:])}")
@@ -307,6 +359,15 @@ def query_phrase_score(query: str, core: list[str], document: str) -> float:
     stem_near = core_stems_proximity_score(core, doc)
     if stem_near:
         score = max(score, stem_near)
+
+    content = content_core_tokens(core)
+    if ("виды" in content or "вид" in doc) and len(content) >= 2:
+        for w in content:
+            if w in ("виды", "вид"):
+                continue
+            stem = word_stem(w)
+            if stem in doc and ("виды" in doc or "вид " in doc):
+                score = max(score, 52.0)
 
     return score
 
@@ -406,20 +467,26 @@ def combined_score(
     keyword: float,
     core_match_ratio: float,
     phrase_score: float = 0.0,
+    semantic_weight: float = 0.45,
 ) -> float:
-    phrase_boost = min(phrase_score / 80.0, 1.0) * 0.5
+    sw = max(0.15, min(0.65, semantic_weight))
+    phrase_boost = min(phrase_score / 80.0, 1.0) * 0.4
     kw_norm = min(keyword / 18.0, 1.0)
     core_r = min(core_match_ratio, 1.0)
+    kw_part = (1.0 - sw) * 0.55 * kw_norm
+
     if phrase_boost >= 0.35:
-        return min(1.0, phrase_boost + 0.15 * kw_norm + 0.1 * semantic + core_r * 0.15)
-    # Полное совпадение терминов запроса — главный сигнал для регламентов и положений
+        return min(
+            1.0,
+            phrase_boost + sw * semantic + kw_part * 0.35 + core_r * 0.12,
+        )
     if core_r >= 1.0:
-        return min(1.0, 0.1 * semantic + 0.35 * kw_norm + 0.55 + phrase_boost)
+        return min(1.0, sw * semantic + kw_part + core_r * 0.22 + phrase_boost)
     if core_r >= 0.66:
-        return min(1.0, 0.15 * semantic + 0.45 * kw_norm + core_r * 0.4)
+        return min(1.0, sw * semantic + kw_part + core_r * 0.35 + phrase_boost)
     if kw_norm >= 0.2 or core_r >= 0.5:
-        return min(1.0, 0.2 * semantic + 0.55 * kw_norm + core_r * 0.3)
-    return min(1.0, 0.5 * semantic + 0.25 * kw_norm + core_r * 0.2)
+        return min(1.0, sw * semantic + kw_part + core_r * 0.25 + phrase_boost)
+    return min(1.0, sw * semantic * 1.15 + kw_part * 0.5 + core_r * 0.15 + phrase_boost)
 
 
 def reciprocal_rank_fusion(rank_lists: list[list[str]], k: int = 60) -> dict[str, float]:
@@ -433,12 +500,16 @@ def reciprocal_rank_fusion(rank_lists: list[list[str]], k: int = 60) -> dict[str
 
 def min_core_matches_required(core: list[str]) -> int:
     """Сколько слов запроса должно совпасть (не требуем 100% для длинных вопросов)."""
-    if not core:
+    content = content_core_tokens(core)
+    if not content:
+        content = core
+    if not content:
         return 0
-    if len(core) == 1:
+    n = len(content)
+    if n == 1:
         return 1
-    if len(core) == 2:
+    if n == 2:
         return 2
-    if len(core) == 3:
+    if n == 3:
         return 2
-    return max(2, (len(core) * 2 + 2) // 3)
+    return max(2, (n * 2 + 2) // 3)

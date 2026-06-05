@@ -5,8 +5,20 @@ from typing import Any
 
 import chromadb
 
-from config import CHROMA_PERSIST_DIR, LAWYER_UPLOAD_DIR
+from config import (
+    CHROMA_PERSIST_DIR,
+    EMBEDDING_PROVIDER,
+    GIGACHAT_MAX_EMBED_CHARS,
+    LAWYER_BALANCE_FILES,
+    LAWYER_CONTEXT_MERGE_NEIGHBORS,
+    LAWYER_LLM_QUERY_REWRITE,
+    LAWYER_SEMANTIC_MIN_SCORE,
+    LAWYER_SEMANTIC_TOP_K,
+    LAWYER_SEMANTIC_WEIGHT,
+    LAWYER_UPLOAD_DIR,
+)
 from core.embedding import get_embedder
+from core.llm_client import get_llm
 from lawyer.search_utils import (
     combined_score,
     core_query_tokens,
@@ -31,10 +43,10 @@ logger = logging.getLogger(__name__)
 
 COLLECTION_NAME = "lawyer_kb"
 # Сколько кандидатов собрать перед отбором в контекст LLM
-RETRIEVE_K = int(os.getenv("LAWYER_RETRIEVE_K", "48"))
+RETRIEVE_K = int(os.getenv("LAWYER_RETRIEVE_K", "80"))
 RETRIEVE_K_MAX = int(os.getenv("LAWYER_RETRIEVE_K_MAX", "180"))
 # Сколько фрагментов отдать в LLM
-CONTEXT_K = int(os.getenv("LAWYER_CONTEXT_K", "6"))
+CONTEXT_K = int(os.getenv("LAWYER_CONTEXT_K", "8"))
 # Минимальный комбинированный score (отсекаем явный мусор)
 MIN_COMBINED_SCORE = float(os.getenv("LAWYER_MIN_COMBINED_SCORE", "0.12"))
 # Порог для показа источника (доля от лучшего score)
@@ -44,6 +56,72 @@ PER_FILE_SEMANTIC_K = int(os.getenv("LAWYER_PER_FILE_SEMANTIC_K", "24"))
 # Полный перебор чанков для ключевых слов (если база небольшая)
 KEYWORD_SCAN_MAX_CHUNKS = int(os.getenv("LAWYER_KEYWORD_SCAN_MAX", "12000"))
 NEIGHBOR_SEEDS = 10
+
+
+def build_chunk_embed_text(
+    filename: str,
+    page: int,
+    text: str,
+    max_chars: int | None = None,
+) -> str:
+    """Текст для эмбеддинга: имя документа + страница + содержимое (head+tail при лимите)."""
+    body = (text or "").strip()
+    title = repair_text(filename or "").strip()
+    header = f"[{title}] стр. {page}\n" if title else ""
+    if not body:
+        return (header.rstrip() or title or ".")
+
+    full = f"{header}{body}"
+    if not max_chars or len(full) <= max_chars:
+        return full
+
+    body_budget = max(220, max_chars - len(header) - 8)
+    if len(body) <= body_budget:
+        return f"{header}{body}"
+
+    head_len = max(140, body_budget * 2 // 3)
+    tail_len = max(80, body_budget - head_len - 5)
+    if head_len + tail_len + 5 > body_budget:
+        tail_len = max(60, body_budget - head_len - 5)
+    snippet = f"{body[:head_len]}\n...\n{body[-tail_len:]}"
+    return f"{header}{snippet}"
+
+
+def _embedding_query_phrases(query: str) -> list[str]:
+    """Фразы для embed_query: обогащение + опционально LLM-перефраз."""
+    phrases = expand_query_phrases(query)
+    enriched = enrich_query_for_embedding(query)
+    if enriched not in phrases:
+        phrases.insert(0, enriched)
+
+    if not LAWYER_LLM_QUERY_REWRITE:
+        return phrases
+
+    try:
+        llm = get_llm()
+        paraphrase = llm.generate(
+            query,
+            system_prompt=(
+                "Переформулируй вопрос как поисковый запрос к базе внутренних "
+                "регламентов и приказов. Одно-два предложения, только тематические "
+                "термины, без ответа и без пояснений."
+            ),
+        ).strip()
+        if paraphrase and paraphrase.lower() != query.strip().lower():
+            phrases.insert(0, enrich_query_for_embedding(paraphrase))
+            phrases.insert(0, paraphrase)
+            logger.debug("LLM embed-query: %s", paraphrase[:120])
+    except Exception as e:
+        logger.debug("LLM query rewrite skipped: %s", e)
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for p in phrases:
+        p = (p or "").strip()
+        if p and p not in seen:
+            seen.add(p)
+            unique.append(p)
+    return unique
 
 
 def _chunk_key(meta: dict[str, Any]) -> str:
@@ -62,7 +140,7 @@ def _balance_hits_by_file(
     """Равномерно: несколько лучших чанков с каждого файла, не только с самого большого."""
     if limit <= 0 or not hits:
         return []
-    if len(file_ids) <= 1:
+    if not LAWYER_BALANCE_FILES or len(file_ids) <= 1:
         return hits[:limit]
 
     by_file: dict[str, list[dict[str, Any]]] = {fid: [] for fid in file_ids}
@@ -183,7 +261,21 @@ class LawyerRAG:
         ids = [c["id"] for c in valid]
         documents = [str(c["text"]) for c in valid]
         metadatas = [c["metadata"] for c in valid]
-        embeddings = self.embedder.embed(documents)
+        embed_limit = (
+            GIGACHAT_MAX_EMBED_CHARS
+            if EMBEDDING_PROVIDER == "gigachat"
+            else None
+        )
+        embed_inputs = [
+            build_chunk_embed_text(
+                str(c["metadata"].get("filename") or ""),
+                int(c["metadata"].get("page") or 1),
+                str(c["text"]),
+                max_chars=embed_limit,
+            )
+            for c in valid
+        ]
+        embeddings = self.embedder.embed(embed_inputs)
 
         self._collection.add(
             ids=ids,
@@ -332,9 +424,7 @@ class LawyerRAG:
         merged: dict[str, dict[str, Any]] = {}
         where = {"file_id": file_id} if file_id else None
 
-        phrases = expand_query_phrases(query)
-        if enrich_query_for_embedding(query) not in phrases:
-            phrases.insert(0, enrich_query_for_embedding(query))
+        phrases = _embedding_query_phrases(query)
 
         for phrase in phrases:
             query_emb = self.embedder.embed_query(phrase)
@@ -361,6 +451,51 @@ class LawyerRAG:
                 self._merge_semantic_hit(merged, doc, meta, dist)
 
         return merged
+
+    def merge_neighbor_context(self, hit: dict[str, Any]) -> str:
+        """Склейка с соседними чанками для LLM (parent-child lite)."""
+        text = (hit.get("text") or "").strip()
+        radius = LAWYER_CONTEXT_MERGE_NEIGHBORS
+        if radius <= 0 or not text:
+            return text
+
+        fid = hit.get("file_id") or ""
+        idx = int(hit.get("chunk_index") or 0)
+        if not fid:
+            return text
+
+        neighbor_ids = [
+            f"{fid}_{idx + delta}"
+            for delta in range(-radius, radius + 1)
+            if delta != 0
+        ]
+        try:
+            part = self._collection.get(
+                ids=neighbor_ids,
+                include=["documents", "metadatas"],
+            )
+        except Exception as e:
+            logger.debug("merge_neighbor_context: %s", e)
+            return text
+
+        pieces: list[tuple[int, str]] = [(idx, text)]
+        for doc, meta in zip(
+            part.get("documents") or [],
+            part.get("metadatas") or [],
+        ):
+            if not doc or not meta:
+                continue
+            pieces.append((int(meta.get("chunk_index") or 0), str(doc).strip()))
+
+        pieces.sort(key=lambda x: x[0])
+        merged: list[str] = []
+        seen: set[str] = set()
+        for _, part_text in pieces:
+            if not part_text or part_text in seen:
+                continue
+            seen.add(part_text)
+            merged.append(part_text)
+        return "\n\n".join(merged)
 
     def _semantic_candidates(self, query: str, n: int) -> dict[str, dict[str, Any]]:
         """Кандидаты по эмбеддингам; при нескольких файлах — отдельно по каждому."""
@@ -467,8 +602,18 @@ class LawyerRAG:
         self,
         query_tokens: list[str],
         limit: int = 40,
+        core: list[str] | None = None,
     ) -> dict[str, dict[str, Any]]:
         """Кандидаты по словам; при нескольких файлах — отдельно по каждому."""
+        stem_terms = query_stem_search_terms(core or [])
+        merged_tokens: list[str] = []
+        seen_t: set[str] = set()
+        for t in list(query_tokens) + stem_terms:
+            if len(t) >= 3 and t not in seen_t:
+                seen_t.add(t)
+                merged_tokens.append(t)
+        query_tokens = merged_tokens
+
         if not query_tokens:
             return {}
 
@@ -619,7 +764,9 @@ class LawyerRAG:
             if key in seen:
                 continue
             if hit.get("phrase_score", 0) <= 0 and hit.get("stem_score", 0) < 20:
-                continue
+                sem = float(hit.get("semantic_score") or 0)
+                if hit.get("core_matches", 0) < 2 and sem < LAWYER_SEMANTIC_MIN_SCORE * 0.85:
+                    continue
             prefix.append(hit)
             seen.add(key)
 
@@ -636,7 +783,9 @@ class LawyerRAG:
         core = core_query_tokens(query)
         retrieve_k = self._effective_retrieve_k()
         candidates = self._semantic_candidates(query, retrieve_k)
-        kw = self._keyword_candidates(query_tokens, limit=max(60, retrieve_k // 2))
+        kw = self._keyword_candidates(
+            query_tokens, limit=max(60, retrieve_k // 2), core=core
+        )
         phrase_hits = self._phrase_contains_candidates(query, core)
 
         for cid, hit in phrase_hits.items():
@@ -683,6 +832,7 @@ class LawyerRAG:
                 hit["keyword_score"],
                 ratio,
                 phrase_score=ps,
+                semantic_weight=LAWYER_SEMANTIC_WEIGHT,
             )
 
         sem_ranked = sorted(
@@ -704,6 +854,7 @@ class LawyerRAG:
         ranked = sorted(
             candidates.values(),
             key=lambda h: (
+                h.get("semantic_score", 0),
                 h.get("phrase_score", 0),
                 h.get("stem_score", 0),
                 h.get("stem_matches", 0),
@@ -723,7 +874,6 @@ class LawyerRAG:
         if phrase_strong:
             ranked = phrase_strong + [h for h in ranked if h not in phrase_strong]
         elif len(core) >= 2:
-            # Без точной фразы — не выталкиваем в топ чанки только с разрозненными словами
             strong = sorted(
                 [h for h in ranked if h.get("core_matches", 0) >= len(core)],
                 key=lambda h: (h.get("phrase_score", 0), h["score"]),
@@ -732,8 +882,14 @@ class LawyerRAG:
             if strong:
                 ranked = strong + [h for h in ranked if h not in strong]
 
+        # Топ по semantic не должен теряться из-за phrase/core фильтров
+        sem_top = sem_ranked[: max(LAWYER_SEMANTIC_TOP_K, top_k)]
+        sem_keys = {_hit_key(h) for h in sem_top}
+        ranked = sem_top + [h for h in ranked if _hit_key(h) not in sem_keys]
+
         min_core = min_core_matches_required(core)
-        pool_seed = self._pool_seed_per_file(candidates)
+        sem_floor = max(0.35, LAWYER_SEMANTIC_MIN_SCORE * 0.85)
+        pool_seed = self._pool_seed_per_file(candidates) if LAWYER_BALANCE_FILES else []
         seen_seed = {_hit_key(h) for h in pool_seed}
         pool = list(pool_seed) + [
             h
@@ -742,11 +898,13 @@ class LawyerRAG:
             and (
                 h.get("core_matches", 0) >= min_core
                 or h.get("stem_score", 0) >= 25
+                or float(h.get("semantic_score") or 0) >= sem_floor
                 or (
                     h["score"] >= MIN_COMBINED_SCORE
                     and (
                         h.get("core_matches", 0) >= 1
-                        or float(h.get("keyword_score") or 0) >= 4.0
+                        or float(h.get("keyword_score") or 0) >= 3.0
+                        or float(h.get("semantic_score") or 0) >= 0.38
                     )
                 )
             )
@@ -757,16 +915,18 @@ class LawyerRAG:
                 for h in ranked[: max(top_k * 3, 12)]
                 if h.get("core_matches", 0) >= 1
                 or float(h.get("keyword_score") or 0) >= 2.0
+                or float(h.get("semantic_score") or 0) >= sem_floor
             ]
         if not pool and ranked:
             pool = ranked[: max(top_k * 2, len(self._files) * 3)]
         else:
             pool = pool[: max(top_k * 5, len(self._files) * 8, retrieve_k // 3)]
 
-        pool = self._inject_best_per_file(pool, candidates, top_k)
+        pool = self._inject_best_per_file(pool, candidates, top_k) if LAWYER_BALANCE_FILES else pool
 
         pool.sort(
             key=lambda h: (
+                h.get("semantic_score", 0),
                 h.get("phrase_score", 0),
                 h.get("stem_score", 0),
                 h.get("core_matches", 0),
@@ -783,7 +943,7 @@ class LawyerRAG:
         files_in_result = {h.get("file_id") for h in filtered}
         logger.info(
             "Поиск «%s»: core=%s, retrieve_k=%d, кандидатов=%d, в контекст=%d, "
-            "файлов в базе=%d, в ответе=%d, score=%.3f, phrase=%.0f, stem=%.0f, kw=%.1f, core=%s/%s",
+            "файлов в базе=%d, в ответе=%d, sem=%.3f, score=%.3f, phrase=%.0f, stem=%.0f, kw=%.1f, core=%s/%s",
             query[:50],
             core,
             retrieve_k,
@@ -791,6 +951,7 @@ class LawyerRAG:
             len(filtered),
             len(self._files),
             len(files_in_result),
+            best.get("semantic_score", 0),
             best.get("score", 0),
             best.get("phrase_score", 0),
             best.get("stem_score", 0),

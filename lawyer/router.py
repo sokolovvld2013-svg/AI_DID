@@ -12,6 +12,8 @@ from pydantic import BaseModel
 from config import (
     ALLOWED_DOC_EXT,
     BASE_DIR,
+    LAWYER_BALANCE_FILES,
+    LAWYER_SEMANTIC_MIN_SCORE,
     LAWYER_UPLOAD_DIR,
     MAX_DOCUMENT_SIZE,
     MAX_LAWYER_CITATION_CHARS,
@@ -86,6 +88,10 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
         sem = float(hit.get("semantic_score") or 0)
 
         stem = float(hit.get("stem_score") or 0)
+        if sem >= LAWYER_SEMANTIC_MIN_SCORE:
+            return True
+        if sem >= 0.38 and score >= min_score * 0.45:
+            return True
         if stem >= 28 or float(hit.get("phrase_score") or 0) >= 20:
             return True
         if core and cm >= len(core) and stem >= 15:
@@ -104,9 +110,10 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
 
     picked = [h for h in hits if _is_relevant(h)]
 
-    # Несколько документов: в контекст LLM — лучшие фрагменты с каждого файла
+    # Несколько документов: опционально добавить лучшие с каждого файла
     file_ids_in_hits = {h.get("file_id") for h in hits if h.get("file_id")}
-    if len(file_ids_in_hits) > 1:
+
+    if LAWYER_BALANCE_FILES and len(file_ids_in_hits) > 1:
         picked_ids = {h.get("file_id") for h in picked}
         min_per_file = max(1, CONTEXT_K // len(file_ids_in_hits))
         if CONTEXT_K >= 4:
@@ -135,12 +142,18 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
                 ),
                 reverse=True,
             )
-            for h in pool[:min_per_file]:
+            added = 0
+            for h in pool:
+                if added >= min_per_file:
+                    break
+                if not _is_relevant(h):
+                    continue
                 uid = _hit_uid(h)
                 if uid in seen_keys:
                     continue
                 diversified.append(h)
                 seen_keys.add(uid)
+                added += 1
 
         for h in picked:
             uid = _hit_uid(h)
@@ -165,15 +178,15 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
                 picked_ids.add(fid)
 
     if not picked and hits:
-        # Запасной вариант: лучшие 2–3 чанка, если есть хоть слабое совпадение слов
+        sem_floor = max(0.35, LAWYER_SEMANTIC_MIN_SCORE * 0.85)
         fallback = [
             h
-            for h in hits[:5]
+            for h in hits[:8]
             if int(h.get("core_matches") or 0) >= 1
             or float(h.get("keyword_score") or 0) >= 2.0
-            or float(h.get("semantic_score") or 0) >= 0.45
+            or float(h.get("semantic_score") or 0) >= sem_floor
         ]
-        picked = fallback[:3] if fallback else hits[:2]
+        picked = fallback[: max(3, min(CONTEXT_K, len(fallback)))] if fallback else hits[: min(3, CONTEXT_K)]
         logger.info(
             "Поиск «%s»: мягкий отбор, фрагментов=%d (best score=%.3f)",
             question[:40],
@@ -301,8 +314,9 @@ async def query(req: LawyerQuery):
         context_len = 0
 
         for i, hit in enumerate(hits, 1):
+            merged_text = _rag.merge_neighbor_context(hit)
             raw_text = _truncate_fragment(
-                strip_urls(repair_citation_text(hit["text"] or "")),
+                strip_urls(repair_citation_text(merged_text or hit.get("text") or "")),
                 MAX_LAWYER_CITATION_CHARS,
             )
             filename = strip_urls(repair_text(hit["filename"] or ""))
