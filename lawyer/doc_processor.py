@@ -8,13 +8,17 @@ import gc
 import html as html_module
 import logging
 import re
+import threading
 import uuid
 from pathlib import Path
 from typing import Any, Callable
 
 from config import (
+    LAWYER_CHUNK_OVERLAP,
+    LAWYER_CHUNK_SIZE,
     LAWYER_OCR_MAX_PAGES,
     LAWYER_OCR_MAX_SIDE,
+    LAWYER_OCR_PAGE_TIMEOUT_SEC,
     LAWYER_OCR_SCALE,
     LAWYER_OCR_SUBPROCESS,
     LAWYER_OCR_TIMEOUT_SEC,
@@ -29,8 +33,8 @@ from lawyer.text_encoding import (
 
 logger = logging.getLogger(__name__)
 
-CHUNK_SIZE = 600
-CHUNK_OVERLAP = 100
+CHUNK_SIZE = max(400, LAWYER_CHUNK_SIZE)
+CHUNK_OVERLAP = max(50, min(LAWYER_CHUNK_OVERLAP, CHUNK_SIZE // 2))
 # Оценка номера страницы для DOCX / «сплошного» текста PDF (символов на страницу A4)
 CHARS_PER_PAGE_ESTIMATE = 2400
 
@@ -400,29 +404,38 @@ def _pixmap_to_numpy(pix: Any) -> Any:
     if w <= 0 or h <= 0:
         raise ValueError(f"некорректный размер pixmap: {w}x{h}")
 
-    if n not in (1, 3, 4):
+    try:
+        if n not in (1, 3, 4):
+            raise ValueError(f"неожиданное число каналов: {n}")
+
+        row_bytes = w * n
+        if pix.stride == row_bytes:
+            arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(h, w, n)
+        else:
+            arr = np.zeros((h, w, n), dtype=np.uint8)
+            for y in range(h):
+                off = y * pix.stride
+                end = off + row_bytes
+                if end > len(pix.samples):
+                    raise IndexError(
+                        f"stride={pix.stride}, samples={len(pix.samples)}, row={y}"
+                    )
+                arr[y] = np.frombuffer(
+                    pix.samples[off:end], dtype=np.uint8
+                ).reshape(w, n)
+
+        if n == 1:
+            rgb = np.stack([arr[:, :, 0]] * 3, axis=-1)
+        elif n == 4:
+            rgb = arr[:, :, :3].copy()
+        else:
+            rgb = arr
+
+        return np.ascontiguousarray(rgb)
+    except (ValueError, IndexError, BufferError) as e:
+        logger.debug("Pixmap через PIL (fallback): %s", e)
         img = Image.frombytes("RGB", (w, h), pix.samples)
         return np.ascontiguousarray(img)
-
-    row_bytes = w * n
-    if pix.stride == row_bytes:
-        arr = np.frombuffer(pix.samples, dtype=np.uint8).reshape(h, w, n)
-    else:
-        arr = np.zeros((h, w, n), dtype=np.uint8)
-        for y in range(h):
-            off = y * pix.stride
-            arr[y] = np.frombuffer(
-                pix.samples[off : off + row_bytes], dtype=np.uint8
-            ).reshape(w, n)
-
-    if n == 1:
-        rgb = np.stack([arr[:, :, 0]] * 3, axis=-1)
-    elif n == 4:
-        rgb = arr[:, :, :3].copy()
-    else:
-        rgb = arr
-
-    return np.ascontiguousarray(rgb)
 
 
 def _get_rapidocr_engine() -> Any:
@@ -440,19 +453,104 @@ _OCR_OOM_HINT = (
     "LAWYER_OCR_MAX_SIDE=1200, добавьте swap 2 ГБ или загрузите DOCX."
 )
 
+_OcrProgressCallback = Callable[
+    [list[dict[str, Any]], int, int, str | None], None
+]
+
+
+def _ocr_result_to_lines(result: Any) -> list[str]:
+    """Безопасный разбор ответа RapidOCR."""
+    lines: list[str] = []
+    if not result:
+        return lines
+    for item in result:
+        if not item:
+            continue
+        try:
+            if isinstance(item, (list, tuple)) and len(item) >= 2 and item[1]:
+                lines.append(str(item[1]))
+            elif isinstance(item, dict) and item.get("text"):
+                lines.append(str(item["text"]))
+        except (IndexError, TypeError, KeyError):
+            continue
+    return lines
+
+
+def _run_rapidocr_engine(engine: Any, img: Any, timeout_sec: int) -> Any:
+    """RapidOCR с таймаутом на страницу (защита от зависания на Windows)."""
+    box: dict[str, Any] = {"result": None, "error": None}
+
+    def _target() -> None:
+        try:
+            out = engine(img)
+            box["result"] = out[0] if isinstance(out, tuple) else out
+        except Exception as e:
+            box["error"] = e
+
+    thread = threading.Thread(target=_target, daemon=True)
+    thread.start()
+    thread.join(timeout=max(10, timeout_sec))
+    if thread.is_alive():
+        raise TimeoutError(f"OCR страницы > {timeout_sec} с")
+    if box["error"] is not None:
+        raise box["error"]
+    return box["result"]
+
+
+def _ocr_page_attempts(scale: float, max_side: int) -> list[tuple[float, int]]:
+    """Параметры растеризации: основной и два запасных (меньше — быстрее и стабильнее)."""
+    return [
+        (scale, max_side),
+        (max(0.8, scale * 0.85), max_side),
+        (scale, max(800, int(max_side * 0.75))),
+    ]
+
 
 def _rapidocr_worker(path_str: str, out_queue: Any) -> None:
     """Точка входа дочернего процесса OCR."""
+
+    def _progress(
+        pages: list[dict[str, Any]], done: int, total: int, err: str | None
+    ) -> None:
+        out_queue.put(("progress", list(pages), err, done, total))
+
     try:
-        pages, err = _read_pdf_rapidocr_impl(Path(path_str))
+        pages, err = _read_pdf_rapidocr_impl(
+            Path(path_str),
+            progress_callback=_progress,
+        )
         out_queue.put(("ok", pages, err))
     except Exception as e:
         out_queue.put(("err", [], str(e)))
 
 
+def _drain_ocr_queue(
+    queue: Any,
+    partial_pages: list[dict[str, Any]],
+    partial_err: list[str | None],
+) -> tuple[str, list[dict[str, Any]], str | None] | None:
+    """Забрать из очереди прогресс или финальный результат subprocess."""
+    from queue import Empty
+
+    while True:
+        try:
+            msg = queue.get_nowait()
+        except Empty:
+            return None
+        if not msg:
+            continue
+        kind = msg[0]
+        if kind == "progress":
+            partial_pages[:] = msg[1]
+            partial_err[0] = msg[2]
+        elif kind in ("ok", "err"):
+            return (kind, msg[1], msg[2])
+
+
 def _read_pdf_rapidocr_subprocess(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     """OCR в отдельном процессе: при Killed/OOM основной сервер остаётся жив."""
     import multiprocessing as mp
+    import time
 
     ctx = mp.get_context("spawn")
     queue: Any = ctx.Queue()
@@ -462,26 +560,74 @@ def _read_pdf_rapidocr_subprocess(path: Path) -> tuple[list[dict[str, Any]], str
         daemon=True,
     )
     proc.start()
-    proc.join(timeout=LAWYER_OCR_TIMEOUT_SEC)
+    deadline = time.monotonic() + LAWYER_OCR_TIMEOUT_SEC
+    partial_pages: list[dict[str, Any]] = []
+    partial_err: list[str | None] = [None]
+
+    while proc.is_alive():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        proc.join(timeout=min(1.0, remaining))
+        done = _drain_ocr_queue(queue, partial_pages, partial_err)
+        while done:
+            if done[0] == "ok":
+                proc.join(timeout=5)
+                return done[1], done[2]
+            if done[0] == "err":
+                if partial_pages:
+                    return partial_pages, done[2] or partial_err[0]
+                return [], done[2] or "OCR завершился с ошибкой"
+            done = _drain_ocr_queue(queue, partial_pages, partial_err)
+
+    while True:
+        done = _drain_ocr_queue(queue, partial_pages, partial_err)
+        if not done:
+            break
+        if done[0] == "ok":
+            return done[1], done[2]
 
     if proc.is_alive():
         proc.terminate()
         proc.join(10)
+        _drain_ocr_queue(queue, partial_pages, partial_err)
+        if partial_pages:
+            tail = (
+                f" частично распознано {len(partial_pages)} стр. "
+                f"(таймаут {LAWYER_OCR_TIMEOUT_SEC} с)"
+            )
+            err = (partial_err[0] or "") + tail
+            logger.warning(
+                "RapidOCR: таймаут %d с, сохранено %d стр.",
+                LAWYER_OCR_TIMEOUT_SEC,
+                len(partial_pages),
+            )
+            return partial_pages, err.strip() or None
         logger.warning("RapidOCR: таймаут %d с", LAWYER_OCR_TIMEOUT_SEC)
         return [], f"OCR превысил лимит времени ({LAWYER_OCR_TIMEOUT_SEC} с)."
 
     if proc.exitcode not in (0, None):
         logger.warning("RapidOCR subprocess exitcode=%s", proc.exitcode)
+        if partial_pages:
+            return partial_pages, partial_err[0] or _OCR_OOM_HINT
         return [], _OCR_OOM_HINT
 
     try:
-        status, pages, err = queue.get(timeout=5)
+        msg = queue.get(timeout=5)
     except Exception:
+        if partial_pages:
+            return partial_pages, partial_err[0]
         return [], _OCR_OOM_HINT
 
-    if status == "err":
-        return [], str(err) if err else "OCR завершился с ошибкой"
-    return pages, err
+    if msg[0] == "ok":
+        return msg[1], msg[2]
+    if msg[0] == "err":
+        if partial_pages:
+            return partial_pages, str(msg[2]) if msg[2] else partial_err[0]
+        return [], str(msg[2]) if msg[2] else "OCR завершился с ошибкой"
+    if partial_pages:
+        return partial_pages, partial_err[0]
+    return [], partial_err[0] or _OCR_OOM_HINT
 
 
 def _read_pdf_rapidocr(path: Path) -> tuple[list[dict[str, Any]], str | None]:
@@ -490,7 +636,10 @@ def _read_pdf_rapidocr(path: Path) -> tuple[list[dict[str, Any]], str | None]:
     return _read_pdf_rapidocr_impl(path)
 
 
-def _read_pdf_rapidocr_impl(path: Path) -> tuple[list[dict[str, Any]], str | None]:
+def _read_pdf_rapidocr_impl(
+    path: Path,
+    progress_callback: _OcrProgressCallback | None = None,
+) -> tuple[list[dict[str, Any]], str | None]:
     """OCR для PDF-сканов (RapidOCR + PyMuPDF, только pip-пакеты)."""
     try:
         import fitz
@@ -546,36 +695,61 @@ def _read_pdf_rapidocr_impl(path: Path) -> tuple[list[dict[str, Any]], str | Non
                 path.name,
             )
             for i in range(ocr_limit):
-                try:
-                    pix = _page_pixmap_rgb(doc[i], scale=scale, max_side=max_side)
-                    img = _pixmap_to_numpy(pix)
-                    del pix
+                page_text: str | None = None
+                last_err: Exception | None = None
+                for attempt_idx, (page_scale, page_max_side) in enumerate(
+                    _ocr_page_attempts(scale, max_side)
+                ):
+                    try:
+                        pix = _page_pixmap_rgb(
+                            doc[i], scale=page_scale, max_side=page_max_side
+                        )
+                        img = _pixmap_to_numpy(pix)
+                        del pix
 
-                    result, _elapsed = engine(img)
-                    del img
-                    gc.collect()
+                        result = _run_rapidocr_engine(
+                            engine,
+                            img,
+                            LAWYER_OCR_PAGE_TIMEOUT_SEC,
+                        )
+                        del img
 
-                    lines: list[str] = []
-                    if result:
-                        for item in result:
-                            if item and len(item) >= 2 and item[1]:
-                                lines.append(str(item[1]))
-                    text = _clean_text("\n".join(lines))
-                    if text:
-                        pages.append({"page": i + 1, "text": text})
-                    elif i == 0:
-                        logger.info("RapidOCR: на 1-й странице текст не найден")
-                    if (i + 1) % 3 == 0 or i + 1 == ocr_limit:
-                        logger.info("RapidOCR: обработано %d/%d стр.", i + 1, ocr_limit)
-                except Exception as page_err:
-                    failed_pages += 1
-                    logger.warning(
-                        "RapidOCR: страница %d/%d — %s",
-                        i + 1,
-                        ocr_limit,
-                        page_err,
-                    )
-                    gc.collect()
+                        lines = _ocr_result_to_lines(result)
+                        page_text = _clean_text("\n".join(lines))
+                        if page_text:
+                            break
+                        if attempt_idx == 0 and i == 0:
+                            logger.info("RapidOCR: на 1-й странице текст не найден")
+                        break
+                    except Exception as page_err:
+                        last_err = page_err
+                        if attempt_idx < len(_ocr_page_attempts(scale, max_side)) - 1:
+                            logger.info(
+                                "RapidOCR: стр. %d/%d повтор после %s",
+                                i + 1,
+                                ocr_limit,
+                                page_err,
+                            )
+                            gc.collect()
+                            continue
+                        failed_pages += 1
+                        logger.warning(
+                            "RapidOCR: страница %d/%d — %s",
+                            i + 1,
+                            ocr_limit,
+                            page_err,
+                        )
+                        gc.collect()
+
+                if page_text:
+                    pages.append({"page": i + 1, "text": page_text})
+                elif last_err is None and not page_text:
+                    pass
+
+                if (i + 1) % 3 == 0 or i + 1 == ocr_limit:
+                    logger.info("RapidOCR: обработано %d/%d стр.", i + 1, ocr_limit)
+                if progress_callback:
+                    progress_callback(pages, i + 1, ocr_limit, ocr_error)
             if n_pages > ocr_limit:
                 tail = (
                     f" Распознаны только первые {ocr_limit} из {n_pages} стр. "
@@ -729,6 +903,19 @@ def _read_pdf(path: Path) -> list[dict[str, Any]]:
             return pages
 
     logger.info("PDF: пробуем RapidOCR — %s", path.name)
+    try:
+        import fitz
+
+        with fitz.open(path) as doc:
+            logger.info(
+                "PDF: %d стр. для OCR (лимит %s), таймаут стр.=%d с — %s",
+                len(doc),
+                LAWYER_OCR_MAX_PAGES or "все",
+                LAWYER_OCR_PAGE_TIMEOUT_SEC,
+                path.name,
+            )
+    except Exception:
+        pass
     pages, ocr_err = _read_pdf_rapidocr(path)
     if pages:
         logger.info("PDF (RapidOCR): %d стр. — %s", len(pages), path.name)
@@ -863,6 +1050,29 @@ def _page_for_chunk(
     return max(1, int(page_num))
 
 
+def _next_chunk_end(text: str, start: int, size: int) -> int:
+    """Конец чанка: по возможности не резать списки и абзацы."""
+    hard_end = min(start + size, len(text))
+    if hard_end >= len(text):
+        return hard_end
+
+    min_end = start + size // 2
+    for marker in ("\n\n", "\n•", "\n- ", "\n— "):
+        pos = text.rfind(marker, start, hard_end)
+        if pos >= min_end:
+            return pos + len(marker)
+
+    for match in reversed(list(re.finditer(r"\n\d+[\.)]\s", text[start:hard_end]))):
+        end = start + match.start()
+        if end >= min_end:
+            return end
+
+    nl = text.rfind("\n", start, hard_end)
+    if nl >= min_end:
+        return nl + 1
+    return hard_end
+
+
 def chunk_text(
     pages: list[dict[str, Any]],
     filename: str,
@@ -878,7 +1088,7 @@ def chunk_text(
         page_num = int(page_data.get("page") or 1)
         start = 0
         while start < len(text):
-            end = start + CHUNK_SIZE
+            end = _next_chunk_end(text, start, CHUNK_SIZE)
             chunk_text_str = text[start:end]
             if chunk_text_str.strip():
                 cite_page = _page_for_chunk(
