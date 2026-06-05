@@ -34,10 +34,13 @@ DEEPSEEK_API_KEY=ваш_ключ
 При первом запуске:
 
 1. **Whisper** — по умолчанию модель `base` (меньше и быстрее `small` на CPU); скачается автоматически.
-2. **Эмбеддинги** — модель `paraphrase-multilingual-MiniLM-L12-v2` (~400 МБ). Если `huggingface.co` недоступен:
+2. **Эмбеддинги** — по умолчанию локальная модель `paraphrase-multilingual-MiniLM-L12-v2` (~400 МБ). Если `huggingface.co` недоступен:
    - быстро: `EMBEDDING_PROVIDER=openai` в `.env` (нужен `OPENAI_API_KEY`);
+   - эксперимент: `EMBEDDING_PROVIDER=gigachat` (нужен `GIGACHAT_CREDENTIALS`, модель `GIGACHAT_EMBEDDING_MODEL=Embeddings`);
    - офлайн: `scripts\download_embedding_model.bat`, затем `EMBEDDING_LOCAL_FILES_ONLY=1`;
    - зеркало: `HF_ENDPOINT=https://hf-mirror.com`, `HF_HUB_DOWNLOAD_TIMEOUT=300`.
+
+   При смене `EMBEDDING_PROVIDER` или модели эмбеддингов векторы в Chroma несовместимы — очистите индекс Юриста (кнопка в интерфейсе или `DELETE /lawyer/index`) и загрузите документы заново. Откат: верните прежний `EMBEDDING_PROVIDER` и снова переиндексируйте.
 3. Создадутся папки `economist/uploaded`, `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
 
 ```bash
@@ -177,7 +180,8 @@ kill 12345
 | Ситуация | Что сделать |
 |----------|-------------|
 | Первый запуск Whisper | Скачается модель (~150 МБ для `base`). В `.env`: `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1`; опционально `WHISPER_PRELOAD=true`. |
-| Эмбеддинги офлайн | Модель в `models/` или `EMBEDDING_PROVIDER=openai`. |
+| Эмбеддинги офлайн | Модель в `models/` или `EMBEDDING_PROVIDER=openai` / `gigachat`. |
+| Смена провайдера эмбеддингов | Очистить индекс Юриста и загрузить документы заново (векторы разных моделей несовместимы). |
 | RapidOCR | При первом OCR скачаются ONNX-модели (~десятки МБ). |
 | Загрузка большого TXT/DOCX, ошибка `max_tokens_per_request` | Обновите код (`git pull`) — эмбеддинги OpenAI идут пакетами. Либо `EMBEDDING_PROVIDER=local`. |
 | TXT с «пїЅпїЅ…» вместо русского текста | Файл в CP1251, а читался как UTF-8. После `git pull` кодировка подбирается автоматически; надёжнее сохранить TXT в **UTF-8**. |
@@ -192,7 +196,8 @@ kill 12345
 | Переменная | Описание |
 |------------|----------|
 | `LLM_PROVIDER` | `gigachat` или `deepseek` |
-| `EMBEDDING_PROVIDER` | `local` или `openai` |
+| `EMBEDDING_PROVIDER` | `local`, `openai` или `gigachat` |
+| `GIGACHAT_EMBEDDING_MODEL` | `Embeddings` (по умолчанию) или `EmbeddingsGigaR` |
 | `EMBED_BATCH_SIZE` | размер пакета эмбеддингов (по умолчанию 16; для больших DOCX/TXT через OpenAI не увеличивайте сильно) |
 | `HF_ENDPOINT` | зеркало HuggingFace, напр. `https://hf-mirror.com` |
 | `EMBEDDING_LOCAL_FILES_ONLY` | `1` — не обращаться к huggingface.co |

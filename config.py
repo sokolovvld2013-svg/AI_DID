@@ -31,8 +31,9 @@ DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 GIGACHAT_MODEL = os.getenv("GIGACHAT_MODEL", "GigaChat")
+GIGACHAT_EMBEDDING_MODEL = os.getenv("GIGACHAT_EMBEDDING_MODEL", "Embeddings")
 
-# Эмбеддинги
+# Эмбеддинги: local | openai | gigachat
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-ada-002")

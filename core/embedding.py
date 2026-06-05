@@ -1,4 +1,4 @@
-"""Получение эмбеддингов: локальная модель или OpenAI API."""
+"""Получение эмбеддингов: локальная модель, OpenAI API или GigaChat API."""
 import logging
 import os
 from abc import ABC, abstractmethod
@@ -9,6 +9,9 @@ import numpy as np
 from config import (
     EMBEDDING_LOCAL_FILES_ONLY,
     EMBEDDING_PROVIDER,
+    GIGACHAT_CREDENTIALS,
+    GIGACHAT_EMBEDDING_MODEL,
+    GIGACHAT_SCOPE,
     LOCAL_EMBEDDING_MODEL,
     OPENAI_API_KEY,
     OPENAI_EMBEDDING_MODEL,
@@ -71,7 +74,7 @@ class LocalEmbedder(BaseEmbedder):
         except Exception as e:
             raise RuntimeError(
                 "Не удалось загрузить модель эмбеддингов.\n"
-                "• Быстро: в .env укажите EMBEDDING_PROVIDER=openai (нужен OPENAI_API_KEY).\n"
+                "• Быстро: в .env укажите EMBEDDING_PROVIDER=openai или gigachat.\n"
                 "• Офлайн: scripts\\download_embedding_model.bat, затем EMBEDDING_LOCAL_FILES_ONLY=1.\n"
                 "• Сеть: HF_ENDPOINT=https://hf-mirror.com и HF_HUB_DOWNLOAD_TIMEOUT=300.\n"
                 f"Модель: {LOCAL_EMBEDDING_MODEL}\n"
@@ -146,6 +149,52 @@ class OpenAIEmbedder(BaseEmbedder):
         return self.embed([text])[0]
 
 
+class GigaChatEmbedder(BaseEmbedder):
+    def __init__(self):
+        from gigachat import GigaChat
+
+        if not GIGACHAT_CREDENTIALS:
+            raise RuntimeError(
+                "EMBEDDING_PROVIDER=gigachat, но GIGACHAT_CREDENTIALS не задан"
+            )
+        self._client = GigaChat(
+            credentials=GIGACHAT_CREDENTIALS,
+            scope=GIGACHAT_SCOPE,
+            verify_ssl_certs=False,
+        )
+        self._model = GIGACHAT_EMBEDDING_MODEL
+        logger.info("GigaChat embeddings: модель %s", self._model)
+
+    def embed(self, texts: List[str]) -> List[List[float]]:
+        if not texts:
+            return []
+
+        prepared = _prepare_texts(texts)
+        all_rows: list[list[float]] = []
+        total = len(prepared)
+
+        if total > EMBED_BATCH_SIZE:
+            logger.info(
+                "GigaChat embeddings: %d фрагментов, пакетами по %d",
+                total,
+                EMBED_BATCH_SIZE,
+            )
+
+        for start in range(0, total, EMBED_BATCH_SIZE):
+            batch = prepared[start : start + EMBED_BATCH_SIZE]
+            resp = self._client.embeddings(texts=batch, model=self._model)
+            all_rows.extend(item.embedding for item in resp.data)
+
+        if len(all_rows) != total:
+            raise RuntimeError(
+                f"GigaChat вернул {len(all_rows)} векторов вместо {total}"
+            )
+        return all_rows
+
+    def embed_query(self, text: str) -> List[float]:
+        return self.embed([text])[0]
+
+
 _embedder: BaseEmbedder | None = None
 
 
@@ -161,6 +210,14 @@ def get_embedder() -> BaseEmbedder:
                 raise RuntimeError(
                     "EMBEDDING_PROVIDER=openai, но пакет openai не установлен. "
                     "Выполните: pip install openai — или в .env укажите EMBEDDING_PROVIDER=local"
+                ) from None
+        elif EMBEDDING_PROVIDER == "gigachat":
+            try:
+                _embedder = GigaChatEmbedder()
+            except ModuleNotFoundError:
+                raise RuntimeError(
+                    "EMBEDDING_PROVIDER=gigachat, но пакет gigachat не установлен. "
+                    "Выполните: pip install gigachat — или в .env укажите EMBEDDING_PROVIDER=local"
                 ) from None
         else:
             _embedder = LocalEmbedder()
