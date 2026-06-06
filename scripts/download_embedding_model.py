@@ -45,6 +45,7 @@ def main() -> None:
     print(f"LOCAL_EMBEDDING_MODEL={OUT_DIR}")
     print("EMBEDDING_LOCAL_FILES_ONLY=1")
     print("EMBEDDING_PROVIDER=local")
+    print("\nУстановите зависимости: pip install -r requirements-local-embeddings.txt")
 
 
 if __name__ == "__main__":

@@ -59,7 +59,14 @@ def _model_is_local_path(model_id: str) -> bool:
 class LocalEmbedder(BaseEmbedder):
     def __init__(self):
         configure_huggingface_env()
-        from sentence_transformers import SentenceTransformer
+        try:
+            from sentence_transformers import SentenceTransformer
+        except ModuleNotFoundError as e:
+            raise RuntimeError(
+                "EMBEDDING_PROVIDER=local, но sentence-transformers не установлен. "
+                "Выполните: pip install -r requirements-local-embeddings.txt — "
+                "или в .env укажите EMBEDDING_PROVIDER=gigachat / openai"
+            ) from e
 
         local_only = EMBEDDING_LOCAL_FILES_ONLY or _model_is_local_path(LOCAL_EMBEDDING_MODEL)
         logger.info(
@@ -72,11 +79,22 @@ class LocalEmbedder(BaseEmbedder):
                 LOCAL_EMBEDDING_MODEL,
                 local_files_only=local_only,
             )
+        except ModuleNotFoundError as e:
+            raise RuntimeError(
+                "Не удалось загрузить модель эмбеддингов.\n"
+                "• Быстро: в .env укажите EMBEDDING_PROVIDER=openai или gigachat.\n"
+                "• Локально: pip install -r requirements-local-embeddings.txt, "
+                "затем scripts\\download_embedding_model.bat и EMBEDDING_LOCAL_FILES_ONLY=1.\n"
+                "• Сеть: HF_ENDPOINT=https://hf-mirror.com и HF_HUB_DOWNLOAD_TIMEOUT=300.\n"
+                f"Модель: {LOCAL_EMBEDDING_MODEL}\n"
+                f"Ошибка: {e}"
+            ) from e
         except Exception as e:
             raise RuntimeError(
                 "Не удалось загрузить модель эмбеддингов.\n"
                 "• Быстро: в .env укажите EMBEDDING_PROVIDER=openai или gigachat.\n"
-                "• Офлайн: scripts\\download_embedding_model.bat, затем EMBEDDING_LOCAL_FILES_ONLY=1.\n"
+                "• Локально: pip install -r requirements-local-embeddings.txt, "
+                "затем scripts\\download_embedding_model.bat и EMBEDDING_LOCAL_FILES_ONLY=1.\n"
                 "• Сеть: HF_ENDPOINT=https://hf-mirror.com и HF_HUB_DOWNLOAD_TIMEOUT=300.\n"
                 f"Модель: {LOCAL_EMBEDDING_MODEL}\n"
                 f"Ошибка: {e}"
