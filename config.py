@@ -99,7 +99,6 @@ WHISPER_PRELOAD = os.getenv("WHISPER_PRELOAD", "false").strip().lower() in (
 WHISPER_LOG_EVERY_N_SEGMENTS = max(1, int(os.getenv("WHISPER_LOG_EVERY_N_SEGMENTS", "15")))
 
 # Лимиты загрузки (байты)
-MAX_EXCEL_SIZE = int(os.getenv("MAX_EXCEL_SIZE", 20 * 1024 * 1024))
 MAX_AUDIO_SIZE = int(os.getenv("MAX_AUDIO_SIZE", 100 * 1024 * 1024))
 MAX_DOCUMENT_SIZE = int(os.getenv("MAX_DOCUMENT_SIZE", 50 * 1024 * 1024))
 MAX_LAWYER_PAGES = int(os.getenv("MAX_LAWYER_PAGES", 200))
@@ -155,13 +154,11 @@ HISTORY_SIZE = int(os.getenv("HISTORY_SIZE", 5))
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Moscow").strip() or "Europe/Moscow"
 
 # Пути модулей
-ECONOMIST_UPLOAD_DIR = BASE_DIR / "economist" / "uploaded"
 SECRETARY_UPLOAD_DIR = BASE_DIR / "secretary" / "uploaded"
 LAWYER_UPLOAD_DIR = BASE_DIR / "lawyer" / "uploaded"
 
 ALLOWED_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 ALLOWED_DOC_EXT = {".pdf", ".docx", ".txt"}
-ALLOWED_EXCEL_EXT = {".xlsx", ".xls"}
 
 # Google-таблица фактических затрат (ссылка с правом редактирования)
 ECONOMIST_FACT_SHEET_URL = os.getenv("ECONOMIST_FACT_SHEET_URL", "").strip()

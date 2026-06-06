@@ -10,7 +10,6 @@ from fastapi.staticfiles import StaticFiles
 from config import (
     BASE_DIR,
     CHROMA_PERSIST_DIR,
-    ECONOMIST_UPLOAD_DIR,
     FAVICON_SOURCE,
     LAWYER_UPLOAD_DIR,
     LOGO_SOURCE,
@@ -33,7 +32,6 @@ logger = logging.getLogger(__name__)
 
 def _ensure_dirs():
     for d in (
-        ECONOMIST_UPLOAD_DIR,
         SECRETARY_UPLOAD_DIR,
         LAWYER_UPLOAD_DIR,
         CHROMA_PERSIST_DIR,

@@ -7,7 +7,7 @@
 - Backend: Python 3.11+, FastAPI
 - Frontend: HTML, CSS, JavaScript
 - LLM: GigaChat или DeepSeek (переключение в `.env`)
-- RAG: ChromaDB + локальные эмбеддинги (sentence-transformers)
+- RAG (Юрист): ChromaDB + локальные эмбеддинги (sentence-transformers)
 - Транскрибация: faster-whisper
 
 ## Установка
@@ -41,7 +41,7 @@ DEEPSEEK_API_KEY=ваш_ключ
    - зеркало: `HF_ENDPOINT=https://hf-mirror.com`, `HF_HUB_DOWNLOAD_TIMEOUT=300`.
 
    При смене `EMBEDDING_PROVIDER` или модели эмбеддингов векторы в Chroma несовместимы — очистите индекс Юриста (кнопка в интерфейсе или `DELETE /lawyer/index`) и загрузите документы заново. То же после смены `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP`.
-3. Создадутся папки `economist/uploaded`, `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
+3. Создадутся папки `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -207,7 +207,6 @@ kill 12345
 | `WHISPER_BEAM_SIZE` | `1` — быстро на CPU; `5` — точнее, медленнее |
 | `WHISPER_CPU_THREADS` | `0` = все ядра; или число потоков |
 | `WHISPER_PRELOAD` | `true` — загрузить модель при старте uvicorn |
-| `MAX_EXCEL_SIZE` | лимит Excel (байты) |
 | `MAX_AUDIO_SIZE` | лимит аудио |
 | `MAX_DOCUMENT_SIZE` | лимит документов |
 | `ECONOMIST_FACT_SHEET_URL` | ссылка на таблицу факта (`/edit`) |
@@ -229,7 +228,7 @@ kill 12345
 ## Структура
 
 ```
-├── economist/     # план/факт Excel, RAG
+├── economist/     # чат через n8n, ссылка на таблицу факта
 ├── secretary/     # аудио, Whisper, протоколы
 ├── lawyer/        # документы, RAG, цитаты
 ├── core/          # LLM, эмбеддинги, история
