@@ -308,13 +308,6 @@ body.app-file-processing .upload-zone.is-processing * {
     width: 100%;
     justify-content: center;
     text-decoration: none;
-    border: 1px solid var(--border);
-    background: var(--surface-hover);
-}
-.sheet-open-btn:hover {
-    background: var(--accent-soft);
-    border-color: var(--accent-muted);
-    color: var(--accent);
 }
 .subsection-title {
     font-size: 0.9rem;
@@ -351,6 +344,16 @@ body.app-file-processing .upload-zone.is-processing * {
     background: var(--accent-soft);
     border-color: var(--accent-muted);
     color: var(--accent);
+}
+.btn-secondary.sheet-open-btn {
+    background: var(--surface-hover);
+    color: var(--text);
+    border: 1px solid var(--border-light);
+}
+.btn-secondary.sheet-open-btn:hover {
+    background: var(--bg-subtle);
+    border-color: var(--border);
+    color: var(--text);
 }
 .btn-danger {
     background: var(--danger);
