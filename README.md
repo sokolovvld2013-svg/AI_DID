@@ -7,7 +7,7 @@
 - Backend: Python 3.11+, FastAPI
 - Frontend: HTML, CSS, JavaScript
 - LLM: GigaChat или DeepSeek (переключение в `.env`)
-- RAG (Юрист): ChromaDB + локальные эмбеддинги (sentence-transformers)
+- RAG (Юрист): ChromaDB + эмбеддинги (`gigachat` / `openai` / локально через `sentence-transformers`)
 - Транскрибация: faster-whisper
 
 ## Установка
@@ -18,6 +18,14 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+**Локальные эмбеддинги** (`EMBEDDING_PROVIDER=local` в `.env`) — дополнительно:
+
+```bash
+pip install -r requirements-local-embeddings.txt
+```
+
+На **VPS без GPU** обычно достаточно `pip install -r requirements.txt` и `EMBEDDING_PROVIDER=gigachat` (или `openai`) — PyTorch и `nvidia_*` не ставятся (~2 ГБ экономии диска).
 
 Скопируйте `.env` и укажите API-ключи:
 
@@ -34,11 +42,11 @@ DEEPSEEK_API_KEY=ваш_ключ
 При первом запуске:
 
 1. **Whisper** — по умолчанию модель `base` (меньше и быстрее `small` на CPU); скачается автоматически.
-2. **Эмбеддинги** — по умолчанию локальная модель `paraphrase-multilingual-MiniLM-L12-v2` (~400 МБ). Если `huggingface.co` недоступен:
-   - быстро: `EMBEDDING_PROVIDER=openai` в `.env` (нужен `OPENAI_API_KEY`);
-   - эксперимент: `EMBEDDING_PROVIDER=gigachat` (нужен `GIGACHAT_CREDENTIALS`, модель `GIGACHAT_EMBEDDING_MODEL=Embeddings`);
+2. **Эмбеддинги (Юрист)** — провайдер в `.env`:
+   - **на сервере (VPS):** `EMBEDDING_PROVIDER=gigachat` или `openai` — достаточно `requirements.txt`, без PyTorch;
+   - **локально на ПК:** `EMBEDDING_PROVIDER=local` + `pip install -r requirements-local-embeddings.txt` (PyTorch **CPU-only**, без `nvidia_*`);
    - офлайн: `scripts\download_embedding_model.bat`, затем `EMBEDDING_LOCAL_FILES_ONLY=1`;
-   - зеркало: `HF_ENDPOINT=https://hf-mirror.com`, `HF_HUB_DOWNLOAD_TIMEOUT=300`.
+   - зеркало HF: `HF_ENDPOINT=https://hf-mirror.com`, `HF_HUB_DOWNLOAD_TIMEOUT=300`.
 
    При смене `EMBEDDING_PROVIDER` или модели эмбеддингов векторы в Chroma несовместимы — очистите индекс Юриста (кнопка в интерфейсе или `DELETE /lawyer/index`) и загрузите документы заново. То же после смены `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP`.
 3. Создадутся папки `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
@@ -95,6 +103,8 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
+
+В `.env` на VPS рекомендуется `EMBEDDING_PROVIDER=gigachat` (или `openai`) — **не** ставьте `requirements-local-embeddings.txt`, иначе pip скачает PyTorch и пакеты `nvidia_*` (>2 ГБ).
 
 Создайте `.env` (по образцу `.env.example`): ключи API, `N8N_ECONOMIST_WEBHOOK_URL`, настройки Whisper и OCR.
 
@@ -180,7 +190,8 @@ kill 12345
 | Ситуация | Что сделать |
 |----------|-------------|
 | Первый запуск Whisper | Скачается модель (~150 МБ для `base`). В `.env`: `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1`; опционально `WHISPER_PRELOAD=true`. |
-| Эмбеддинги офлайн | Модель в `models/` или `EMBEDDING_PROVIDER=openai` / `gigachat`. |
+| pip тянет `nvidia_*`, не хватает места на диске | Не ставьте `sentence-transformers` на VPS: только `requirements.txt` + `EMBEDDING_PROVIDER=gigachat`. Локальные эмбеддинги: `requirements-local-embeddings.txt` (CPU torch). |
+| Эмбеддинги офлайн | Модель в `models/` + `requirements-local-embeddings.txt`, или `EMBEDDING_PROVIDER=openai` / `gigachat`. |
 | Смена провайдера эмбеддингов | Очистить индекс Юриста и загрузить документы заново (векторы разных моделей несовместимы). |
 | RapidOCR | При первом OCR скачаются ONNX-модели (~десятки МБ). |
 | Загрузка большого TXT/DOCX, ошибка `max_tokens_per_request` | Обновите код (`git pull`) — эмбеддинги OpenAI идут пакетами. Либо `EMBEDDING_PROVIDER=local`. |
@@ -234,6 +245,8 @@ kill 12345
 ├── core/          # LLM, эмбеддинги, история
 ├── static/        # CSS, JS
 ├── templates/     # HTML
+├── requirements.txt                  # основные зависимости (VPS, gigachat/openai)
+├── requirements-local-embeddings.txt # PyTorch CPU + sentence-transformers (local)
 ├── main.py
 └── config.py
 ```
