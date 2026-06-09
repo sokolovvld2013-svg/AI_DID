@@ -20,6 +20,7 @@ from config import (
     MAX_LAWYER_LLM_CONTEXT_CHARS,
 )
 from core.history import lawyer_history
+from core.session import get_session_id
 from core.llm_errors import LLMUserFacingError
 from core.llm_client import get_llm
 from lawyer.doc_processor import process_upload
@@ -64,8 +65,8 @@ def _truncate_fragment(text: str, max_len: int) -> str:
     return text[: max_len - 1].rstrip() + "…"
 
 
-def _lawyer_error_reply(question: str, message: str) -> dict:
-    lawyer_history.add(question, message)
+def _lawyer_error_reply(session_id: str, question: str, message: str) -> dict:
+    lawyer_history.add(session_id, question, message)
     return {"answer": message, "citations": []}
 
 
@@ -202,12 +203,13 @@ def _select_relevant_hits(question: str, hits: list[dict]) -> list[dict]:
 
 @router.get("", response_class=HTMLResponse)
 async def lawyer_page(request: Request):
+    sid = get_session_id(request)
     return templates.TemplateResponse(
         request=request,
         name="lawyer.html",
         context={
             "active": "lawyer",
-            "history": lawyer_history.list(),
+            "history": lawyer_history.list(sid),
             "files": _rag.list_files(),
         },
     )
@@ -286,15 +288,16 @@ async def clear_index():
 
 
 @router.post("/query")
-async def query(req: LawyerQuery):
+async def query(req: LawyerQuery, request: Request):
     question = req.question.strip()
+    sid = get_session_id(request)
     if not question:
         raise HTTPException(400, "Пустой вопрос")
 
     all_hits = _rag.search(question)
     if not all_hits:
         answer = "База знаний пуста. Загрузите документы для ответа на вопросы."
-        lawyer_history.add(question, answer)
+        lawyer_history.add(sid, question, answer)
         return {"answer": answer, "citations": []}
 
     try:
@@ -304,7 +307,7 @@ async def query(req: LawyerQuery):
                 "По загруженным документам не найдено фрагментов, подходящих к вопросу. "
                 "Переформулируйте вопрос или загрузите другой документ."
             )
-            lawyer_history.add(question, answer)
+            lawyer_history.add(sid, question, answer)
             return {"answer": answer, "citations": []}
 
         llm = get_llm()
@@ -351,23 +354,25 @@ async def query(req: LawyerQuery):
         citations = select_citations_for_display(answer, citations)
         if not citations and hits:
             logger.info("В ответе нет ссылок [N] — источники не показаны")
-        lawyer_history.add(question, answer, citations=citations)
+        lawyer_history.add(sid, question, answer, citations=citations)
         return {"answer": answer, "citations": citations}
     except LLMUserFacingError as e:
         logger.warning("Lawyer query LLM error: %s", e.original or e)
-        return _lawyer_error_reply(question, e.user_message)
+        return _lawyer_error_reply(sid, question, e.user_message)
     except Exception as e:
         logger.exception("Lawyer query failed: %s", e)
         return _lawyer_error_reply(
+            sid,
             question,
             "Произошла ошибка при обработке запроса. Попробуйте переформулировать вопрос.",
         )
 
 
 @router.get("/history")
-async def history():
+async def history(request: Request):
+    sid = get_session_id(request)
     repaired = []
-    for item in lawyer_history.list():
+    for item in lawyer_history.list(sid):
         entry = dict(item)
         entry["query"] = repair_text(entry.get("query") or "")
         entry["response"] = strip_urls(repair_text(entry.get("response") or ""))

@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from core.session import SessionMiddleware
+
 from config import (
     BASE_DIR,
     CHROMA_PERSIST_DIR,
@@ -96,6 +98,8 @@ app = FastAPI(
     description="Модули: Экономист, Секретарь, Юрист",
     lifespan=lifespan,
 )
+
+app.add_middleware(SessionMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 

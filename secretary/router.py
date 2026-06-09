@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 
 from config import ALLOWED_AUDIO_EXT, BASE_DIR, MAX_AUDIO_SIZE, SECRETARY_UPLOAD_DIR
 from core.history import secretary_history
+from core.session import get_session_id
 from secretary.summarizer import build_protocol
 from secretary.transcriber import transcribe
 
@@ -27,15 +28,16 @@ def _validate_audio(file: UploadFile) -> None:
 
 @router.get("", response_class=HTMLResponse)
 async def secretary_page(request: Request):
+    sid = get_session_id(request)
     return templates.TemplateResponse(
         request=request,
         name="secretary.html",
-        context={"active": "secretary", "history": secretary_history.list()},
+        context={"active": "secretary", "history": secretary_history.list(sid)},
     )
 
 
 @router.post("/upload")
-async def upload_audio(file: UploadFile = File(...)):
+async def upload_audio(request: Request, file: UploadFile = File(...)):
     _validate_audio(file)
     content = await file.read()
     if len(content) > MAX_AUDIO_SIZE:
@@ -63,7 +65,9 @@ async def upload_audio(file: UploadFile = File(...)):
         logger.exception("Ошибка обработки аудио")
         raise HTTPException(500, "Ошибка обработки аудио. Попробуйте другой файл.") from e
 
+    sid = get_session_id(request)
     secretary_history.add(
+        sid,
         query=file.filename or "audio",
         response=protocol,
         file_id=file_id,
@@ -81,13 +85,14 @@ async def upload_audio(file: UploadFile = File(...)):
 
 
 @router.get("/history")
-async def history():
-    return {"history": secretary_history.list()}
+async def history(request: Request):
+    return {"history": secretary_history.list(get_session_id(request))}
 
 
 @router.get("/protocol/{file_id}")
-async def get_protocol(file_id: str):
-    for entry in secretary_history.list():
+async def get_protocol(file_id: str, request: Request):
+    sid = get_session_id(request)
+    for entry in secretary_history.list(sid):
         if entry.get("file_id") == file_id:
             return {"protocol": entry["response"], "filename": entry.get("filename")}
     raise HTTPException(404, "Протокол не найден")
