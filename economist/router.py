@@ -26,6 +26,7 @@ from config import (
 )
 
 from core.history import economist_history
+from core.session import get_session_id
 
 from economist.n8n_client import (
     _is_meaningless_text,
@@ -52,9 +53,10 @@ class QueryRequest(BaseModel):
     message: str
 
 
-def _economist_error_reply(query: str) -> dict:
+def _economist_error_reply(query: str, session_id: str) -> dict:
     """Ответ в чат при ошибке n8n или пустом ответе (без HTTP 502)."""
     economist_history.add(
+        session_id,
         query,
         ECONOMIST_CHAT_ERROR,
         intent="error",
@@ -74,6 +76,7 @@ def _economist_error_reply(query: str) -> dict:
 
 async def economist_page(request: Request):
 
+    sid = get_session_id(request)
     return templates.TemplateResponse(
 
         request=request,
@@ -84,7 +87,7 @@ async def economist_page(request: Request):
 
             "active": "economist",
 
-            "history": economist_history.list(),
+            "history": economist_history.list(sid),
 
             "fact_sheet_url": ECONOMIST_FACT_SHEET_EDIT_URL,
 
@@ -117,9 +120,10 @@ async def status():
 
 @router.post("/query")
 
-async def query(req: QueryRequest):
+async def query(req: QueryRequest, request: Request):
 
     message = req.message.strip()
+    sid = get_session_id(request)
 
     if not message:
 
@@ -129,7 +133,7 @@ async def query(req: QueryRequest):
 
     if not N8N_ECONOMIST_WEBHOOK_URL:
         logger.warning("N8N_ECONOMIST_WEBHOOK_URL не задан")
-        return _economist_error_reply(message)
+        return _economist_error_reply(message, sid)
 
     try:
         response_text, records, table_html = await ask_economist_n8n(
@@ -160,23 +164,24 @@ async def query(req: QueryRequest):
 
     except ValueError as e:
         logger.warning("Ошибка запроса к n8n: %s", e)
-        return _economist_error_reply(message)
+        return _economist_error_reply(message, sid)
 
     except Exception as e:
         logger.exception("Ошибка запроса к n8n: %s", e)
-        return _economist_error_reply(message)
+        return _economist_error_reply(message, sid)
 
     if not response_text and not records and not table_html:
         logger.warning("n8n вернул пустой ответ для запроса: %s", message[:80])
-        return _economist_error_reply(message)
+        return _economist_error_reply(message, sid)
 
     if _is_meaningless_text(response_text) and not records and not table_html:
         logger.warning("n8n вернул пустой ответ (%r) для запроса: %s", response_text, message[:80])
-        return _economist_error_reply(message)
+        return _economist_error_reply(message, sid)
 
 
 
     economist_history.add(
+        sid,
         message,
         response_text,
         intent="n8n",
@@ -198,8 +203,8 @@ async def query(req: QueryRequest):
 
 @router.get("/history")
 
-async def history():
+async def history(request: Request):
 
-    return {"history": economist_history.list()}
+    return {"history": economist_history.list(get_session_id(request))}
 
 

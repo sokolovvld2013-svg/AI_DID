@@ -1,5 +1,5 @@
-"""In-memory история запросов по модулям."""
-from collections import deque
+"""In-memory история запросов по модулям (отдельно для каждой сессии браузера)."""
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,23 +16,26 @@ class HistoryEntry:
 
 
 class ModuleHistory:
-    """Кольцевой буфер последних N записей для одного модуля."""
+    """Кольцевой буфер последних N записей на одну сессию."""
 
     def __init__(self, module_name: str, max_size: int = HISTORY_SIZE):
         self.module_name = module_name
-        self._entries: deque[HistoryEntry] = deque(maxlen=max_size)
+        self._max_size = max_size
+        self._by_session: dict[str, deque[HistoryEntry]] = defaultdict(
+            lambda: deque(maxlen=self._max_size)
+        )
 
-    def add(self, query: str, response: str, **extra: Any) -> HistoryEntry:
+    def add(self, session_id: str, query: str, response: str, **extra: Any) -> HistoryEntry:
         entry = HistoryEntry(
             timestamp=format_history_timestamp(),
             query=query,
             response=response,
             extra=extra,
         )
-        self._entries.append(entry)
+        self._by_session[session_id].append(entry)
         return entry
 
-    def list(self) -> list[dict[str, Any]]:
+    def list(self, session_id: str) -> list[dict[str, Any]]:
         return [
             {
                 "timestamp": e.timestamp,
@@ -40,14 +43,13 @@ class ModuleHistory:
                 "response": e.response,
                 **e.extra,
             }
-            for e in reversed(self._entries)
+            for e in reversed(self._by_session[session_id])
         ]
 
-    def clear(self) -> None:
-        self._entries.clear()
+    def clear(self, session_id: str) -> None:
+        self._by_session.pop(session_id, None)
 
 
-# Глобальные хранилища истории по модулям
 economist_history = ModuleHistory("economist")
 secretary_history = ModuleHistory("secretary")
 lawyer_history = ModuleHistory("lawyer")
