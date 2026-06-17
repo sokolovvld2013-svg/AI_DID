@@ -39,6 +39,8 @@ secretary/uploaded/*
 !secretary/uploaded/.gitkeep
 lawyer/uploaded/*
 !lawyer/uploaded/.gitkeep
+logs/*
+!logs/.gitkeep
 
 # Загружаемые пользователем файлы
 *.xlsx

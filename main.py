@@ -40,6 +40,7 @@ def _ensure_dirs():
         BASE_DIR / "static",
         BASE_DIR / "static" / "img",
         BASE_DIR / "templates",
+        BASE_DIR / "logs",
     ):
         d.mkdir(parents=True, exist_ok=True)
 

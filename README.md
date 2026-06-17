@@ -185,6 +185,14 @@ pip install -r requirements.txt
 
 ### Запуск
 
+Перейдите в каталог проекта и активируйте venv (иначе `main:app` и `logs/` не найдутся):
+
+```bash
+cd ~/AI_DID
+source venv/bin/activate
+mkdir -p logs
+```
+
 Интерактивно (для проверки):
 
 ```bash
@@ -197,6 +205,8 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 nohup uvicorn main:app --host 0.0.0.0 --port 8000 > logs/uvicorn.log 2>&1 &
 tail -f logs/uvicorn.log
 ```
+
+Если каталог проекта другой — подставьте свой путь вместо `~/AI_DID`.
 
 На продакшене лучше **без** `--reload`.
 
