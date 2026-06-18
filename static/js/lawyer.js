@@ -133,14 +133,15 @@ document.addEventListener('DOMContentLoaded', () => {
             title.textContent = 'Источники:';
             box.appendChild(title);
 
-            const list = document.createElement('ol');
+            const list = document.createElement('ul');
             list.className = 'citation-list';
             citations.forEach(c => {
                 const li = document.createElement('li');
                 li.className = 'citation-source';
                 const label = safeText(c.filename) || 'Документ';
                 const page = c.page != null ? c.page : '—';
-                li.textContent = `${label}, стр. ${page}`;
+                const ref = c.id != null ? `[${c.id}] ` : '';
+                li.textContent = `${ref}${label}, стр. ${page}`;
                 list.appendChild(li);
             });
             box.appendChild(list);
