@@ -403,6 +403,11 @@ def _ru_plausibility(s: str) -> int:
     return score
 
 
+def _box_drawing_penalty(s: str) -> int:
+    """Штраф за псевдографику — признак UTF-8, ошибочно прочитанного как CP866."""
+    return sum(1 for c in s if "\u2500" <= c <= "\u257f") * 40
+
+
 def _try_utf8_mojibake_fix(text: str) -> str | None:
     """UTF-8, ошибочно показанный как cp1251/latin-1: РќР° → На."""
     if not text:
@@ -424,6 +429,29 @@ def _try_utf8_mojibake_fix(text: str) -> str | None:
             best_score = score
             best = candidate
 
+    if best is not None and best_score > original_score + 5:
+        return best
+    return None
+
+
+def _try_cp866_utf8_mojibake_fix(text: str) -> str | None:
+    """UTF-8, ошибочно декодированный как CP866 (я─п╢я│… → нормальный русский)."""
+    if not text or not any("\u2500" <= c <= "\u257f" for c in text):
+        return None
+    original_score = _ru_plausibility(text)
+    best: str | None = None
+    best_score = original_score
+    for enc in ("cp866", "cp1251"):
+        try:
+            candidate = text.encode(enc).decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            continue
+        if candidate == text:
+            continue
+        score = _ru_plausibility(candidate)
+        if score > best_score:
+            best_score = score
+            best = candidate
     if best is not None and best_score > original_score + 5:
         return best
     return None
@@ -451,6 +479,10 @@ def repair_text(text: str) -> str:
     mojibake_fixed = _try_utf8_mojibake_fix(text)
     if mojibake_fixed:
         text = mojibake_fixed
+
+    cp866_fixed = _try_cp866_utf8_mojibake_fix(text)
+    if cp866_fixed:
+        text = cp866_fixed
 
     original = text
     candidates: list[str] = []
@@ -498,6 +530,7 @@ def _decoding_quality(s: str) -> tuple[int, int, int]:
     for marker in _GARBLED_TXT_MARKERS:
         penalty += s.count(marker) * 20
     penalty += _mojibake_penalty(s)
+    penalty += _box_drawing_penalty(s)
     return (
         _ru_plausibility(s),
         _cyrillic_score(s),
@@ -505,20 +538,49 @@ def _decoding_quality(s: str) -> tuple[int, int, int]:
     )
 
 
+def _utf8_bytes_look_russian(data: bytes) -> bool:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if not text.strip():
+        return True
+    if data.isascii():
+        return True
+    q = _decoding_quality(text)
+    return q[1] >= 15 and q[2] >= -80
+
+
 def decode_text_bytes(data: bytes) -> str:
     """Подбор кодировки для сырого содержимого TXT (UTF-8, CP1251, …)."""
     if not data:
         return ""
 
-    candidates: list[str] = []
-
     if data.startswith(b"\xff\xfe"):
-        _try_decode(data, "utf-16-le", candidates)
+        try:
+            return data.decode("utf-16-le")
+        except UnicodeDecodeError:
+            pass
     elif data.startswith(b"\xfe\xff"):
-        _try_decode(data, "utf-16-be", candidates)
-    else:
-        for enc in _TEXT_FILE_ENCODINGS:
-            _try_decode(data, enc, candidates)
+        try:
+            return data.decode("utf-16-be")
+        except UnicodeDecodeError:
+            pass
+
+    # Валидный UTF-8 с кириллицей: не сравнивать с CP866/KOI8 (дают «ломаный» русский).
+    for enc in ("utf-8-sig", "utf-8"):
+        try:
+            text = data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+        if _utf8_bytes_look_russian(data):
+            return text
+
+    candidates: list[str] = []
+    for enc in _TEXT_FILE_ENCODINGS:
+        if enc in ("utf-8-sig", "utf-8"):
+            continue
+        _try_decode(data, enc, candidates)
 
     if not candidates:
         for enc in ("utf-8", "cp1251", "latin-1"):
@@ -555,6 +617,14 @@ def decode_text_file(path: Path) -> str:
     return text
 
 
+def repair_filename(name: str) -> str:
+    """Имя файла: только mojibake, без homoglyph (иначе .txt → .тхт)."""
+    if not name:
+        return name
+    fixed = _try_utf8_mojibake_fix(name)
+    return fixed if fixed else name
+
+
 def decode_upload_filename(name: str | None) -> str:
     if not name:
         return "document"
@@ -564,4 +634,4 @@ def decode_upload_filename(name: str | None) -> str:
             name = unquote(name, encoding="utf-8")
         except Exception:
             pass
-    return repair_text(name)
+    return repair_filename(name)

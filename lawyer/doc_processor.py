@@ -27,6 +27,7 @@ from config import (
 from lawyer.text_encoding import (
     decode_text_file,
     repair_citation_text,
+    repair_filename,
     repair_text,
     text_quality_score,
 )
@@ -1103,7 +1104,7 @@ def chunk_text(
                     "text": repair_citation_text(chunk_text_str.strip()),
                     "metadata": {
                         "file_id": file_id,
-                        "filename": repair_text(filename),
+                        "filename": repair_filename(filename),
                         "page": cite_page,
                         "chunk_index": chunk_idx,
                     },

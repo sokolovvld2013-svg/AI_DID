@@ -26,9 +26,8 @@ from core.llm_client import get_llm
 from lawyer.doc_processor import process_upload
 from lawyer.rag import LawyerRAG, MIN_CITATION_SCORE_RATIO
 from lawyer.search_utils import core_query_tokens, min_core_matches_required
-from lawyer.citation_repair import repair_citation_display
 from lawyer.citations import select_citations_for_display
-from lawyer.text_encoding import decode_upload_filename, repair_citation_text, repair_text, strip_urls
+from lawyer.text_encoding import decode_upload_filename, repair_citation_text, repair_filename, repair_text, strip_urls
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lawyer", tags=["lawyer"])
@@ -63,6 +62,16 @@ def _truncate_fragment(text: str, max_len: int) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 1].rstrip() + "…"
+
+
+def _citation_ref(citation: dict) -> dict:
+    """Ссылка на документ для клиента (без текста фрагмента)."""
+    return {
+        "id": citation.get("id"),
+        "filename": strip_urls(repair_filename(citation.get("filename") or "")),
+        "page": citation.get("page"),
+        "file_id": citation.get("file_id"),
+    }
 
 
 def _lawyer_error_reply(session_id: str, question: str, message: str) -> dict:
@@ -322,7 +331,7 @@ async def query(req: LawyerQuery, request: Request):
                 strip_urls(repair_citation_text(merged_text or hit.get("text") or "")),
                 MAX_LAWYER_CITATION_CHARS,
             )
-            filename = strip_urls(repair_text(hit["filename"] or ""))
+            filename = strip_urls(repair_filename(hit["filename"] or ""))
             part = f"[{i}] {filename}, стр. {hit['page']}:\n{raw_text}"
             if context_len + len(part) > MAX_LAWYER_LLM_CONTEXT_CHARS:
                 remaining = MAX_LAWYER_LLM_CONTEXT_CHARS - context_len
@@ -335,7 +344,6 @@ async def query(req: LawyerQuery, request: Request):
             context_len += len(part)
             citations.append({
                 "id": i,
-                "text": strip_urls(repair_citation_display(raw_text, llm)),
                 "filename": filename,
                 "page": hit["page"],
                 "file_id": hit["file_id"],
@@ -355,7 +363,10 @@ async def query(req: LawyerQuery, request: Request):
         if not citations and hits:
             logger.info("В ответе нет ссылок [N] — источники не показаны")
         lawyer_history.add(sid, question, answer, citations=citations)
-        return {"answer": answer, "citations": citations}
+        return {
+            "answer": answer,
+            "citations": [_citation_ref(c) for c in citations],
+        }
     except LLMUserFacingError as e:
         logger.warning("Lawyer query LLM error: %s", e.original or e)
         return _lawyer_error_reply(sid, question, e.user_message)
@@ -378,12 +389,7 @@ async def history(request: Request):
         entry["response"] = strip_urls(repair_text(entry.get("response") or ""))
         if entry.get("citations"):
             entry["citations"] = [
-                {
-                    **c,
-                    "text": strip_urls(repair_citation_text(c.get("text") or "")),
-                    "filename": strip_urls(repair_text(c.get("filename") or "")),
-                }
-                for c in entry["citations"]
+                _citation_ref(c) for c in entry["citations"]
             ]
         repaired.append(entry)
     return {"history": repaired}

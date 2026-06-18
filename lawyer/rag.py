@@ -37,7 +37,7 @@ from lawyer.search_utils import (
     reciprocal_rank_fusion,
     stem_match_count,
 )
-from lawyer.text_encoding import repair_citation_text, repair_text
+from lawyer.text_encoding import repair_citation_text, repair_filename, repair_text
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ def build_chunk_embed_text(
 ) -> str:
     """Текст для эмбеддинга: имя документа + страница + содержимое (head+tail при лимите)."""
     body = (text or "").strip()
-    title = repair_text(filename or "").strip()
+    title = repair_filename(filename or "").strip()
     header = f"[{title}] стр. {page}\n" if title else ""
     if not body:
         return (header.rstrip() or title or ".")
@@ -963,7 +963,7 @@ class LawyerRAG:
         return [
             {
                 "text": repair_citation_text(h["text"] or ""),
-                "filename": repair_text(h["filename"] or ""),
+                "filename": repair_filename(h["filename"] or ""),
                 "page": int(h.get("page") or 1),
                 "file_id": h["file_id"],
                 "chunk_index": h.get("chunk_index", 0),
