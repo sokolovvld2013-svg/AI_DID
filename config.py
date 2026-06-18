@@ -32,8 +32,9 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"
 DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
 GIGACHAT_MODEL = os.getenv("GIGACHAT_MODEL", "GigaChat")
 GIGACHAT_EMBEDDING_MODEL = os.getenv("GIGACHAT_EMBEDDING_MODEL", "Embeddings")
-# GigaChat Embeddings: лимит ~514 токенов на текст (~950 симв. кириллицы с запасом)
-GIGACHAT_MAX_EMBED_CHARS = int(os.getenv("GIGACHAT_MAX_EMBED_CHARS", "950"))
+# GigaChat Embeddings: API отклоняет >514 токенов на текст; кириллица ≈0.75 токена/символ
+GIGACHAT_MAX_EMBED_TOKENS = int(os.getenv("GIGACHAT_MAX_EMBED_TOKENS", "500"))
+GIGACHAT_MAX_EMBED_CHARS = int(os.getenv("GIGACHAT_MAX_EMBED_CHARS", "480"))
 
 # Эмбеддинги: local | openai | gigachat
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()
