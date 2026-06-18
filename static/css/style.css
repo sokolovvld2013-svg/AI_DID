@@ -693,19 +693,22 @@ mark, .citation-highlight {
     color: var(--text);
 }
 
-.citation-block {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background: var(--accent-soft);
-    border-left: 3px solid var(--accent);
-    border-radius: 0 var(--radius) var(--radius) 0;
+.citations {
+    margin-top: 0.75rem;
     font-size: 0.85rem;
 }
 
+.citation-list {
+    margin: 0.35rem 0 0;
+    padding-left: 1.25rem;
+    color: var(--text-muted);
+}
+
 .citation-source {
+    margin-bottom: 0.2rem;
+    line-height: 1.4;
     color: var(--text-muted);
     font-size: 0.8rem;
-    margin-bottom: 0.25rem;
 }
 
 /* Без кликабельных ссылок на localhost/сайт в ответах и источниках */
