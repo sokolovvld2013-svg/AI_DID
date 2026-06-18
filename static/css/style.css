@@ -700,7 +700,8 @@ mark, .citation-highlight {
 
 .citation-list {
     margin: 0.35rem 0 0;
-    padding-left: 1.25rem;
+    padding-left: 0;
+    list-style: none;
     color: var(--text-muted);
 }
 
