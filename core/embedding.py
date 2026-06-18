@@ -12,6 +12,7 @@ from config import (
     GIGACHAT_CREDENTIALS,
     GIGACHAT_EMBEDDING_MODEL,
     GIGACHAT_MAX_EMBED_CHARS,
+    GIGACHAT_MAX_EMBED_TOKENS,
     GIGACHAT_SCOPE,
     LOCAL_EMBEDDING_MODEL,
     OPENAI_API_KEY,
@@ -168,21 +169,40 @@ class OpenAIEmbedder(BaseEmbedder):
         return self.embed([text])[0]
 
 
-def _truncate_gigachat_embed_text(text: str, max_chars: int) -> str:
-    """Запасная обрезка под лимит GigaChat (~514 токенов), head+tail."""
-    if len(text) <= max_chars:
+def _gigachat_chars_budget(max_chars: int, max_tokens: int) -> int:
+    """Символьный лимит с запасом под кириллицу (~0.75 токена/символ у GigaChat)."""
+    by_tokens = max(200, int(max_tokens / 0.78))
+    return max(200, min(max_chars, by_tokens))
+
+
+def _truncate_gigachat_embed_text(
+    text: str,
+    max_chars: int,
+    max_tokens: int | None = None,
+) -> str:
+    """Обрезка под лимит GigaChat (~514 токенов), head+tail."""
+    limit = _gigachat_chars_budget(
+        max_chars,
+        max_tokens if max_tokens is not None else GIGACHAT_MAX_EMBED_TOKENS,
+    )
+    if len(text) <= limit:
         return text
     if text.startswith("[") and "\n" in text:
         header, body = text.split("\n", 1)
-        body_budget = max(180, max_chars - len(header) - 8)
+        body_budget = max(160, limit - len(header) - 8)
         if len(body) <= body_budget:
             return f"{header}{body}"
-        head_len = max(100, body_budget * 2 // 3)
-        tail_len = max(60, body_budget - head_len - 5)
+        head_len = max(90, body_budget * 2 // 3)
+        tail_len = max(50, body_budget - head_len - 5)
         return f"{header}{body[:head_len]}\n...\n{body[-tail_len:]}"
-    head_len = max(140, (max_chars - 8) * 2 // 3)
-    tail_len = max(60, max_chars - head_len - 8)
+    head_len = max(120, (limit - 8) * 2 // 3)
+    tail_len = max(50, limit - head_len - 8)
     return f"{text[:head_len]}\n...\n{text[-tail_len:]}"
+
+
+def _gigachat_token_limit_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return "413" in msg or "tokens limit exceeded" in msg
 
 
 class GigaChatEmbedder(BaseEmbedder):
@@ -200,29 +220,65 @@ class GigaChatEmbedder(BaseEmbedder):
         )
         self._model = GIGACHAT_EMBEDDING_MODEL
         self._max_chars = GIGACHAT_MAX_EMBED_CHARS
+        self._max_tokens = GIGACHAT_MAX_EMBED_TOKENS
+        self._char_budget = _gigachat_chars_budget(self._max_chars, self._max_tokens)
         logger.info(
-            "GigaChat embeddings: модель %s, max %d симв./запрос",
+            "GigaChat embeddings: модель %s, до %d симв. (~%d токенов) на запрос",
             self._model,
-            self._max_chars,
+            self._char_budget,
+            self._max_tokens,
         )
+
+    def _prepare_gigachat_batch(
+        self,
+        texts: list[str],
+        char_budget: int,
+        token_budget: int,
+    ) -> list[str]:
+        return [
+            _truncate_gigachat_embed_text(s, char_budget, token_budget) for s in texts
+        ]
+
+    def _embed_batch(self, batch: list[str]) -> list[list[float]]:
+        resp = self._client.embeddings(texts=batch, model=self._model)
+        return [item.embedding for item in resp.data]
+
+    def _embed_one_with_fallback(self, text: str) -> list[float]:
+        char_budget = self._char_budget
+        token_budget = self._max_tokens
+        for attempt in range(4):
+            prepared = _truncate_gigachat_embed_text(text, char_budget, token_budget)
+            try:
+                return self._embed_batch([prepared])[0]
+            except Exception as e:
+                if not _gigachat_token_limit_error(e) or attempt >= 3:
+                    raise
+                char_budget = max(180, int(char_budget * 0.72))
+                token_budget = max(360, int(token_budget * 0.85))
+                logger.warning(
+                    "GigaChat: лимит токенов, повтор с %d симв. (~%d токенов)",
+                    char_budget,
+                    token_budget,
+                )
+        raise RuntimeError("GigaChat: не удалось уложиться в лимит токенов")
 
     def embed(self, texts: List[str]) -> List[List[float]]:
         if not texts:
             return []
 
         raw_prepared = _prepare_texts(texts)
-        prepared = [
-            _truncate_gigachat_embed_text(s, self._max_chars) for s in raw_prepared
-        ]
+        prepared = self._prepare_gigachat_batch(
+            raw_prepared, self._char_budget, self._max_tokens
+        )
         truncated = sum(
             1 for raw, prep in zip(raw_prepared, prepared) if len(prep) < len(raw)
         )
         if truncated:
             logger.info(
-                "GigaChat: укорочено %d/%d текстов до %d симв. (лимит API ~514 токенов)",
+                "GigaChat: укорочено %d/%d текстов до ≤%d симв. (лимит API ~514 токенов)",
                 truncated,
                 len(texts),
-                self._max_chars,
+                self._char_budget,
             )
         all_rows: list[list[float]] = []
         total = len(prepared)
@@ -236,8 +292,16 @@ class GigaChatEmbedder(BaseEmbedder):
 
         for start in range(0, total, EMBED_BATCH_SIZE):
             batch = prepared[start : start + EMBED_BATCH_SIZE]
-            resp = self._client.embeddings(texts=batch, model=self._model)
-            all_rows.extend(item.embedding for item in resp.data)
+            try:
+                all_rows.extend(self._embed_batch(batch))
+            except Exception as e:
+                if not _gigachat_token_limit_error(e):
+                    raise
+                logger.warning(
+                    "GigaChat: пакет отклонён по лимиту токенов, по одному фрагменту"
+                )
+                for text in batch:
+                    all_rows.append(self._embed_one_with_fallback(text))
 
         if len(all_rows) != total:
             raise RuntimeError(

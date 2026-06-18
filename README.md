@@ -231,7 +231,7 @@ kill <PID>
 | `LLM_PROVIDER` | `deepseek` или `gigachat` |
 | `DEEPSEEK_API_KEY` / `GIGACHAT_CREDENTIALS` | Ключи API |
 | `EMBEDDING_PROVIDER` | `gigachat`, `openai` или `local` |
-| `GIGACHAT_MAX_EMBED_CHARS` | Лимит символов на запрос эмбеддинга GigaChat (по умолчанию 950) |
+| `GIGACHAT_MAX_EMBED_CHARS` | Лимит символов на фрагмент для GigaChat (по умолчанию 480; API — не более ~514 токенов) |
 | `ECONOMIST_FACT_SHEET_URL` | Google-таблица факта |
 | `N8N_ECONOMIST_WEBHOOK_URL` | Webhook n8n для чата Экономиста |
 | `N8N_ECONOMIST_TIMEOUT` | Таймаут ответа n8n, сек (120) |
