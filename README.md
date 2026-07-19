@@ -1,7 +1,9 @@
 # ИИ-помощник Компании
 
-Веб-приложение для сотрудников с тремя модулями: **Экономист**, **Секретарь**, **Юрист**.  
-Один сайт, общая база нормативных документов (Юрист), личная история запросов у каждого пользователя (по cookie в браузере).
+Веб-приложение для сотрудников: **Экономист**, **Секретарь**, **Юрист**.  
+Один сайт, общая база документов (Юрист), личная история запросов у каждого пользователя (cookie в браузере).
+
+**Каталог проекта на сервере:** `~/AI_DID` (все данные, конфигурация и логи — внутри него).
 
 ## Стек
 
@@ -16,119 +18,125 @@
 
 ---
 
+## Каталог `AI_DID`
+
+После установки и первого запуска в `~/AI_DID` находятся:
+
+```
+~/AI_DID/
+├── .env                    # ключи и настройки (не в git)
+├── venv/                   # виртуальное окружение Python
+├── logs/                   # uvicorn.log при запуске через nohup
+├── chroma_data/            # векторный индекс Юриста (общий для всех)
+├── secretary/uploaded/     # загруженные аудиофайлы
+├── lawyer/uploaded/        # загруженные документы (копии на диске)
+├── models/                 # локальная модель эмбеддингов (если EMBEDDING_PROVIDER=local)
+├── economist/              # модуль Экономист
+├── secretary/              # модуль Секретарь
+├── lawyer/                 # модуль Юрист
+├── core/                   # LLM, эмбеддинги, история, сессии
+├── static/                 # CSS, JS, img
+├── templates/              # HTML
+├── docs/                   # инструкции (n8n, GitHub)
+├── scripts/                # утилиты
+├── main.py
+├── config.py
+└── requirements.txt
+```
+
+Путь можно задать иначе, но далее в инструкциях используется **`~/AI_DID`**.
+
+---
+
 ## Модули
 
 ### Экономист
 
 Помощник по бюджету и фактическим расходам.
 
-**Что умеет**
+- Чат: подбор статьи, лимиты ПД, факт по статье или объекту.
+- Ответ текстом или таблицей (если n8n вернул структурированные данные).
+- Кнопка «Открыть таблицу» — Google Sheets с фактом.
 
-- Отвечать на вопросы в чате: подбор статьи по описанию расхода, лимиты ПД по статье или объекту, факт по статье.
-- Показывать ответ текстом или в виде таблицы (если n8n вернул структурированные данные).
-- Открывать **таблицу факта** в Google Sheets — кнопка «Открыть таблицу» на странице модуля.
+**Схема:** вопрос на сайте → webhook **n8n** (`N8N_ECONOMIST_WEBHOOK_URL`) → ваша логика (LLM, Sheets, 1С) → ответ в чат. История — **личная** (по браузеру).
 
-**Как устроено**
-
-1. Пользователь пишет вопрос в чат на сайте.
-2. Сервер отправляет запрос в **n8n** (`N8N_ECONOMIST_WEBHOOK_URL`).
-3. В n8n выполняется ваша логика: LLM, Google Sheets, 1С и т.д.
-4. Ответ возвращается в чат; история сохраняется **только для этого браузера**.
-
-**Настройка**
-
-- `ECONOMIST_FACT_SHEET_URL` — ссылка на Google-таблицу факта (режим редактирования).
-- `N8N_ECONOMIST_WEBHOOK_URL` — Production URL webhook в n8n.
-
-Подробная схема workflow: [docs/N8N_ECONOMIST.md](docs/N8N_ECONOMIST.md).
+Настройка: `ECONOMIST_FACT_SHEET_URL`, `N8N_ECONOMIST_WEBHOOK_URL`. Подробнее: [docs/N8N_ECONOMIST.md](docs/N8N_ECONOMIST.md).
 
 ---
 
 ### Секретарь
 
-Протоколирование совещаний из аудиозаписи.
+Протоколы совещаний из аудио.
 
-**Что умеет**
+- Форматы: `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac` (до 100 МБ).
+- Распознавание **Whisper** (русский), протокол через LLM.
+- История обработанных файлов — **личная**.
 
-- Принимать аудио: `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac` (до 100 МБ по умолчанию).
-- Распознавать речь (**Whisper**, русский язык).
-- Формировать **протокол совещания** через LLM: тема, участники, решения, поручения.
-- Хранить историю обработанных файлов **для каждого пользователя**; открывать сохранённые протоколы из списка.
-
-**Как устроено**
-
-1. Загрузка файла на сервер.
-2. Транскрибация (локально, модель Whisper).
-3. Структурирование текста LLM (DeepSeek или GigaChat).
-4. Протокол отображается на странице и попадает в личную историю.
-
-**На сервере нужен** `ffmpeg` (`sudo apt install -y ffmpeg` на Linux).
+На сервере нужен **ffmpeg**: `sudo apt install -y ffmpeg`.
 
 ---
 
 ### Юрист
 
-Поиск ответов в загруженных внутренних документах (положения, регламенты, приказы).
+Поиск по внутренним документам (положения, приказы, регламенты).
 
-**Что умеет**
+- Загрузка **DOCX**, **TXT** (рекомендуется), **PDF** до 50 МБ.
+- На странице указано: *поиск по PDF не эффективен* — для сканов используйте **DOCX** или PDF с текстовым слоем.
+- База документов и индекс Chroma — **общие** для всех сотрудников.
+- Ответ со ссылками `[1]`, `[2]`…; блок **«Источники»** — только документ и страница (без текста цитаты).
 
-- Загружать **DOCX**, **TXT**, **PDF** (до 50 МБ, до 200 страниц).
-- Индексировать документы в **общую** базу (ChromaDB) — все сотрудники видят один набор файлов и задают вопросы по нему.
-- Отвечать на вопросы с **цитатами** и указанием файла и страницы.
-- Удалять отдельные файлы или очищать всю базу.
+**Как работает RAG**
 
-**Как устроено**
+1. Документ → чанки (~`LAWYER_CHUNK_SIZE` символов) → эмбеддинги в `chroma_data/`.
+2. На вопрос — гибридный поиск (ключевые слова + семантика), до **`LAWYER_CONTEXT_K`** фрагментов (по умолчанию 8) в промпт LLM.
+3. Эмбеддинг GigaChat обрезается до ~480 символов на фрагмент (`GIGACHAT_MAX_EMBED_CHARS`) — лимит API; **полный текст чанка** хранится в Chroma и передаётся модели.
 
-1. Документ разбивается на фрагменты (чанки), строятся векторные эмбеддинги.
-2. На вопрос — гибридный поиск (ключевые слова + семантика).
-3. Релевантные фрагменты передаются в LLM; ответ со ссылками `[1]`, `[2]`…
-4. Блок «Источники» показывает выдержки из документов; при искажениях OCR текст может восстанавливаться через LLM.
-
-**Форматы PDF**
-
-- С текстовым слоем: `pymupdf`, `pypdfium2`, `pdfplumber`, `pypdf`.
-- Сканы (картинки): **RapidOCR** (только Python-пакеты, без Tesseract/LibreOffice/Word).
-
-Для сканов предпочтительнее загружать **DOCX** — быстрее и точнее, чем OCR PDF.
-
-**История вопросов** — личная (по браузеру). **База документов** — общая для Компании.
+**PDF:** текстовый слой — через PyMuPDF и др.; сканы — RapidOCR (качество часто низкое). **История вопросов** — личная; **файлы и индекс** — общие.
 
 ---
 
-## Установка (локально)
+## Установка
 
-### Windows
+### Сервер (Linux, VPS)
 
 ```bash
-cd C:\projects\ai-assistant
+cd ~
+git clone https://github.com/USER/REPO.git AI_DID
+cd ~/AI_DID
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+nano .env
+sudo apt install -y ffmpeg
+mkdir -p logs
+```
+
+В `.env` укажите ключи LLM, webhook n8n, при необходимости таблицу факта.
+
+**Эмбеддинги на VPS без GPU** (без PyTorch и `nvidia_*`, экономия >2 ГБ):
+
+```env
+EMBEDDING_PROVIDER=gigachat
+GIGACHAT_CREDENTIALS=...
+GIGACHAT_MAX_EMBED_CHARS=480
+```
+
+После смены `EMBEDDING_PROVIDER`, модели эмбеддингов или `LAWYER_CHUNK_*` — **очистите индекс Юриста** и загрузите документы заново.
+
+### Локальная разработка (Windows)
+
+Тот же каталог можно назвать `AI_DID`, например `D:\AI_DID`:
+
+```bat
+cd D:\AI_DID
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 copy .env.example .env
 ```
 
-### Linux / macOS
-
-```bash
-cd ~/ai-assistant
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-```
-
-Заполните `.env`: API-ключи LLM, webhook n8n, при необходимости — ссылку на таблицу факта.
-
-**Эмбеддинги на VPS без GPU** — укажите в `.env`:
-
-```env
-EMBEDDING_PROVIDER=gigachat
-GIGACHAT_CREDENTIALS=...
-```
-
-Так не потребуется PyTorch и пакеты `nvidia_*` (экономия >2 ГБ на диске).
-
-**Локальные эмбеддинги на ПК** (`EMBEDDING_PROVIDER=local`): установите PyTorch CPU и sentence-transformers отдельно, затем при необходимости скачайте модель:
+Локальные эмбеддинги (`EMBEDDING_PROVIDER=local`):
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -136,86 +144,37 @@ pip install "sentence-transformers>=2.3.0,<3.0.0"
 python scripts/download_embedding_model.py
 ```
 
-В `.env`: `EMBEDDING_LOCAL_FILES_ONLY=1`, путь к модели в `LOCAL_EMBEDDING_MODEL`.
-
-### Первый запуск
-
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-Откройте: http://localhost:8000
-
-При первом запуске:
-
-1. **Whisper** — скачает модель `base` (~150 МБ).
-2. **Эмбеддинги** — при `gigachat`/`openai` внешний API; при `local` — модель из `models/` или HuggingFace (`HF_ENDPOINT` для зеркала).
-3. Создадутся каталоги `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
-
-После смены `EMBEDDING_PROVIDER` или параметров чанков (`LAWYER_CHUNK_SIZE`, `LAWYER_CHUNK_OVERLAP`) очистите индекс Юриста и загрузите документы заново.
+Модель сохранится в `~/AI_DID/models/`.
 
 ---
 
-## Развёртывание на сервере (VPS)
+## Запуск
 
-### Подготовка
-
-```bash
-cd /opt/ai-assistant
-git clone https://github.com/USER/REPO.git .
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# отредактируйте .env
-sudo apt install -y ffmpeg
-```
-
-Рекомендуется `EMBEDDING_PROVIDER=gigachat` (или `openai`) — не устанавливайте локальные эмбеддинги на маленьком VPS.
-
-### Обновление
-
-```bash
-cd /opt/ai-assistant
-git pull
-source venv/bin/activate
-pip install -r requirements.txt
-# перезапустите uvicorn
-```
-
-### Запуск
-
-Перейдите в каталог проекта и активируйте venv (иначе `main:app` и `logs/` не найдутся):
+Всегда из каталога проекта:
 
 ```bash
 cd ~/AI_DID
 source venv/bin/activate
-mkdir -p logs
 ```
 
-Интерактивно (для проверки):
+**Проверка (интерактивно):**
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-В фоне:
+**Продакшен (фон):**
 
 ```bash
 nohup uvicorn main:app --host 0.0.0.0 --port 8000 > logs/uvicorn.log 2>&1 &
 tail -f logs/uvicorn.log
 ```
 
-Если каталог проекта другой — подставьте свой путь вместо `~/AI_DID`.
+На продакшене **без** `--reload`.
 
-На продакшене лучше **без** `--reload`.
+Откройте в браузере: `http://IP_СЕРВЕРА:8000` (не `0.0.0.0`). Порт **8000** — в firewall.
 
-### Доступ
-
-- В браузере: `http://IP_СЕРВЕРА:8000` (не используйте `0.0.0.0` как адрес).
-- Откройте порт **8000** в firewall / security group.
-
-### Остановка
+**Остановка:**
 
 ```bash
 lsof -i :8000
@@ -224,45 +183,39 @@ kill <PID>
 
 ---
 
-## Конфигурация (.env)
+## Обновление
+
+```bash
+cd ~/AI_DID
+git pull
+source venv/bin/activate
+pip install -r requirements.txt
+# перезапустите uvicorn
+```
+
+---
+
+## Конфигурация (`.env` в `~/AI_DID`)
 
 | Переменная | Назначение |
 |------------|------------|
 | `LLM_PROVIDER` | `deepseek` или `gigachat` |
 | `DEEPSEEK_API_KEY` / `GIGACHAT_CREDENTIALS` | Ключи API |
 | `EMBEDDING_PROVIDER` | `gigachat`, `openai` или `local` |
-| `GIGACHAT_MAX_EMBED_CHARS` | Лимит символов на фрагмент для GigaChat (по умолчанию 480; API — не более ~514 токенов) |
+| `GIGACHAT_MAX_EMBED_CHARS` | Лимит текста на эмбеддинг GigaChat (480; API ~514 токенов) |
+| `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP` | Размер чанков в индексе (1000 / 150 в типовой настройке) |
+| `LAWYER_CONTEXT_K` | Сколько фрагментов максимум в промпт LLM (8) |
+| `LAWYER_SEMANTIC_MIN_SCORE` | Порог семантической релевантности (0.42) |
 | `ECONOMIST_FACT_SHEET_URL` | Google-таблица факта |
-| `N8N_ECONOMIST_WEBHOOK_URL` | Webhook n8n для чата Экономиста |
-| `N8N_ECONOMIST_TIMEOUT` | Таймаут ответа n8n, сек (120) |
-| `WHISPER_MODEL_SIZE` | `tiny`, `base`, `small`, … |
-| `WHISPER_DEVICE` | `cpu` или `cuda` (при наличии GPU) |
-| `MAX_AUDIO_SIZE` / `MAX_DOCUMENT_SIZE` | Лимиты загрузки, байты |
-| `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP` | Чанки для RAG (1200 / 200) |
-| `LAWYER_OCR_*` | Параметры OCR для PDF-сканов |
+| `N8N_ECONOMIST_WEBHOOK_URL` | Webhook n8n |
+| `WHISPER_MODEL_SIZE` | `base`, `small`, … |
+| `MAX_AUDIO_SIZE` / `MAX_DOCUMENT_SIZE` | Лимиты загрузки |
+| `LAWYER_OCR_*` | OCR PDF-сканов |
+| `CHROMA_PERSIST_DIR` | Папка индекса (по умолчанию `chroma_data`) |
 | `APP_TIMEZONE` | Часовой пояс истории (`Europe/Moscow`) |
-| `HISTORY_SIZE` | Сколько записей хранить в истории на пользователя (5) |
+| `HISTORY_SIZE` | Записей истории на пользователя (5) |
 
 Полный шаблон: [.env.example](.env.example).
-
----
-
-## Структура проекта
-
-```
-ai-assistant/
-├── economist/          # чат через n8n
-├── secretary/          # аудио → Whisper → протокол
-├── lawyer/             # документы, RAG, цитаты
-├── core/               # LLM, эмбеддинги, история, сессии
-├── static/             # CSS, JS, img (логотип Компании)
-├── templates/          # HTML-страницы
-├── docs/               # инструкции (n8n, GitHub)
-├── scripts/            # утилиты (модель эмбеддингов, диагностика PDF)
-├── main.py
-├── config.py
-└── requirements.txt
-```
 
 ---
 
@@ -270,26 +223,28 @@ ai-assistant/
 
 | Ситуация | Решение |
 |----------|---------|
-| pip качает `nvidia_*`, нет места на диске | Только `requirements.txt` + `EMBEDDING_PROVIDER=gigachat`, без локального PyTorch |
-| Whisper долго на CPU | `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1` |
-| OCR PDF: `Killed` | Мало RAM: `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, загружайте DOCX |
+| pip качает `nvidia_*`, нет места | `EMBEDDING_PROVIDER=gigachat`, только `requirements.txt` |
+| Ошибка 413 при загрузке TXT/DOCX | `GIGACHAT_MAX_EMBED_CHARS=480`, перезапуск сервера |
+| Юрист не находит ответ в PDF | Загрузить **DOCX**; OCR часто искажает текст |
+| Кракозябры в TXT в источниках | UTF-8; переиндексировать (удалить файл, загрузить снова) |
+| Смена эмбеддингов / чанков | «Очистить базу» на странице Юриста |
+| Whisper медленно на CPU | `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1` |
+| OCR PDF: `Killed` | `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, DOCX |
 | OCR: `libGL.so.1` | `pip uninstall -y opencv-python && pip install opencv-python-headless` |
-| Смена эмбеддингов | Очистить индекс Юриста, загрузить документы заново |
-| Кракозябры в TXT | Сохранить файл в UTF-8 |
 | Экономист молчит | Проверить `N8N_ECONOMIST_WEBHOOK_URL`, workflow Active в n8n |
 
 ---
 
 ## GitHub
 
-Не коммитьте `.env` с ключами. Шаблон: `.env.example`.  
-Инструкция по репозиторию: [docs/GITHUB.md](docs/GITHUB.md).
+Не коммитьте `~/AI_DID/.env` с ключами. Шаблон: `.env.example`.  
+Инструкция: [docs/GITHUB.md](docs/GITHUB.md).
 
 ---
 
 ## Примечания
 
-- **История** — в памяти сервера, отдельно для каждого браузера (cookie `did_sid`); сбрасывается при перезапуске uvicorn.
-- **Документы Юриста** — общие для всех пользователей (ChromaDB в `chroma_data/`).
-- **Секретарь и Юрист** требуют рабочий LLM API; **Экономист** в чате зависит от n8n, не от LLM на сервере приложения.
-- Логотип и фавикон: `static/img/logo.png`, `static/img/favicon.png` (или пути в `LOGO_SOURCE` / `FAVICON_SOURCE`).
+- **История** — в памяти процесса uvicorn, по cookie `did_sid`; сбрасывается при перезапуске.
+- **Документы и `chroma_data/`** — общие для всех пользователей.
+- **Секретарь и Юрист** — LLM на сервере приложения; **Экономист** в чате — через n8n.
+- Логотип: `static/img/logo.png`, фавикон: `static/img/favicon.png` (или `LOGO_SOURCE` / `FAVICON_SOURCE`).
