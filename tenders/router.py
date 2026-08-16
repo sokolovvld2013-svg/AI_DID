@@ -22,7 +22,7 @@ from core.llm_client import get_llm
 from core.llm_errors import LLMUserFacingError
 from core.session import get_session_id
 from lawyer.citations import select_citations_for_display
-from lawyer.text_encoding import repair_filename, strip_urls
+from lawyer.text_encoding import clean_llm_display_text, repair_filename
 from tenders.services.cache_store import get_by_doc_id, get_by_hash, save_parsed
 from tenders.services.check_context import (
     CHECK_SYSTEM_PROMPT,
@@ -244,7 +244,7 @@ async def _query_check(session_id: str, question: str) -> dict:
             system_prompt=CHECK_SYSTEM_PROMPT,
             context=context,
         )
-        answer = strip_urls(raw_answer)
+        answer = clean_llm_display_text(raw_answer)
         citations = select_citations_for_display(answer, citations)
         tenders_history.add(
             sid,
@@ -281,10 +281,12 @@ async def _query_expert(session_id: str, question: str) -> dict:
     try:
         llm = get_llm()
         raw_answer = llm.generate(
-            f"Вопрос пользователя: {question}",
+            f"Вопрос пользователя: {question}\n\n"
+            "Отвечай только по действующему праву (135-ФЗ, Приказ ФАС № 147/23 и иные актуальные акты). "
+            "Не ссылайся на Приказ ФАС № 67 и другие утратившие силу акты.",
             system_prompt=EXPERT_SYSTEM_PROMPT,
         )
-        answer = strip_urls(raw_answer)
+        answer = clean_llm_display_text(raw_answer)
         tenders_history.add(session_id, question, answer, mode="expert")
         return {"answer": answer, "citations": [], "verification": None}
     except LLMUserFacingError as e:
@@ -308,7 +310,7 @@ async def history(request: Request):
     for item in tenders_history.list(sid):
         entry = dict(item)
         entry["query"] = entry.get("query") or ""
-        entry["response"] = strip_urls(entry.get("response") or "")
+        entry["response"] = clean_llm_display_text(entry.get("response") or "")
         if entry.get("citations"):
             entry["citations"] = [_citation_ref(c) for c in entry["citations"]]
         repaired.append(entry)

@@ -976,14 +976,52 @@ def _pdf_failure_message(path: Path) -> str:
     return base
 
 
+def _iter_docx_blocks(document):
+    """Параграфы и таблицы DOCX в порядке следования в документе."""
+    from docx.document import Document as DocxDocument
+    from docx.oxml.table import CT_Tbl
+    from docx.oxml.text.paragraph import CT_P
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+
+    parent_elm = document.element.body if isinstance(document, DocxDocument) else document._tc
+    for child in parent_elm.iterchildren():
+        if isinstance(child, CT_P):
+            yield Paragraph(child, document)
+        elif isinstance(child, CT_Tbl):
+            yield Table(child, document)
+
+
+def _table_to_text(table) -> str:
+    rows: list[str] = []
+    for row in table.rows:
+        cells = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+        if cells:
+            rows.append(" | ".join(cells))
+    return "\n".join(rows)
+
+
 def _read_docx(path: Path) -> list[dict[str, Any]]:
     try:
         from docx import Document
+        from docx.table import Table
+        from docx.text.paragraph import Paragraph
     except ModuleNotFoundError as e:
         raise RuntimeError(_DOCX_INSTALL_HINT) from e
 
     doc = Document(str(path))
-    full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    parts: list[str] = []
+    for block in _iter_docx_blocks(doc):
+        if isinstance(block, Paragraph):
+            text = (block.text or "").strip()
+            if text:
+                parts.append(text)
+        elif isinstance(block, Table):
+            table_text = _table_to_text(block)
+            if table_text:
+                parts.append(table_text)
+
+    full_text = "\n".join(parts)
     page = _make_page(1, full_text, needs_text_repair=False)
     if not page:
         raise ValueError("DOCX не содержит текста")

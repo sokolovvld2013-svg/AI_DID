@@ -29,6 +29,7 @@ from lawyer.text_encoding import (
 from procurement.kb_rag import get_policy_rag
 from procurement.services.cache_store import get_by_audit_id, get_by_hash, save_parsed
 from procurement.services.check_context import CHECK_SYSTEM_PROMPT, build_check_context
+from procurement.services.policy_search import enrich_policy_query, prioritize_policy_hits
 from procurement.services.file_upload import read_upload_file, safe_stored_name, write_temp_file
 from procurement.services.parser import PARSE_VERSION, parse_documentation, summary_for_client
 
@@ -46,6 +47,9 @@ EXPERT_SYSTEM_PROMPT = """Ты — эксперт по закупкам по 223
 
 Правила:
 - Опирайся на фрагменты Положения о закупке [1], [2], … (если они переданы ниже).
+- Если в фрагменте есть прямой ответ (число, срок, процедура) — приведи его дословно и укажи [N].
+- Если фрагмент содержит строку Таблицы 1 про аукцион («Не менее 15 календарных дней…») — это и есть ответ на вопрос о сроке подачи заявок / сроке до окончания подачи заявок при аукционе; не подменяй его нормами раздела 13 или 223-ФЗ.
+- Если фрагмент отсылает к пункту 2.13 или Таблице 1 — используй формулировку из этого фрагмента; не подменяй её общими нормами 223-ФЗ.
 - Дополняй ответ общими нормами 223-ФЗ, 135-ФЗ и иных актов из своих знаний; нормы закона формулируй без номера [N], для Положения — только с [N].
 - Не выдумывай пункты Положения — для него используй только переданные фрагменты с номерами [N].
 - В ответе обязательно указывай номера использованных фрагментов Положения: [1], [2] (только те, на которые опираешься).
@@ -235,6 +239,59 @@ async def query(req: ProcurementQuery, request: Request):
     return await _query_expert(sid, question)
 
 
+def _build_policy_context(
+    question: str,
+    *,
+    start_id: int = 1,
+    max_chars: int | None = None,
+) -> tuple[str, list[dict]]:
+    """Фрагменты Положения о закупке для промпта LLM."""
+    limit = max_chars or MAX_LAWYER_LLM_CONTEXT_CHARS
+    policy_hits = _policy_rag().search(question)
+    if not policy_hits:
+        return "", []
+
+    hits = _select_relevant_hits(question, policy_hits)
+    if not hits:
+        return "", []
+
+    hits = prioritize_policy_hits(
+        question,
+        hits,
+        search_fn=_policy_rag().search,
+    )
+
+    context_parts: list[str] = []
+    citations: list[dict] = []
+    context_len = 0
+
+    for i, hit in enumerate(hits, start_id):
+        merged = _policy_rag().merge_neighbor_context(hit)
+        raw_text = _truncate_fragment(
+            strip_urls(merged or hit.get("text") or ""),
+            MAX_LAWYER_CITATION_CHARS,
+        )
+        filename = strip_urls(repair_filename(hit["filename"] or ""))
+        part = f"[{i}] {filename}, стр. {hit['page']}:\n{raw_text}"
+        if context_len + len(part) > limit:
+            remaining = limit - context_len
+            if remaining > 200:
+                part = _truncate_fragment(part, remaining)
+                context_parts.append(part)
+                context_len += len(part)
+            break
+        context_parts.append(part)
+        context_len += len(part)
+        citations.append({
+            "id": i,
+            "filename": filename,
+            "page": hit["page"],
+            "file_id": hit["file_id"],
+        })
+
+    return "\n\n".join(context_parts), citations
+
+
 async def _query_check(session_id: str, question: str) -> dict:
     doc = get_documentation(session_id)
     if not doc:
@@ -251,8 +308,13 @@ async def _query_check(session_id: str, question: str) -> dict:
             "Документация устарела. Загрузите файл заново.",
         )
 
-    context, citations = build_check_context(parsed, question)
-    if not context:
+    doc_budget = int(MAX_LAWYER_LLM_CONTEXT_CHARS * 0.55)
+    doc_context, citations = build_check_context(
+        parsed,
+        question,
+        max_context_chars=doc_budget,
+    )
+    if not doc_context:
         msg = (
             "Не удалось извлечь разделы документации для проверки. "
             "Убедитесь, что файл содержит стандартные разделы (информационная карта, ТЗ, договор и т.д.)."
@@ -260,13 +322,35 @@ async def _query_check(session_id: str, question: str) -> dict:
         procurement_history.add(session_id, question, msg, mode="check")
         return {"answer": msg, "citations": []}
 
+    policy_budget = max(MAX_LAWYER_LLM_CONTEXT_CHARS - len(doc_context) - 400, 4000)
+    policy_context, policy_citations = _build_policy_context(
+        enrich_policy_query(question),
+        start_id=len(citations) + 1,
+        max_chars=policy_budget,
+    )
+
+    context_parts = [f"=== Закупочная документация ===\n{doc_context}"]
+    if policy_context:
+        context_parts.append(f"=== Положение о закупке ===\n{policy_context}")
+    context = "\n\n".join(context_parts)
+    citations = citations + policy_citations
+
+    user_prompt = (
+        f"Вопрос пользователя: {question}\n\n"
+        "Проверь закупочную документацию на соответствие **223-ФЗ** и **Положению о закупке** "
+        "по фрагментам ниже. Сформируй отчёт: Общий вывод, затем блоки 🔴 Критические и 🟡 Важные. "
+        "Укажи номера [N] фрагментов документации и Положения."
+    )
+    if not policy_context:
+        user_prompt += (
+            "\n\nПоложение о закупке не загружено или не найдено — "
+            "проверь по 223-ФЗ и отметь, что сверка с Положением невозможна."
+        )
+
     try:
         llm = get_llm()
         raw_answer = llm.generate(
-            f"Вопрос пользователя: {question}\n\n"
-            "Проверь закупочную документацию по фрагментам ниже. "
-            "Сформируй отчёт о проверке: Общий вывод, затем блоки 🔴 Критические и 🟡 Важные. "
-            "Укажи номера [N] использованных фрагментов.",
+            user_prompt,
             system_prompt=CHECK_SYSTEM_PROMPT,
             context=context,
         )
@@ -297,39 +381,7 @@ async def _query_check(session_id: str, question: str) -> dict:
 
 
 async def _query_expert(session_id: str, question: str) -> dict:
-    policy_hits = _policy_rag().search(question)
-    citations: list[dict] = []
-    context = ""
-
-    if policy_hits:
-        hits = _select_relevant_hits(question, policy_hits)
-        if hits:
-            context_parts: list[str] = []
-            context_len = 0
-            for i, hit in enumerate(hits, 1):
-                merged = _policy_rag().merge_neighbor_context(hit)
-                raw_text = _truncate_fragment(
-                    strip_urls(merged or hit.get("text") or ""),
-                    MAX_LAWYER_CITATION_CHARS,
-                )
-                filename = strip_urls(repair_filename(hit["filename"] or ""))
-                part = f"[{i}] {filename}, стр. {hit['page']}:\n{raw_text}"
-                if context_len + len(part) > MAX_LAWYER_LLM_CONTEXT_CHARS:
-                    remaining = MAX_LAWYER_LLM_CONTEXT_CHARS - context_len
-                    if remaining > 200:
-                        part = _truncate_fragment(part, remaining)
-                        context_parts.append(part)
-                        context_len += len(part)
-                    break
-                context_parts.append(part)
-                context_len += len(part)
-                citations.append({
-                    "id": i,
-                    "filename": filename,
-                    "page": hit["page"],
-                    "file_id": hit["file_id"],
-                })
-            context = "\n\n".join(context_parts)
+    context, citations = _build_policy_context(enrich_policy_query(question))
 
     user_prompt = f"Вопрос пользователя: {question}\n\n"
     if context:

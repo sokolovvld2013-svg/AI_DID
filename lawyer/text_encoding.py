@@ -110,7 +110,39 @@ def strip_urls(text: str) -> str:
         return text
     s = _MARKDOWN_LINK.sub(r"\1", text)
     s = _URL_PATTERN.sub("", s)
-    s = re.sub(r"\s{2,}", " ", s)
+    # Не схлопывать переносы строк: \r\n и двойные пробелы с \n иначе
+    # превращают нумерованные/маркированные списки в одну строку.
+    s = s.replace("\r\n", "\n").replace("\r", "\n")
+    s = re.sub(r"[^\S\n]{2,}", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def ensure_list_line_breaks(text: str) -> str:
+    """Пункты списков (1. / - / • / *) всегда с новой строки."""
+    if not text:
+        return text
+    s = text
+    s = re.sub(r"([:;—–])\s*([-*•]\s+\S)", r"\1\n\2", s)
+    s = re.sub(r"(\*\*[^*]+\*\*)\s*([-*•]\s+\S)", r"\1\n\2", s)
+    s = re.sub(r"([^\n])\s+([-*•]\s+\S)", r"\1\n\2", s)
+    s = re.sub(r"([:;—–])\s*(\d+\.\s+\S)", r"\1\n\2", s)
+    s = re.sub(r"(\*\*[^*]+\*\*)\s*(\d+\.\s+\S)", r"\1\n\2", s)
+    s = re.sub(r"([^\n])\s+(\d+\.\s+\S)", r"\1\n\2", s)
+    return s
+
+
+def clean_llm_display_text(text: str) -> str:
+    """Убрать лишнюю markdown-разметку из ответа LLM (---, пустые ###)."""
+    if not text:
+        return text
+    s = strip_urls(text)
+    s = re.sub(r"(?m)^\s*[-*_]{3,}\s*$", "", s)
+    s = re.sub(r"(?m)^\s*[-*_]{3,}\s+", "", s)
+    s = re.sub(r"(?m)^\s*#{1,6}\s*$", "", s)
+    s = re.sub(r"[-*_]{3,}\s*#{1,6}\s+", "", s)
+    s = ensure_list_line_breaks(s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
 
 
