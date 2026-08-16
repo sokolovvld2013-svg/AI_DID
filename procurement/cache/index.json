@@ -1,0 +1,22 @@
+{
+  "audits": {
+    "eef78fe4-b46d-41a4-9c47-ef3906be1d33": {
+      "file_hash": "9ba1e69666eddb5f4ed9b91b7c2c4cc013548e8ea71b66acc22f9e4c92e374e0",
+      "filename": "Положение о закупке (новая редакция) - апрель 2025.docx",
+      "parsed_at": "2026-08-16T05:47:33.795693+00:00",
+      "path": "9ba1e69666eddb5f4ed9b91b7c2c4cc013548e8ea71b66acc22f9e4c92e374e0.json"
+    },
+    "ab06391c-9dd0-47eb-aba0-7ef844b83db5": {
+      "file_hash": "f8e6caba52b2ea05142558d8a83bda7ec9f827813bccbef0a8ad429c5d2127a7",
+      "filename": "2.txt",
+      "parsed_at": "2026-08-16T06:26:18.968056+00:00",
+      "path": "f8e6caba52b2ea05142558d8a83bda7ec9f827813bccbef0a8ad429c5d2127a7.json"
+    },
+    "9359ffd4-d227-41ab-9d26-842cc23f23af": {
+      "file_hash": "f8e6caba52b2ea05142558d8a83bda7ec9f827813bccbef0a8ad429c5d2127a7",
+      "filename": "2.txt",
+      "parsed_at": "2026-08-16T07:12:10.184238+00:00",
+      "path": "f8e6caba52b2ea05142558d8a83bda7ec9f827813bccbef0a8ad429c5d2127a7.json"
+    }
+  }
+}

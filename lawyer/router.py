@@ -24,16 +24,18 @@ from core.session import get_session_id
 from core.llm_errors import LLMUserFacingError
 from core.llm_client import get_llm
 from lawyer.doc_processor import process_upload
-from lawyer.rag import LawyerRAG, MIN_CITATION_SCORE_RATIO
+from lawyer.rag import LawyerRAG, MIN_CITATION_SCORE_RATIO, get_lawyer_rag
 from lawyer.search_utils import core_query_tokens, min_core_matches_required
 from lawyer.citations import select_citations_for_display
-from lawyer.text_encoding import decode_upload_filename, repair_citation_text, repair_filename, repair_text, strip_urls
+from lawyer.text_encoding import decode_upload_filename, repair_filename, strip_urls
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lawyer", tags=["lawyer"])
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-_rag = LawyerRAG()
+
+def _rag() -> LawyerRAG:
+    return get_lawyer_rag()
 
 def _safe_stored_name(original: str, ext: str) -> str:
     """Безопасное имя файла с сохранением расширения (.pdf не обрезается)."""
@@ -219,14 +221,14 @@ async def lawyer_page(request: Request):
         context={
             "active": "lawyer",
             "history": lawyer_history.list(sid),
-            "files": _rag.list_files(),
+            "files": _rag().list_files(),
         },
     )
 
 
 @router.get("/files")
 async def list_files():
-    return {"files": _rag.list_files()}
+    return {"files": _rag().list_files()}
 
 
 @router.post("/upload")
@@ -261,7 +263,7 @@ async def upload_document(file: UploadFile = File(...)):
         file_id, chunks = process_upload(temp_path, orig_name)
         dest = LAWYER_UPLOAD_DIR / f"{file_id}_{stored_name}"
         temp_path.rename(dest)
-        count = _rag.add_chunks(chunks)
+        count = _rag().add_chunks(chunks)
         if count == 0:
             raise ValueError("Не удалось проиндексировать документ (пустые фрагменты)")
     except ValueError as e:
@@ -285,14 +287,14 @@ async def upload_document(file: UploadFile = File(...)):
 
 @router.delete("/files/{file_id}")
 async def delete_file(file_id: str):
-    if not _rag.delete_file(file_id):
+    if not _rag().delete_file(file_id):
         raise HTTPException(404, "Файл не найден")
     return {"status": "ok", "file_id": file_id}
 
 
 @router.delete("/index")
 async def clear_index():
-    _rag.clear_all()
+    _rag().clear_all()
     return {"status": "ok", "message": "База знаний очищена"}
 
 
@@ -303,7 +305,7 @@ async def query(req: LawyerQuery, request: Request):
     if not question:
         raise HTTPException(400, "Пустой вопрос")
 
-    all_hits = _rag.search(question)
+    all_hits = _rag().search(question)
     if not all_hits:
         answer = "База знаний пуста. Загрузите документы для ответа на вопросы."
         lawyer_history.add(sid, question, answer)
@@ -326,9 +328,9 @@ async def query(req: LawyerQuery, request: Request):
         context_len = 0
 
         for i, hit in enumerate(hits, 1):
-            merged_text = _rag.merge_neighbor_context(hit)
+            merged_text = _rag().merge_neighbor_context(hit)
             raw_text = _truncate_fragment(
-                strip_urls(repair_citation_text(merged_text or hit.get("text") or "")),
+                strip_urls(merged_text or hit.get("text") or ""),
                 MAX_LAWYER_CITATION_CHARS,
             )
             filename = strip_urls(repair_filename(hit["filename"] or ""))
@@ -358,7 +360,7 @@ async def query(req: LawyerQuery, request: Request):
             context=context,
         )
 
-        answer = strip_urls(repair_text(raw_answer))
+        answer = strip_urls(raw_answer)
         citations = select_citations_for_display(answer, citations)
         if not citations and hits:
             logger.info("В ответе нет ссылок [N] — источники не показаны")
@@ -385,8 +387,8 @@ async def history(request: Request):
     repaired = []
     for item in lawyer_history.list(sid):
         entry = dict(item)
-        entry["query"] = repair_text(entry.get("query") or "")
-        entry["response"] = strip_urls(repair_text(entry.get("response") or ""))
+        entry["query"] = entry.get("query") or ""
+        entry["response"] = strip_urls(entry.get("response") or "")
         if entry.get("citations"):
             entry["citations"] = [
                 _citation_ref(c) for c in entry["citations"]

@@ -3,7 +3,7 @@ from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
 
-from config import HISTORY_SIZE
+from config import HISTORY_SIZE, PROCUREMENT_HISTORY_SIZE, TENDERS_HISTORY_SIZE
 from core.app_time import format_history_timestamp
 
 
@@ -53,3 +53,5 @@ class ModuleHistory:
 economist_history = ModuleHistory("economist")
 secretary_history = ModuleHistory("secretary")
 lawyer_history = ModuleHistory("lawyer")
+procurement_history = ModuleHistory("procurement", max_size=PROCUREMENT_HISTORY_SIZE)
+tenders_history = ModuleHistory("tenders", max_size=TENDERS_HISTORY_SIZE)

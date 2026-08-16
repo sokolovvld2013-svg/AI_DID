@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Закупка 223-ФЗ — ИИ-помощник ФГУП "ДИД"{% endblock %}
+
+{% block content %}
+<section class="module-header">
+    <h2>Закупка 223-ФЗ</h2>
+    <p>Помогу с проверкой закупочной документации. Проконсультирую по законодательству о закупках.</p>
+    <div class="procurement-mode-switch" role="tablist" aria-label="Режим работы">
+        <button type="button" class="btn procurement-mode-btn active" data-tab="check" role="tab" aria-selected="true">Проверка закупочной документации</button>
+        <button type="button" class="btn procurement-mode-btn" data-tab="expert" role="tab" aria-selected="false">Экспертное мнение</button>
+    </div>
+</section>
+
+<div class="grid-2">
+    <aside class="sidebar compact-upload-sidebar">
+        <div class="card">
+            <h3>Закупочная документация</h3>
+            <div class="upload-zone" id="doc-drop">
+                <p>DOCX, TXT, PDF (до 50 МБ)</p>
+                <input type="file" id="doc-file" accept=".pdf,.docx,.txt" hidden>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('doc-file').click()">Загрузить документ</button>
+            </div>
+            <div class="progress hidden" id="doc-progress"><div class="progress-bar"></div></div>
+            <div class="status" id="doc-status" role="status" aria-live="polite"></div>
+            <ul class="file-list" id="doc-info">
+                {% if documentation %}
+                <li><span>{{ documentation.filename }}</span></li>
+                {% else %}
+                <li class="muted">Документ не загружен</li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card">
+            <h3>Положение о закупке</h3>
+            <div class="upload-zone" id="policy-drop">
+                <p>DOCX, TXT, PDF (до 50 МБ)</p>
+                <input type="file" id="policy-file" accept=".pdf,.docx,.txt" hidden>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('policy-file').click()">Загрузить документ</button>
+            </div>
+            <div class="progress hidden" id="policy-progress"><div class="progress-bar"></div></div>
+            <div class="status" id="policy-status" role="status" aria-live="polite"></div>
+            <ul class="file-list" id="policy-list">
+                {% for f in policy_files %}
+                <li data-file-id="{{ f.file_id }}">
+                    <span>{{ f.filename }}</span>
+                    <button type="button" class="btn-icon delete-policy" title="Удалить">×</button>
+                </li>
+                {% else %}
+                <li class="muted">Нет загруженных документов</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="card history-card">
+            <h3>История вопросов</h3>
+            <ul class="history-list" id="history-list">
+                {% for item in history %}
+                <li>
+                    <time>{{ item.timestamp }}</time>
+                    <p class="history-query">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</p>
+                </li>
+                {% else %}
+                <li class="muted">Нет вопросов</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </aside>
+
+    <section class="chat-section card">
+        <h3 id="chat-title">Проверка закупочной документации</h3>
+        <div class="chat-messages" id="chat-messages"></div>
+        <form class="chat-form procurement-check-form" id="chat-form">
+            <input type="text" id="chat-input" class="procurement-chat-input hidden" placeholder="Задайте вопрос по законодательству о закупках…" autocomplete="off">
+            <button type="submit" class="btn btn-primary" id="chat-submit" disabled>Проверить</button>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/procurement.js?v=6"></script>
+{% endblock %}

@@ -17,8 +17,10 @@
         </div>
         <nav class="nav">
             <a href="/economist" class="nav-link {% if active == 'economist' %}active{% endif %}">Экономист</a>
-            <a href="/secretary" class="nav-link {% if active == 'secretary' %}active{% endif %}">Секретарь</a>
             <a href="/lawyer" class="nav-link {% if active == 'lawyer' %}active{% endif %}">Юрист</a>
+            <a href="/procurement" class="nav-link {% if active == 'procurement' %}active{% endif %}">Закупка</a>
+            <a href="/tenders" class="nav-link {% if active == 'tenders' %}active{% endif %}">Торги</a>
+            <a href="/secretary" class="nav-link {% if active == 'secretary' %}active{% endif %}">Секретарь</a>
         </nav>
     </header>
 
@@ -30,7 +32,7 @@
         <span>ФГУП "ДИД"</span>
     </footer>
 
-    <script src="/static/js/common.js"></script>
+    <script src="/static/js/common.js?v=3"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

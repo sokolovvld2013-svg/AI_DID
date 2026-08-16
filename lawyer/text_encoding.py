@@ -78,6 +78,31 @@ _AMBIGUOUS: dict[str, tuple[str, ...]] = {
 
 _WORD_RE = re.compile(r"[A-Za-zА-Яа-яЁё]+", re.UNICODE)
 
+# E-mail, URL и похожие фрагменты не трогаем homoglyph-ремонтом (v→в в did-invest.ru).
+_TECHNICAL_SPAN_RE = re.compile(
+    r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|"
+    r"https?://[^\s\]\)\"'<>]+|"
+    r"www\.[^\s\]\)\"'<>]+",
+    re.IGNORECASE,
+)
+
+
+def _mask_technical_spans(text: str) -> tuple[str, list[str]]:
+    """Временно скрыть e-mail/URL перед заменой латиницы на кириллицу."""
+    spans: list[str] = []
+
+    def repl(match: re.Match[str]) -> str:
+        spans.append(match.group(0))
+        return f"\uE000{len(spans) - 1}\uE001"
+
+    return _TECHNICAL_SPAN_RE.sub(repl, text), spans
+
+
+def _unmask_technical_spans(text: str, spans: list[str]) -> str:
+    for i, span in enumerate(spans):
+        text = text.replace(f"\uE000{i}\uE001", span)
+    return text
+
 
 def strip_urls(text: str) -> str:
     """Убрать ссылки на сайты из текста для отображения пользователю."""
@@ -326,19 +351,22 @@ def repair_citation_text(text: str) -> str:
     """Агрессивное восстановление текста источников (без LLM)."""
     if not text:
         return text
-    text = repair_text(text)
-    text = _replace_latin_in_cyrillic_text(text)
-    text = _fix_ocr_case_chaos(text)
-    return _fix_homoglyph_latin(text)
+    masked, spans = _mask_technical_spans(text)
+    masked = _repair_text_core(masked)
+    masked = _replace_latin_in_cyrillic_text(masked)
+    masked = _fix_ocr_case_chaos(masked)
+    masked = _fix_homoglyph_latin(masked)
+    return _unmask_technical_spans(masked, spans)
 
 
 def text_quality_score(text: str) -> tuple[int, int, int]:
-    """Оценка качества извлечённого текста (для выбора варианта PDF)."""
-    cleaned = repair_citation_text(text)
+    """Оценка качества извлечённого текста (без homoglyph-«ремонта»)."""
+    if not text:
+        return (0, 0, 0)
     return (
-        _ru_plausibility(cleaned),
-        _cyrillic_score(cleaned),
-        -_ocr_garbage_score(cleaned),
+        _ru_plausibility(text),
+        _cyrillic_score(text),
+        -_ocr_garbage_score(text),
     )
 
 
@@ -471,7 +499,7 @@ def _encoding_variants(text: str) -> list[str]:
     return candidates
 
 
-def repair_text(text: str) -> str:
+def _repair_text_core(text: str) -> str:
     """Восстановление читаемого русского текста (кодировка + латинские двойники)."""
     if not text:
         return text
@@ -517,6 +545,15 @@ def repair_text(text: str) -> str:
     else:
         result = original
     return _fix_homoglyph_latin(result)
+
+
+def repair_text(text: str) -> str:
+    """Восстановление читаемого русского текста (кодировка + латинские двойники)."""
+    if not text:
+        return text
+    masked, spans = _mask_technical_spans(text)
+    result = _repair_text_core(masked)
+    return _unmask_technical_spans(result, spans)
 
 
 # Типичные кодировки TXT с Windows / 1С / старых редакторов
@@ -603,17 +640,22 @@ def _try_decode(data: bytes, encoding: str, out: list[str]) -> None:
 
 
 def decode_text_file(path: Path) -> str:
-    """Чтение TXT с автоопределением кодировки и repair_text."""
+    """Чтение TXT с автоопределением кодировки (без homoglyph-ремонта при нормальном тексте)."""
     text = decode_text_bytes(path.read_bytes())
     if not text.strip():
         return ""
-    text = repair_text(text)
     quality = _decoding_quality(text)
     if quality[1] < 15 and (text.count("\ufffd") > 5 or any(m in text for m in _GARBLED_TXT_MARKERS)):
         raise ValueError(
             "TXT: текст не читается — сохраните файл в кодировке UTF-8 "
             "(в Блокноте: «Сохранить как» → UTF-8) или Windows-1251 (кириллица)."
         )
+    fixed = _try_utf8_mojibake_fix(text)
+    if fixed:
+        text = fixed
+    cp866_fixed = _try_cp866_utf8_mojibake_fix(text)
+    if cp866_fixed:
+        text = cp866_fixed
     return text
 
 

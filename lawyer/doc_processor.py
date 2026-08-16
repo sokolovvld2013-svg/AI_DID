@@ -28,7 +28,6 @@ from lawyer.text_encoding import (
     decode_text_file,
     repair_citation_text,
     repair_filename,
-    repair_text,
     text_quality_score,
 )
 
@@ -84,9 +83,9 @@ def _pages_from_full_text(full: str) -> list[dict[str, Any]]:
     parts = full.split("\x0c") if "\x0c" in full else [full]
     pages: list[dict[str, Any]] = []
     for i, part in enumerate(parts):
-        text = _clean_text(part)
-        if text:
-            pages.append({"page": i + 1, "text": text})
+        page = _make_page(i + 1, part, needs_text_repair=False)
+        if page:
+            pages.append(page)
     return pages
 
 
@@ -114,14 +113,27 @@ def _pdf_security_hint(path: Path) -> str | None:
     return None
 
 
-def _clean_text(text: str) -> str:
+def _clean_text(text: str, *, repair: bool = False) -> str:
     if not text:
         return ""
     text = text.replace("\x00", "")
     text = re.sub(r"[ \t]+\n", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
-    text = repair_citation_text(text.strip())
+    text = text.strip()
+    if repair and text:
+        text = repair_citation_text(text)
     return text
+
+
+def _make_page(page_num: int, text: str, *, needs_text_repair: bool = False) -> dict[str, Any] | None:
+    cleaned = _clean_text(text, repair=needs_text_repair)
+    if not cleaned:
+        return None
+    return {
+        "page": page_num,
+        "text": cleaned,
+        "needs_text_repair": needs_text_repair,
+    }
 
 
 def _read_pdf_pypdf(path: Path) -> list[dict[str, Any]]:
@@ -154,7 +166,7 @@ def _read_pdf_pypdf(path: Path) -> list[dict[str, Any]]:
 
         text = _clean_text(text)
         if text:
-            pages.append({"page": i + 1, "text": text})
+            pages.append({"page": i + 1, "text": text, "needs_text_repair": False})
     return pages
 
 
@@ -180,7 +192,7 @@ def _read_pdf_pdfplumber(path: Path) -> list[dict[str, Any]]:
                     if text:
                         break
                 if text:
-                    pages.append({"page": i + 1, "text": text})
+                    pages.append({"page": i + 1, "text": text, "needs_text_repair": False})
     except ValueError:
         raise
     except Exception as e:
@@ -213,7 +225,7 @@ def _read_pdf_pdfium(path: Path) -> list[dict[str, Any]]:
                 textpage.close()
                 page.close()
             if text:
-                pages.append({"page": i + 1, "text": text})
+                pages.append({"page": i + 1, "text": text, "needs_text_repair": False})
     except ValueError:
         raise
     except Exception as e:
@@ -315,7 +327,7 @@ def _read_pdf_pymupdf(path: Path) -> list[dict[str, Any]]:
             for i in range(len(doc)):
                 text = _fitz_page_text(doc[i])
                 if text:
-                    pages.append({"page": i + 1, "text": text})
+                    pages.append({"page": i + 1, "text": text, "needs_text_repair": False})
     except ValueError:
         raise
     except Exception as e:
@@ -347,7 +359,7 @@ def _read_pdf_pymupdf_repair(path: Path) -> list[dict[str, Any]]:
             for i in range(len(doc)):
                 text = _fitz_page_text(doc[i])
                 if text:
-                    pages.append({"page": i + 1, "text": text})
+                    pages.append({"page": i + 1, "text": text, "needs_text_repair": False})
             return pages
     except ValueError:
         raise
@@ -377,9 +389,9 @@ def _read_pdf_pdfminer(path: Path) -> list[dict[str, Any]]:
     parts = full.split("\x0c") if "\x0c" in full else [full]
     pages: list[dict[str, Any]] = []
     for i, part in enumerate(parts):
-        text = _clean_text(part)
-        if text:
-            pages.append({"page": i + 1, "text": text})
+        page = _make_page(i + 1, part, needs_text_repair=False)
+        if page:
+            pages.append(page)
     return pages
 
 
@@ -716,7 +728,7 @@ def _read_pdf_rapidocr_impl(
                         del img
 
                         lines = _ocr_result_to_lines(result)
-                        page_text = _clean_text("\n".join(lines))
+                        page_text = _clean_text("\n".join(lines), repair=True)
                         if page_text:
                             break
                         if attempt_idx == 0 and i == 0:
@@ -743,7 +755,11 @@ def _read_pdf_rapidocr_impl(
                         gc.collect()
 
                 if page_text:
-                    pages.append({"page": i + 1, "text": page_text})
+                    pages.append({
+                        "page": i + 1,
+                        "text": page_text,
+                        "needs_text_repair": True,
+                    })
                 elif last_err is None and not page_text:
                     pass
 
@@ -968,17 +984,17 @@ def _read_docx(path: Path) -> list[dict[str, Any]]:
 
     doc = Document(str(path))
     full_text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-    full_text = _clean_text(full_text)
-    if not full_text:
+    page = _make_page(1, full_text, needs_text_repair=False)
+    if not page:
         raise ValueError("DOCX не содержит текста")
-    return [{"page": 1, "text": full_text}]
+    return [page]
 
 
 def _read_txt(path: Path) -> list[dict[str, Any]]:
-    text = _clean_text(decode_text_file(path))
-    if not text:
+    page = _make_page(1, decode_text_file(path), needs_text_repair=False)
+    if not page:
         raise ValueError("TXT-файл пуст")
-    return [{"page": 1, "text": text}]
+    return [page]
 
 
 def _normalize_pdf_pages(path: Path, pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1003,7 +1019,7 @@ def _normalize_pdf_pages(path: Path, pages: list[dict[str, Any]]) -> list[dict[s
             for i in range(pdf_pages):
                 text = _fitz_page_text(doc[i])
                 if text:
-                    per_page.append({"page": i + 1, "text": text})
+                    per_page.append({"page": i + 1, "text": text, "needs_text_repair": False})
             if per_page:
                 logger.info(
                     "PDF %s: переразбивка на %d стр. (был один блок текста)",
@@ -1028,7 +1044,10 @@ def load_document(path: Path) -> list[dict[str, Any]]:
                 ext = ".pdf"
     if ext == ".pdf":
         pages = _read_pdf(path)
-        return _normalize_pdf_pages(path, pages)
+        pages = _normalize_pdf_pages(path, pages)
+        for page in pages:
+            page.setdefault("needs_text_repair", False)
+        return pages
     if ext == ".docx":
         return _read_docx(path)
     if ext == ".txt":
@@ -1090,8 +1109,10 @@ def chunk_text(
         start = 0
         while start < len(text):
             end = _next_chunk_end(text, start, CHUNK_SIZE)
-            chunk_text_str = text[start:end]
-            if chunk_text_str.strip():
+            chunk_text_str = text[start:end].strip()
+            if chunk_text_str:
+                if page_data.get("needs_text_repair"):
+                    chunk_text_str = repair_citation_text(chunk_text_str)
                 cite_page = _page_for_chunk(
                     filename=filename,
                     pages=pages,
@@ -1101,7 +1122,7 @@ def chunk_text(
                 )
                 chunks.append({
                     "id": f"{file_id}_{chunk_idx}",
-                    "text": repair_citation_text(chunk_text_str.strip()),
+                    "text": chunk_text_str,
                     "metadata": {
                         "file_id": file_id,
                         "filename": repair_filename(filename),

@@ -121,10 +121,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const msgDiv = document.createElement('div');
         msgDiv.className = 'message bot';
 
-        const p = document.createElement('p');
-        p.className = 'message-text';
-        p.textContent = text;
-        msgDiv.appendChild(p);
+        const body = document.createElement('div');
+        body.className = 'message-text';
+        body.innerHTML = App.formatChatMarkdown(text);
+        msgDiv.appendChild(body);
 
         if (citations && citations.length) {
             const box = document.createElement('div');

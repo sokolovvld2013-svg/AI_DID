@@ -1,0 +1,706 @@
+=== LINE 1122 ===
+<git_diff_from_branch_to_main>
+  Relevant Diff: The following is the git diff from the current branch to the main/default branch:
+
+diff --git a/README.md b/README.md
+index 1a56ab3..529e209 100644
+--- a/README.md
++++ b/README.md
+@@ -1,7 +1,9 @@
+ # ИИ-помощник Компании
+ 
+-Веб-приложение для сотрудников с тремя модулями: **Экономист**, **Секретарь**, **Юрист**.  
+-Один сайт, общая база нормативных документов (Юрист), личная история запросов у каждого пользователя (по cookie в браузере).
++Веб-приложение для сотрудников: **Экономист**, **Секретарь**, **Юрист**.  
++Один сайт, общая база документов (Юрист), личная история запросов у каждого пользователя (cookie в браузере).
++
++**Каталог проекта на сервере:** `~/AI_DID` (все данные, конфигурация и логи — внутри него).
+ 
+ ## Стек
+ 
+@@ -16,206 +18,163 @@
+ 
+ ---
+ 
+-## Модули
++## Каталог `AI_DID`
+ 
+-### Экономист
++После установки и первого запуска в `~/AI_DID` находятся:
+ 
+-Помощник по бюджету и фактическим расходам.
++```
++~/AI_DID/
++├── .env                    # ключи и настройки (не в git)
++├── venv/                   # виртуальное окружение Python
++├── logs/                   # uvicorn.log при запуске через nohup
++├── chroma_data/            # векторный индекс Юриста (общий для всех)
++├── secretary/uploaded/     # загруженные аудиофайлы
++├── lawyer/uploaded/        # загруженные документы (копии на диске)
++├── models/                 # локальная модель эмбеддингов (если EMBEDDING_PROVIDER=local)
++├── economist/              # модуль Экономист
++├── secretary/              # модуль Секретарь
++├── lawyer/                 # модуль Юрист
++├── core/                   # LLM, эмбеддинги, история, сессии
++├── static/                 # CSS, JS, img
++├── templates/              # HTML
++├── docs/                   # инструкции (n8n, GitHub)
++├── scripts/                # утилиты
++├── main.py
++├── config.py
++└── requirements.txt
++```
++
++Путь можно задать иначе, но далее в инструкциях используется **`~/AI_DID`**.
+ 
+-**Что умеет**
++---
+ 
+-- Отвечать на вопросы в чате: подбор статьи по описанию расхода, лимиты ПД по статье или объекту, факт по статье.
+-- Показывать ответ текстом или в виде таблицы (если n8n вернул структурированные данные).
+-- Открывать **таблицу факта** в Google Sheets — кнопка «Открыть таблицу» на странице модуля.
++## Модули
+ 
+-**Как устроено**
++### Экономист
+ 
+-1. Пользователь пишет вопрос в чат на сайте.
+-2. Сервер отправляет запрос в **n8n** (`N8N_ECONOMIST_WEBHOOK_URL`).
+-3. В n8n выполняется ваша логика: LLM, Google Sheets, 1С и т.д.
+-4. Ответ возвращается в чат; история сохраняется **только для этого браузера**.
++Помощник по бюджету и фактическим расходам.
+ 
+-**Настройка**
++- Чат: подбор статьи, лимиты ПД, факт по статье или объекту.
++- Ответ текстом или таблицей (если n8n вернул структурированные данные).
++- Кнопка «Открыть таблицу» — Google Sheets с фактом.
+ 
+-- `ECONOMIST_FACT_SHEET_URL` — ссылка на Google-таблицу факта (режим редактирования).
+-- `N8N_ECONOMIST_WEBHOOK_URL` — Production URL webhook в n8n.
++**Схема:** вопрос на сайте → webhook **n8n** (`N8N_ECONOMIST_WEBHOOK_URL`) → ваша логика (LLM, Sheets, 1С) → ответ в чат. История — **личная** (по браузеру).
+ 
+-Подробная схема workflow: [docs/N8N_ECONOMIST.md](docs/N8N_ECONOMIST.md).
++Настройка: `ECONOMIST_FACT_SHEET_URL`, `N8N_ECONOMIST_WEBHOOK_URL`. Подробнее: [docs/N8N_ECONOMIST.md](docs/N8N_ECONOMIST.md).
+ 
+ ---
+ 
+ ### Секретарь
+ 
+-Протоколирование совещаний из аудиозаписи.
+-
+-**Что умеет**
+-
+-- Принимать аудио: `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac` (до 100 МБ по умолчанию).
+-- Распознавать речь (**Whisper**, русский язык).
+-- Формировать **протокол совещания** через LLM: тема, участники, решения, поручения.
+-- Хранить историю обработанных файлов **для каждого пользователя**; открывать сохранённые протоколы из списка.
++Протоколы совещаний из аудио.
+ 
+-**Как устроено**
++- Форматы: `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac` (до 100 МБ).
++- Распознавание **Whisper** (русский), протокол через LLM.
++- История обработанных файлов — **личная**.
+ 
+-1. Загрузка файла на сервер.
+-2. Транскрибация (локально, модель Whisper).
+-3. Структурирование текста LLM (DeepSeek или GigaChat).
+-4. Протокол отображается на странице и попадает в личную историю.
+-
+-**На сервере нужен** `ffmpeg` (`sudo apt install -y ffmpeg` на Linux).
++На сервере нужен **ffmpeg**: `sudo apt install -y ffmpeg`.
+ 
+ ---
+ 
+ ### Юрист
+ 
+-Поиск ответов в загруженных внутренних документах (положения, регламенты, приказы).
+-
+-**Что умеет**
+-
+-- Загружать **DOCX**, **TXT**, **PDF** (до 50 МБ, до 200 страниц).
+-- Индексировать документы в **общую** базу (ChromaDB) — все сотрудники видят один набор файлов и задают вопросы по нему.
+-- Отвечать на вопросы с **цитатами** и указанием файла и страницы.
+-- Удалять отдельные файлы или очищать всю базу.
++Поиск по внутренним документам (положения, приказы, регламенты).
+ 
+-**Как устроено**
++- Загрузка **DOCX**, **TXT** (рекомендуется), **PDF** до 50 МБ.
++- На странице указано: *поиск по PDF не эффективен* — для сканов используйте **DOCX** или PDF с текстовым слоем.
++- База документов и индекс Chroma — **общие** для всех сотрудников.
++- Ответ со ссылками `[1]`, `[2]`…; блок **«Источники»** — только документ и страница (без текста цитаты).
+ 
+-1. Документ разбивается на фрагменты (чанки), строятся векторные эмбеддинги.
+-2. На вопрос — гибридный поиск (ключевые слова + семантика).
+-3. Релевантные фрагменты передаются в LLM; ответ со ссылками `[1]`, `[2]`…
+-4. Блок «Источники» показывает выдержки из документов; при искажениях OCR текст может восстанавливаться через LLM.
++**Как работает RAG**
+ 
+-**Форматы PDF**
++1. Документ → чанки (~`LAWYER_CHUNK_SIZE` символов) → эмбеддинги в `chroma_data/`.
++2. На вопрос — гибридный поиск (ключевые слова + семантика), до **`LAWYER_CONTEXT_K`** фрагментов (по умолчанию 8) в промпт LLM.
++3. Эмбеддинг GigaChat обрезается до ~480 символов на фрагмент (`GIGACHAT_MAX_EMBED_CHARS`) — лимит API; **полный текст чанка** хранится в Chroma и передаётся модели.
+ 
+-- С текстовым слоем: `pymupdf`, `pypdfium2`, `pdfplumber`, `pypdf`.
+-- Сканы (картинки): **RapidOCR** (только Python-пакеты, без Tesseract/LibreOffice/Word).
+-
+-Для сканов предпочтительнее загружать **DOCX** — быстрее и точнее, чем OCR PDF.
+-
+-**История вопросов** — личная (по браузеру). **База документов** — общая для Компании.
++**PDF:** текстовый слой — через PyMuPDF и др.; сканы — RapidOCR (качество часто низкое). **История вопросов** — личная; **файлы и индекс** — общие.
+ 
+ ---
+ 
+-## Установка (локально)
++## Установка
+ 
+-### Windows
++### Сервер (Linux, VPS)
+ 
+ ```bash
+-cd C:\projects\ai-assistant
+-python -m venv venv
+-venv\Scripts\activate
+-pip install -r requirements.txt
+-copy .env.example .env
+-```
+-
+-### Linux / macOS
+-
+-```bash
+-cd ~/ai-assistant
++cd ~
++git clone https://github.com/USER/REPO.git AI_DID
++cd ~/AI_DID
+ python3 -m venv venv
+ source venv/bin/activate
+ pip install -r requirements.txt
+ cp .env.example .env
++nano .env
++sudo apt install -y ffmpeg
++mkdir -p logs
+ ```
+ 
+-Заполните `.env`: API-ключи LLM, webhook n8n, при необходимости — ссылку на таблицу факта.
++В `.env` укажите ключи LLM, webhook n8n, при необходимости таблицу факта.
+ 
+-**Эмбеддинги на VPS без GPU** — укажите в `.env`:
++**Эмбеддинги на VPS без GPU** (без PyTorch и `nvidia_*`, экономия >2 ГБ):
+ 
+ ```env
+ EMBEDDING_PROVIDER=gigachat
+ GIGACHAT_CREDENTIALS=...
++GIGACHAT_MAX_EMBED_CHARS=480
+ ```
+ 
+-Так не потребуется PyTorch и пакеты `nvidia_*` (экономия >2 ГБ на диске).
++После смены `EMBEDDING_PROVIDER`, модели эмбеддингов или `LAWYER_CHUNK_*` — **очистите индекс Юриста** и загрузите документы заново.
+ 
+-**Локальные эмбеддинги на ПК** (`EMBEDDING_PROVIDER=local`): установите PyTorch CPU и sentence-transformers отдельно, затем при необходимости скачайте модель:
++### Локальная разработка (Windows)
+ 
+-```bash
+-pip install torch --index-url https://download.pytorch.org/whl/cpu
+-pip install "sentence-transformers>=2.3.0,<3.0.0"
+-python scripts/download_embedding_model.py
+-```
++Тот же каталог можно назвать `AI_DID`, например `D:\AI_DID`:
+ 
+-В `.env`: `EMBEDDING_LOCAL_FILES_ONLY=1`, путь к модели в `LOCAL_EMBEDDING_MODEL`.
+-
+-### Первый запуск
+-
+-```bash
+-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
++```bat
++cd D:\AI_DID
++python -m venv venv
++venv\Scripts\activate
++pip install -r requirements.txt
++copy .env.example .env
+ ```
+ 
+-Откройте: http://localhost:8000
+-
+-При первом запуске:
+-
+-1. **Whisper** — скачает модель `base` (~150 МБ).
+-2. **Эмбеддинги** — при `gigachat`/`openai` внеш��ий API; при `local` — модель из `models/` или HuggingFace (`HF_ENDPOINT` для зеркала).
+-3. Создадутся каталоги `secretary/uploaded`, `lawyer/uploaded`, `chroma_data`.
+-
+-После смены `EMBEDDING_PROVIDER` или параметров чанков (`LAWYER_CHUNK_SIZE`, `LAWYER_CHUNK_OVERLAP`) очистите индекс Юриста и загрузите документы заново.
+-
+----
+-
+-## Развёртывание на сервере (VPS)
+-
+-### Подготовка
++Локальные эмбеддинги (`EMBEDDING_PROVIDER=local`):
+ 
+ ```bash
+-cd /opt/ai-assistant
+-git clone https://github.com/USER/REPO.git .
+-python3 -m venv venv
+-source venv/bin/activate
+-pip install -r requirements.txt
+-cp .env.example .env
+-# отредактируйте .env
+-sudo apt install -y ffmpeg
++pip install torch --index-url https://download.pytorch.org/whl/cpu
++pip install "sentence-transformers>=2.3.0,<3.0.0"
++python scripts/download_embedding_model.py
+ ```
+ 
+-Рекомендуется `EMBEDDING_PROVIDER=gigachat` (или `openai`) — не устанавливайте локальные эмбеддинги на маленьком VPS.
+-
+-### Обновление
++Модель сохранится в `~/AI_DID/models/`.
+ 
+-```bash
+-cd /opt/ai-assistant
+-git pull
+-source venv/bin/activate
+-pip install -r requirements.txt
+-# перезапустите uvicorn
+-```
++---
+ 
+-### Запуск
++## Запуск
+ 
+-Перейдите в каталог проекта и активируйте venv (иначе `main:app` и `logs/` не найдутся):
++Всегда из каталога проекта:
+ 
+ ```bash
+ cd ~/AI_DID
+ source venv/bin/activate
+-mkdir -p logs
+ ```
+ 
+-Интерактивно (для проверки):
++**Проверка (интерактивно):**
+ 
+ ```bash
+ uvicorn main:app --host 0.0.0.0 --port 8000
+ ```
+ 
+-В фоне:
++**Продакшен (фон):**
+ 
+ ```bash
+ nohup uvicorn main:app --host 0.0.0.0 --port 8000 > logs/uvicorn.log 2>&1 &
+ tail -f logs/uvicorn.log
+ ```
+ 
+-Если каталог проекта другой — подставьте свой путь вместо `~/AI_DID`.
+-
+-На продакшене лучше **без** `--reload`.
++На продакшене **без** `--reload`.
+ 
+-### Доступ
++Откройте в браузере: `http://IP_СЕРВЕРА:8000` (не `0.0.0.0`). Порт **8000** — в firewall.
+ 
+-- В браузере: `http://IP_СЕРВЕРА:8000` (не используйте `0.0.0.0` как адрес).
+-- Откройте порт **8000** в firewall / security group.
+-
+-### Остановка
++**Остановка:**
+ 
+ ```bash
+ lsof -i :8000
+@@ -224,72 +183,68 @@ kill <PID>
+ 
+ ---
+ 
+-## Конфигурация (.env)
++## Обновление
++
++```bash
++cd ~/AI_DID
++git pull
++source venv/bin/activate
++pip install -r requirements.txt
++# перезапустите uvicorn
++```
++
++---
++
++## Конфигурация (`.env` в `~/AI_DID`)
+ 
+ | Переменная | Назначение |
+ |------------|------------|
+ | `LLM_PROVIDER` | `deepseek` или `gigachat` |
+ | `DEEPSEEK_API_KEY` / `GIGACHAT_CREDENTIALS` | Ключи API |
+ | `EMBEDDING_PROVIDER` | `gigachat`, `openai` или `local` |
+-| `GIGACHAT_MAX_EMBED_CHARS` | Лимит символов на фрагмент для GigaChat (по умолчанию 480; API — не более ~514 токенов) |
++| `GIGACHAT_MAX_EMBED_CHARS` | Лимит текста на эмбеддинг GigaChat (480; API ~514 токенов) |
++| `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP` | Размер чанков в индексе (1000 / 150 в типовой настройке) |
++| `LAWYER_CONTEXT_K` | Сколько фрагментов максимум в промпт LLM (8) |
++| `LAWYER_SEMANTIC_MIN_SCORE` | Порог семантической релевантности (0.42) |
+ | `ECONOMIST_FACT_SHEET_URL` | Google-таблица факта |
+-| `N8N_ECONOMIST_WEBHOOK_URL` | Webhook n8n для чата Экономиста |
+-| `N8N_ECONOMIST_TIMEOUT` | Таймаут ответа n8n, сек (120) |
+-| `WHISPER_MODEL_SIZE` | `tiny`, `base`, `small`, … |
+-| `WHISPER_DEVICE` | `cpu` или `cuda` (при наличии GPU) |
+-| `MAX_AUDIO_SIZE` / `MAX_DOCUMENT_SIZE` | Лимиты загрузки, байты |
+-| `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP` | Чанки для RAG (1200 / 200) |
+-| `LAWYER_OCR_*` | Параметры OCR для PDF-сканов |
++| `N8N_ECONOMIST_WEBHOOK_URL` | Webhook n8n |
++| `WHISPER_MODEL_SIZE` | `base`, `small`, … |
++| `MAX_AUDIO_SIZE` / `MAX_DOCUMENT_SIZE` | Лимиты загрузки |
++| `LAWYER_OCR_*` | OCR PDF-сканов |
++| `CHROMA_PERSIST_DIR` | Папка индекса (по умолчанию `chroma_data`) |
+ | `APP_TIMEZONE` | Часовой пояс истории (`Europe/Moscow`) |
+-| `HISTORY_SIZE` | Сколько записей хранить в истории на пользователя (5) |
++| `HISTORY_SIZE` | Записей истории на пользователя (5) |
+ 
+ Полный шаблон: [.env.example](.env.example).
+ 
+ ---
+ 
+-## Структура проекта
+-
+-```
+-ai-assistant/
+-├── economist/          # чат через n8n
+-├── secretary/          # аудио → Whisper → протокол
+-├── lawyer/             # документы, RAG, цитаты
+-├── core/               # LLM, эмбеддинги, история, сессии
+-├── static/             # CSS, JS, img (логотип Компании)
+-├── templates/          # HTML-страницы
+-├── docs/               # инструкции (n8n, GitHub)
+-├── scripts/            # утилиты (модель эмбеддингов, диагностика PDF)
+-├── main.py
+-├── config.py
+-└── requirements.txt
+-```
+-
+----
+-
+ ## Типичные проблемы
+ 
+ | Ситуация | Решение |
+ |----------|---------|
+-| pip качает `nvidia_*`, нет места на диске | Только `requirements.txt` + `EMBEDDING_PROVIDER=gigachat`, без локального PyTorch |
+-| Whisper долго на CPU | `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1` |
+-| OCR PDF: `Killed` | Мало RAM: `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, загружайте DOCX |
++| pip качает `nvidia_*`, нет места | `EMBEDDING_PROVIDER=gigachat`, только `requirements.txt` |
++| Ошибка 413 при загрузке TXT/DOCX | `GIGACHAT_MAX_EMBED_CHARS=480`, перезапуск сервера |
++| Юрист не находит ответ в PDF | Загрузить **DOCX**; OCR часто искажает текст |
++| Кракозябры в TXT в источниках | UTF-8; переиндексировать (удалить файл, загрузить снова) |
++| Смена эмбеддингов / чанков | «Очистить базу» на странице Юриста |
++| Whisper медленно на CPU | `WHISPER_MODEL_SIZE=base`, `WHISPER_BEAM_SIZE=1` |
++| OCR PDF: `Killed` | `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, DOCX |
+ | OCR: `libGL.so.1` | `pip uninstall -y opencv-python && pip install opencv-python-headless` |
+-| Смена эмбеддингов | Очистить индекс Юриста, загрузить документы заново |
+-| Кракозябры в TXT | Сохранить файл в UTF-8 |
+ | Экономист молчит | Проверить `N8N_ECONOMIST_WEBHOOK_URL`, workflow Active в n8n |
+ 
+ ---
+ 
+ ## GitHub
+ 
+-Не коммитьте `.env` с ключами. Шаблон: `.env.example`.  
+-Инструкция по репозиторию: [docs/GITHUB.md](docs/GITHUB.md).
++Не коммитьте `~/AI_DID/.env` с ключами. Шаблон: `.env.example`.  
++Инструкция: [docs/GITHUB.md](docs/GITHUB.md).
+ 
+ ---
+ 
+ ## Примечания
+ 
+-- **История** — в памяти сервера, отдельно для каждого браузера (cookie `did_sid`); сбрасывае��ся при перезапуске uvicorn.
+-- **Документы Юриста** — общие для всех пользователей (ChromaDB в `chroma_data/`).
+-- **Секретарь и Юрист** требуют рабочий LLM API; **Экономист** в чате зависит от n8n, не от LLM на сервере приложения.
+-- Логотип и 
+
+=== LINE 1124 ===
+## Анализ текущего проекта
+
+Проект — **FastAPI + Jinja2 + vanilla JS**, не React. Модули: **Экономист**, **Секретарь**, **Юрист**. Отдельного `/frontend` и `/backend` нет — всё в одном репозитории `~/AI_DID`.
+
+| Компонент из ТЗ | Что есть сейчас | Разрыв |
+|----------------|-----------------|--------|
+| Лист «Закупка 223-ФЗ» | Нет | Новый роутер + шаблон + JS + пункт nav |
+| Роль «Специалист по закупкам» | Нет auth вообще | Cookie `did_sid` только для истории |
+| Celery + Redis | Нет | Синхронная обработка (как у Юриста) |
+| PostgreSQL / pgvector | Нет | ChromaDB + файлы на диске |
+| RAG | `lawyer/rag.py` | Переиспользовать паттерн, **отдельная коллекция** |
+| DOCX-парсер разделов | Только `paragraphs` в `doc_processor` | Нужен **новый** `parser.py` (Heading 1–3) |
+| Markdown-рендер | Нет библиотеки | Нужен `markdown` / `mistune` на backend или простой JS |
+| PDF/DOCX/TXT upload | Есть у Юриста | Адаптировать для БЗ закупок |
+
+**Вывод:** блок «Закупка» — это **новый модуль** (~15–20 файлов), встроенный по образцу Юриста, но с двумя режимами, отдельной БЗ, парсером единого DOCX и (опционально) фоновыми задачами.
+
+---
+
+## План интеграции (4 фазы)
+
+### Фаза 0 — Каркас и навигация (1–2 дня)
+
+**Цель:** лист «Закупка 223-ФЗ» в текущем UI, без тяжёлой логики.
+
+```
+~/AI_DID/
+├── procurement/
+│   ├── __init__.py
+│   └── router.py          # GET /procurement — страница
+├── templates/procurement.html
+├── static/js/procurement.js
+```
+
+**Изменения:**
+- `main.py` — `include_router(procurement_router)`, каталоги `procurement/uploaded/`, `procurement/cache/`
+- `templates/base.html` — ссылка «Закупка 223-ФЗ», правка CSS nav на 4 вкладки
+- `config.py` — `PROCUREMENT_*` (upload dir, cache TTL, customer_id по умолчанию)
+- `core/history.py` — `procurement_history`
+
+**Доступ «Специалист по закупкам» (минимальный вариант без полноценного auth):**
+- `.env`: `PROCUREMENT_ACCESS_TOKEN=...` или `PROCUREMENT_ALLOWED_IPS=...`
+- Middleware/Depends на все `/procurement/*` и `/api/procurement-*`
+- Позже — замена на LDAP/SSO без смены API
+
+**API-префикс:** в ТЗ `/api/procurement-audit/…` — сохраним для REST, страница — `/procurement` (как `/lawyer`).
+
+---
+
+### Фаза 1 — Парсер + кэш документации (2–3 дня)
+
+**`procurement/services/parser.py`**
+
+```
+Единый DOCX → {
+  audit_id: uuid,
+  file_hash: sha256,
+  sections: {
+    info_card: { text, pages[] },
+    tz: { ... },
+    contract: { ... },
+    appendices: [{ name, text, pages }]
+  },
+  missing_sections: ["contract"],  # → 🔴
+  parsed_at: datetime
+}
+```
+
+**Логика разбиения:**
+1. `python-docx`: стили `Heading 1/2/3`, нумерация
+2. Ключевые фразы: «ИНФОРМАЦИОННАЯ КАРТА», «ТЕХНИЧЕСКОЕ ЗАДАНИЕ», «ПРОЕКТ ДОГОВОРА»
+3. Fallback: `get_llm()` — «определи границы разделов» (только если заголовки не найдены)
+4. **Положение о закупке не ищем** в этом файле
+
+**Кэш (без Redis на старте):**
+- `procurement/cache/{file_hash}.json` + метаданные в `procurement/cache/index.json`
+- TTL 24 ч (env `PROCUREMENT_CACHE_TTL_HOURS=24`)
+- Оба режима читают один кэш по `audit_id`
+
+**Endpoint:**
+- `POST /api/procurement-audit/upload` — upload DOCX → parse → cache → `{ audit_id, sections_detected, missing_sections }`
+
+---
+
+### Фаза 2 — RAG: база знаний (2–3 дня)
+
+**Переиспользование стека Юриста:**
+
+| Компонент | Источник | Изменение |
+|-----------|----------|-----------|
+| ChromaDB | `lawyer/rag.py` | Коллекция `procurement_kb`, каталог `procurement/chroma_data/` |
+| Embeddings | `core/embedding.py` | Без изменений (GigaChat) |
+| Chunking | `lawyer/doc_processor.py` | `PROCUREMENT_KB_CHUNK_SIZE=800`, overlap 150 |
+| Hybrid search | `lawyer/search_utils.py` | Алиасы: закуп, 223, положение, аукцион |
+
+**Новые файлы:**
+- `procurement/kb_rag.py` — обёртка над паттерном `LawyerRAG` (отдельная коллекция + `customer_id` в metadata)
+- `procurement/services/kb_loader.py` — upload DOCX/PDF/TXT → index
+
+**Метаданные чанка:**
+```python
+{ "source_file", "section_title", "page", "customer_id", "doc_type": "position|law|other" }
+```
+
+**Автоопределение «Положение о закупке»:** по имени файла / ключевым словам в первых 500 символах → `doc_type=position`.
+
+**Endpoints:**
+- `POST /api/procurement-kb/upload` — множественная загрузка
+- `GET /api/procurement-kb/list?customer_id=`
+- `DELETE /api/procurement-kb/{doc_id}`
+
+**Seed:** `scripts/seed_procurement_kb.py` — загрузка «Положение о закупке» из `Защита проекта/...` или `procurement/seed/`.
+
+---
+
+### Фаза 3 — Режим А: проверка документации (4–5 дней)
+
+**`procurement/services/`**
+
+| Модуль | Тип | Назначение |
+|--------|-----|------------|
+| `cross_checker.py` | Детерминированный | НМЦД, предмет, способ, сроки, обеспечение |
+| `plagiarism_scanner.py` | Детерминированный + regex | Copy-paste, чужие ИНН, неверные способы |
+| `fz223_validator.py` | Правила + RAG | 223-ФЗ, **только ПП РФ № 1875** (не 925) |
+| `contract_reviewer.py` | Правила + LLM точечно | ГК РФ, существенные условия |
+| `llm_orchestrator.py` | LLM по чанкам | Семантика там, где код не справляется |
+| `report_generator.py` | Export | JSON → PDF/DOCX |
+
+**Поток:**
+```
+POST /api/procurement-audit/{audit_id}/check
+  → загрузка cached sections
+  → cross_checker + plagiarism (параллельно, asyncio)
+  → fz223_validator (+ RAG по БЗ если есть Положение)
+  → contract_reviewer
+  → агрегация issues[] → verdict
+  → сохранение report в procurement/cache/{audit_id}_check.json
+```
+
+**Статус (без Celery v1):**
+- In-memory / JSON: `{ status: pending|running|done|error, progress: 0-100, step: "cross_check" }`
+- `GET /api/procurement-audit/{audit_id}/status?mode=check` — polling каждые 2 с
+- **Celery v2:** те же шаги в `@celery.task`, Redis как broker
+
+**Если Положения нет в БЗ:** 🟡 issue `position_compliance` + пропуск шага 3 по Положению.
+
+---
+
+### Фаза 4 — Режим Б: экспертное мнение + Frontend (3–4 дня)
+
+**Backend:**
+- `POST /api/procurement-audit/{audit_id}/expert-opinion`  
+  body: `{ context?, kb_document_ids? }`
+- RAG: TOP-K=12 чанков из выбранной БЗ
+- `prompts/expert_opinion.py` → `get_llm().generate(...)` → Markdown
+- Сохранение: `procurement/cache/{audit_id}_expert.md`
+
+**Frontend (`ProcurementWorkspace`):**
+
+```
+templates/procurement.html
+├── Табы: [🔍 Проверка] [💬 Экспертное мнение]
+├── DocumentUploader (общий, state в sessionStorage/localStorage)
+├── Таб «Проверка» → CheckDashboard (прогресс, вердикт, таблица issues 🔴🟡)
+├── Таб «Экспертиза» → KnowledgeBaseManager + textarea context + ExpertOpinionView (Markdown)
+└── AuditHistoryTable (общая, фильтр по типу)
+```
+
+**Стили:** только `style.css` — `.card`, `.grid-2`, `.upload-zone`, `.btn-primary`, новые `.procurement-tabs`, `.issue-critical`, `.issue-important`.
+
+**Markdown:** backend отдаёт HTML (`markdown` lib) или frontend — `marked.js` (если не хотим новую зависимость на сервере).
+
+---
+
+## Схема данных
+
+```mermaid
+flowchart TB
+    subgraph UI [ProcurementWorkspace]
+        Uploader[DocumentUploader DOCX]
+        KB[KnowledgeBaseManager]
+        TabA[CheckDashboard]
+        TabB[ExpertOpinionView]
+    end
+
+    subgraph Cache [procurement/cache/]
+        Parsed[sections JSON by hash]
+        ReportA[check report JSON]
+        ReportB[expert MD]
+        Status[job status JSON]
+    end
+
+    subgraph KBStore [procurement/chroma_data/]
+        Chroma[procurement_kb collection]
+    end
+
+    Uploader --> Parser[parser.py]
+    Parser --> Cache
+    KB --> KBLoader[kb_loader.py]
+    KBLoader --> Chroma
+
+    TabA --> Check[cross_checker + fz223 + ...]
+    Check --> Cache
+    Check --> Chroma
+
+    TabB --> Expert[expert_analyzer + RAG]
+    Expert --> Chroma
+    Expert --> Cache
+```
+
+---
+
+## Сопоставление endpoints ТЗ ↔ проект
+
+| ТЗ | Реализация | Примечание |
+|----|------------|------------|
+| `POST .../upload` | ✅ Фаза 1 | Только DOCX документации |
+| `POST .../kb/upload` | ✅ Фаза 2 | DOCX, PDF, TXT |
+| `POST .../{id}/check` | ✅ Фаза 3 | Async v1 = threading/asyncio |
+| `POST .../{id}/expert-opinion` | ✅ Фаза 4 | |
+| `GET .../status` | ✅ polling | SSE — опционально v2 |
+| `GET .../download` | ✅ Фаза 3–4 | `python-docx` + reportlab/weasyprint |
+| Celery | ⏳ v2 | v1: BackgroundTasks / asyncio |
+| Tenant isolation | ✅ `customer_id` в metadata Chroma + upload paths |
+
+---
+
+## Зависимости (добавить в `requirements.txt`)
+
+**Фаза 1–4 (минимум):**
+```
+markdown>=3.5          # рендер экспертизы
+python-docx            # уже есть
+```
+
+**Фаза 3–4 (экспорт):**
+```
+reportlab>=4.0         # PDF отчётов
+# или weasyprint — тяжелее на VPS
+```
+
+**Фаза v2 (async):**
+```
+redis>=5.0
+celery>=5.3
+```
+
+**Не нужно на старте:** pgvector, SQLAlchemy (если audit_id + cache на диске достаточно).
+
+---
+
+## Риски и решения
+
+| Риск | Решение |
+|------|---------|
+| Долгая проверка блокирует uvicorn | v1: `asyncio.create_task` + status polling; v2: Celery |
+| Нет auth | Token в `.env` + проверка на роутере; позже SSO |
+| Юрист и Закупка делят Chroma | **Разные коллекции и каталоги** |
+| LLM галлюцинирует нормы | Шаги 1–2 только код; 1875 — whitelist в `fz223_validator.py` |
+| Единый DOCX без заголовков | LLM fallback + 🟡 «структура не распознана» |
+
+---
+
+## Порядок работ (рекомендуемый)
+
+1. **Фаза 0** — nav, страница, access gate, пустые endpoints  
+2. **Фаза 1** — `parser.py` + upload + кэш (можно тестировать на реальных DOCX)  
+3. **Фаза 2** — БЗ + seed Положения  
+4. **Фаза 3** — режим А (сначала `cross_checker` + JSON, потом остальные шаги)  
+5. **Фаза 4** — режим Б + UI табы + история  
+6. **v2** — Celery, PDF export, полноценный auth  
+
+---
+
+## Что нужно от вас перед кодом
+
+1. **Доступ:** достаточно token в `.env` или нужен полноценный login?
+2. **Заказчик (tenant):** один `customer_id` по умолчанию или несколько?
+3. **Celery:** сразу или сначала polling (проще деплой на текущем VPS)?
+4. **Пример единого DOCX** документации для отладки парсера?
+5. **Файл «Положение о закупке»** — положить в `procurement/seed/` для seed-скрипта?
+
+---
+
+**Итог:** интеграция возможна **без нового приложения** — новый модуль `procurement/` по образцу Юриста, с отдельной Chroma-коллекцией, парсером DOCX и двумя режимами. Celery/Redis и роли — **вторая итерация**, если не требуете их в первом релизе.
+
+Если подтверждаете план — могу начать с **Фазы 0 + Фазы 1** (каркас + парсер + upload).
+
+[REDACTED]
+

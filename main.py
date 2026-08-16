@@ -15,6 +15,11 @@ from config import (
     FAVICON_SOURCE,
     LAWYER_UPLOAD_DIR,
     LOGO_SOURCE,
+    PROCUREMENT_CACHE_DIR,
+    PROCUREMENT_POLICY_UPLOAD_DIR,
+    PROCUREMENT_UPLOAD_DIR,
+    TENDERS_CACHE_DIR,
+    TENDERS_UPLOAD_DIR,
     SECRETARY_UPLOAD_DIR,
     STATIC_FAVICON,
     STATIC_LOGO,
@@ -23,7 +28,9 @@ from config import (
 from economist.router import router as economist_router
 from lawyer.doc_processor import docx_available, pymupdf_available
 from lawyer.router import router as lawyer_router
+from procurement.router import legacy_router, router as procurement_router
 from secretary.router import router as secretary_router
+from tenders.router import router as tenders_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,6 +43,11 @@ def _ensure_dirs():
     for d in (
         SECRETARY_UPLOAD_DIR,
         LAWYER_UPLOAD_DIR,
+        PROCUREMENT_UPLOAD_DIR,
+        PROCUREMENT_POLICY_UPLOAD_DIR,
+        PROCUREMENT_CACHE_DIR,
+        TENDERS_UPLOAD_DIR,
+        TENDERS_CACHE_DIR,
         CHROMA_PERSIST_DIR,
         BASE_DIR / "static",
         BASE_DIR / "static" / "img",
@@ -96,7 +108,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title='ИИ-помощник ФГУП "ДИД"',
-    description="Модули: Экономист, Секретарь, Юрист",
+    description="Модули: Экономист, Юрист, Закупка, Торги, Секретарь",
     lifespan=lifespan,
 )
 
@@ -107,6 +119,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 app.include_router(economist_router)
 app.include_router(secretary_router)
 app.include_router(lawyer_router)
+app.include_router(procurement_router)
+app.include_router(tenders_router)
+app.include_router(legacy_router)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
