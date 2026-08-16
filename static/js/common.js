@@ -174,13 +174,40 @@ const App = {
 
     _normalizeListBreaks(text) {
         return String(text)
-            .replace(/([:;])\s*(-\s)/g, '$1\n$2')
-            .replace(/(\*\*[^*]+\*\*)\s*(-\s)/g, '$1\n$2')
-            .replace(/([^\n])\s+(-\s+\S)/g, '$1\n$2')
+            .replace(/([:;—–])\s*([-*•]\s+\S)/g, '$1\n$2')
+            .replace(/(\*\*[^*]+\*\*)\s*([-*•]\s+\S)/g, '$1\n$2')
+            .replace(/([^\n])\s+([-*•]\s+\S)/g, '$1\n$2')
+            .replace(/([:;—–])\s*(\d+\.\s+\S)/g, '$1\n$2')
+            .replace(/(\*\*[^*]+\*\*)\s*(\d+\.\s+\S)/g, '$1\n$2')
             .replace(/([^\n])\s+(\d+\.\s+\S)/g, '$1\n$2')
-            .replace(/([^\n])\s+(•\s+\S)/g, '$1\n$2')
             .replace(/([^\n])\s*(🔴\s)/g, '$1\n$2')
             .replace(/([^\n])\s*(🟡\s)/g, '$1\n$2');
+    },
+
+    _cleanMarkdownArtifacts(text) {
+        return String(text)
+            .replace(/^\s*[-*_]{3,}\s*$/gm, '')
+            .replace(/^\s*[-*_]{3,}\s+/gm, '')
+            .replace(/^\s*#{1,6}\s*$/gm, '')
+            .replace(/[-*_]{3,}\s*#{1,6}\s+/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+    },
+
+    _peekNextNonemptyLine(lines, startIndex) {
+        for (let i = startIndex; i < lines.length; i++) {
+            const trimmed = lines[i].trim();
+            if (trimmed) return trimmed;
+        }
+        return null;
+    },
+
+    _isNumberedListLine(trimmed) {
+        return /^\d+\.\s+/.test(trimmed);
+    },
+
+    _isBulletListLine(trimmed) {
+        return /^[-*•]\s+/.test(trimmed);
     },
 
     _linesToHtml(text) {
@@ -205,9 +232,16 @@ const App = {
             listType = null;
         };
 
-        for (const line of lines) {
-            const trimmed = line.trim();
+        for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+            const trimmed = lines[lineIndex].trim();
             if (!trimmed) {
+                if (listType === 'ol') {
+                    const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
+                    if (next && this._isNumberedListLine(next)) continue;
+                } else if (listType === 'ul') {
+                    const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
+                    if (next && this._isBulletListLine(next)) continue;
+                }
                 flushList();
                 flushPara();
                 continue;
@@ -240,7 +274,7 @@ const App = {
 
     _formatSegmentMarkdown(text, options = {}) {
         if (!text || !String(text).trim()) return '';
-        let html = this._escapeHtml(text);
+        let html = this._escapeHtml(this._cleanMarkdownArtifacts(text));
         if (options.auditReport) {
             html = html
                 .replace(/^(\*\*)?Общий вывод:(\*\*)?$/gm, '<h4 class="audit-summary-heading">Общий вывод</h4>')
@@ -286,7 +320,9 @@ const App = {
     },
 
     _applyChatMarkdown(text) {
-        return this._formatSegmentMarkdown(this._normalizeListBreaks(text));
+        return this._formatSegmentMarkdown(
+            this._normalizeListBreaks(this._cleanMarkdownArtifacts(text)),
+        );
     },
 
     formatChatMarkdown(text) {
@@ -296,7 +332,7 @@ const App = {
 
     formatCheckReportMarkdown(text) {
         if (!text || !String(text).trim()) return '';
-        const normalized = this._normalizeListBreaks(text);
+        const normalized = this._normalizeListBreaks(this._cleanMarkdownArtifacts(text));
         const segments = this._splitAuditSections(normalized);
         const hasAuditBlocks = segments.some((s) => s.type !== 'text');
         if (!hasAuditBlocks) {

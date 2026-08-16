@@ -578,10 +578,21 @@ body.app-file-processing .upload-zone.is-processing * {
 .message.bot ul,
 .message.bot ol {
     margin: 0.35rem 0 0 1.25rem;
-    padding: 0;
+    padding: 0 0 0 1.25rem;
+}
+.message.bot ul {
+    list-style-type: disc;
+    list-style-position: outside;
+}
+.message.bot ol {
+    list-style-type: decimal;
+    list-style-position: outside;
 }
 .message.bot ul li,
-.message.bot ol li { margin: 0.15rem 0; }
+.message.bot ol li {
+    display: list-item;
+    margin: 0.15rem 0;
+}
 .message.bot ul.chat-examples {
     list-style-type: disc;
     list-style-position: outside;
@@ -1054,10 +1065,19 @@ body.confirm-open { overflow: hidden; }
 .audit-block-body ul,
 .audit-block-body ol {
     margin: 0.15rem 0 0 1.25rem;
-    padding: 0;
+    padding: 0 0 0 1.25rem;
+}
+.audit-block-body ul {
+    list-style-type: disc;
+    list-style-position: outside;
+}
+.audit-block-body ol {
+    list-style-type: decimal;
+    list-style-position: outside;
 }
 
 .audit-block-body li {
+    display: list-item;
     margin: 0.25rem 0;
 }
 
