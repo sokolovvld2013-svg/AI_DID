@@ -7,7 +7,9 @@ function stripSiteUrls(text) {
         .replace(/https?:\/\/[^\s<>"']+/gi, '')
         .replace(/www\.[^\s<>"']+/gi, '')
         .replace(/localhost(?::\d+)?(?:\/[^\s<>"']*)?/gi, '')
-        .replace(/\s{2,}/g, ' ')
+        // Только горизонтальные пробелы — переносы строк нужны для списков
+        .replace(/[^\S\n\r]{2,}/g, ' ')
+        .replace(/\r\n?/g, '\n')
         .trim();
     return stripped || original;
 }
@@ -173,15 +175,76 @@ const App = {
     },
 
     _normalizeListBreaks(text) {
-        return String(text)
+        // Маркер пункта: 1–2 цифры + .| ) + пробел + не цифра (не даты 26.07 и не п. 17.1)
+        const listMark = '(?:\\*\\*)?\\d{1,2}[.)](?:\\*\\*)?\\s+(?=[^\\d\\s])';
+        let s = String(text)
             .replace(/([:;—–])\s*([-*•]\s+\S)/g, '$1\n$2')
             .replace(/(\*\*[^*]+\*\*)\s*([-*•]\s+\S)/g, '$1\n$2')
             .replace(/([^\n])\s+([-*•]\s+\S)/g, '$1\n$2')
-            .replace(/([:;—–])\s*(\d+\.\s+\S)/g, '$1\n$2')
-            .replace(/(\*\*[^*]+\*\*)\s*(\d+\.\s+\S)/g, '$1\n$2')
-            .replace(/([^\n])\s+(\d+\.\s+\S)/g, '$1\n$2')
+            .replace(new RegExp(`([:;—–])\\s+(${listMark})`, 'g'), '$1\n$2')
+            .replace(new RegExp(`(?<!\\d)([.!?…»])\\s+(${listMark})`, 'g'), '$1\n$2')
             .replace(/([^\n])\s*(🔴\s)/g, '$1\n$2')
             .replace(/([^\n])\s*(🟡\s)/g, '$1\n$2');
+        // Пункты 1. … 1. … на одной строке → каждый с новой (после схлопывания переносов)
+        const splitNumbered = new RegExp(
+            `((?:\\*\\*)?\\d{1,2}[.)](?:\\*\\*)?\\s+[^\\n]+?)\\s+(?=${listMark})`,
+            'g',
+        );
+        let prev;
+        do {
+            prev = s;
+            s = s.replace(splitNumbered, '$1\n');
+        } while (s !== prev);
+        return s;
+    },
+
+    _normalizeParagraphBreaks(text) {
+        const lead =
+            '(?:\\*\\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|' +
+            'Таким образом|Следовательно|Общий вывод|Замечания|Минимальный срок|' +
+            'Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко)';
+        return String(text)
+            .replace(new RegExp(`([^\\n])[ \\t]+(${lead})`, 'gi'), '$1\n$2')
+            .replace(new RegExp(`((?:${lead})[^\\n]{0,120}?:)\\s+(?=\\S)`, 'gi'), '$1\n');
+    },
+
+    _boldConclusionHeadings(text) {
+        const lead =
+            '(?:\\*\\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|' +
+            'Таким образом|Следовательно|Общий вывод|Замечания|Минимальный срок|' +
+            'Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко)';
+        const withColon = new RegExp(
+            `^(\\s*)(${lead}[^\\n:]{0,100}?)(:)(\\s*.*)$`,
+            'i',
+        );
+        const standalone = new RegExp(`^(\\s*)(${lead})\\s*$`, 'i');
+        return String(text)
+            .split('\n')
+            .map((line) => {
+                const stripped = line.trim();
+                if (stripped.startsWith('**') && stripped.indexOf('**', 2) > 1) {
+                    return line;
+                }
+                let m = line.match(withColon) || line.match(standalone);
+                if (!m) return line;
+                const indent = m[1];
+                const head = String(m[2]).replace(/^\*\*|\*\*$/g, '').trim();
+                const colon = m[3] || '';
+                const rest = m[4] || '';
+                return `${indent}**${head}${colon}**${rest}`;
+            })
+            .join('\n');
+    },
+
+    _repairBrokenDecimals(text) {
+        let s = String(text);
+        let prev;
+        do {
+            prev = s;
+            s = s.replace(/(\d)\.\s*\n\s*(\d)/g, '$1.$2');
+        } while (s !== prev);
+        s = s.replace(/([A-Za-zА-Яа-яЁё])\s*\n\s*(\d+\.\d+)/g, '$1 $2');
+        return s;
     },
 
     _cleanMarkdownArtifacts(text) {
@@ -190,7 +253,7 @@ const App = {
             .replace(/^\s*[-*_]{3,}\s+/gm, '')
             .replace(/^\s*#{1,6}\s*$/gm, '')
             .replace(/[-*_]{3,}\s*#{1,6}\s+/g, '')
-            .replace(/\n{3,}/g, '\n\n')
+            .replace(/\n{2,}/g, '\n')
             .trim();
     },
 
@@ -203,11 +266,86 @@ const App = {
     },
 
     _isNumberedListLine(trimmed) {
-        return /^\d+\.\s+/.test(trimmed);
+        return Boolean(this._matchNumberedListLine(trimmed));
     },
 
     _isBulletListLine(trimmed) {
-        return /^[-*•]\s+/.test(trimmed);
+        return Boolean(this._matchBulletListLine(trimmed));
+    },
+
+    _matchBulletListLine(trimmed) {
+        const m = String(trimmed).match(/^[-*•]\s+(.+)$/);
+        return m ? { body: m[1] } : null;
+    },
+
+    _stripLeadingListNumber(body) {
+        return String(body || '')
+            .replace(/^(?:\d{1,2}[.)]\s+)+/, '')
+            .replace(/^\*\*(?:\d{1,2}[.)]\s+)+/, '**')
+            .replace(/^<(?:strong|b)>(?:\d{1,2}[.)]\s+)/i, '<strong>');
+    },
+
+    _matchNumberedListLine(trimmed) {
+        const t = String(trimmed);
+        // Только пункты списка: 1–2 цифры, пробел, тело не с цифры (не даты/п. 17.1)
+        const m = t.match(/^(?:\*\*)?(\d{1,2})[.)](?:\*\*)?\s+(.*\S.*)$/);
+        if (!m) return null;
+        const body = (m[2] || '').trim();
+        if (!body || /^\d/.test(body)) return null;
+        return { body: this._stripLeadingListNumber(body) };
+    },
+
+    _isListSectionBreak(trimmed) {
+        if (/^#{1,6}\s/.test(trimmed)) return true;
+        if (/^<h[1-4][\s>]/i.test(trimmed)) return true;
+        if (/^[🔴🟡]/.test(trimmed)) return true;
+        if (/^<(strong|b)>/i.test(trimmed) && /Общий вывод|Замечания/i.test(trimmed)) {
+            return true;
+        }
+        // Заголовки итогов/выводов — не продолжение пункта списка
+        if (
+            /^(?:\*\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|Общий вывод|Замечания|Минимальный срок|Суммарно|В итоге|Таким образом|Следовательно|Важно|Обратите внимание|Ответ|Кратко)\b/i.test(
+                trimmed,
+            )
+        ) {
+            return true;
+        }
+        return false;
+    },
+
+    _renumberOrderedLists(text) {
+        const lines = String(text).split('\n');
+        const out = [];
+        let counter = 0;
+        let inList = false;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const m = line.match(/^(\s*)(?:\*\*)?(\d{1,2})[.)](?:\*\*)?\s+(.*\S.*)$/);
+            if (m) {
+                const rest0 = String(m[3] || '').trim();
+                if (rest0 && !/^\d/.test(rest0)) {
+                    counter += 1;
+                    inList = true;
+                    const rest = rest0.replace(/^(?:\d{1,2}[.)]\s+)+/, '');
+                    out.push(`${m[1]}${counter}. ${rest}`.replace(/\s+$/, ''));
+                    continue;
+                }
+            }
+            const trimmed = line.trim();
+            if (!trimmed) {
+                const next = this._peekNextNonemptyLine(lines, i + 1);
+                if (inList && next && this._isNumberedListLine(next)) continue;
+                inList = false;
+                counter = 0;
+                continue;
+            }
+            if (inList && (this._isBulletListLine(trimmed) || this._isListSectionBreak(trimmed))) {
+                inList = false;
+                counter = 0;
+            }
+            out.push(line);
+        }
+        return out.join('\n');
     },
 
     _linesToHtml(text) {
@@ -216,56 +354,85 @@ const App = {
         let paraLines = [];
         let listItems = [];
         let listType = null;
+        let olIndex = 0;
 
         const flushPara = () => {
             if (paraLines.length) {
                 blocks.push(paraLines.join('<br>'));
                 paraLines = [];
+                olIndex = 0;
             }
         };
 
         const flushList = () => {
             if (!listItems.length) return;
-            const tag = listType === 'ol' ? 'ol' : 'ul';
-            blocks.push(`<${tag}>${listItems.join('')}</${tag}>`);
+            if (listType === 'ol') {
+                blocks.push(`<ol class="chat-numbered">${listItems.join('')}</ol>`);
+            } else {
+                blocks.push(`<ul>${listItems.join('')}</ul>`);
+            }
             listItems = [];
             listType = null;
         };
 
+        const appendToLastItem = (html) => {
+            const last = listItems[listItems.length - 1];
+            if (last.endsWith('</li>')) {
+                listItems[listItems.length - 1] = last.replace(/<\/li>$/, `<br>${html}</li>`);
+            }
+        };
+
+        const inline = (s) => this._formatInlineMarkdown(s);
+
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const trimmed = lines[lineIndex].trim();
             if (!trimmed) {
-                if (listType === 'ol') {
-                    const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
-                    if (next && this._isNumberedListLine(next)) continue;
-                } else if (listType === 'ul') {
-                    const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
-                    if (next && this._isBulletListLine(next)) continue;
+                const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
+                if (listType === 'ol' && next && this._isNumberedListLine(next)) continue;
+                if (listType === 'ul' && next && this._isBulletListLine(next)) continue;
+                if (listType && next && this._isListSectionBreak(next)) {
+                    flushList();
+                    continue;
                 }
-                flushList();
-                flushPara();
+                if (listType && next && !this._isNumberedListLine(next) && !this._isBulletListLine(next)) {
+                    flushList();
+                }
                 continue;
             }
-            const bullet = trimmed.match(/^[-*•]\s+(.+)$/);
-            const numbered = trimmed.match(/^\d+\.\s+(.+)$/);
+            const bullet = this._matchBulletListLine(trimmed);
+            const numbered = this._matchNumberedListLine(trimmed);
             if (bullet) {
                 flushPara();
-                if (listType === 'ol') flushList();
+                if (listType === 'ol') {
+                    flushList();
+                    olIndex = 0;
+                }
                 listType = 'ul';
-                listItems.push(`<li>${bullet[1]}</li>`);
+                listItems.push(`<li>${inline(bullet.body)}</li>`);
             } else if (numbered) {
                 flushPara();
                 if (listType === 'ul') flushList();
                 listType = 'ol';
-                listItems.push(`<li>${numbered[1]}</li>`);
+                olIndex += 1;
+                const body = inline(this._stripLeadingListNumber(numbered.body));
+                listItems.push(`<li>${body}</li>`);
+            } else if (listType && listItems.length && !this._isListSectionBreak(trimmed)) {
+                appendToLastItem(inline(trimmed));
             } else {
+                if (this._isListSectionBreak(trimmed)) {
+                    olIndex = 0;
+                }
                 flushList();
-                paraLines.push(trimmed);
+                paraLines.push(inline(trimmed));
             }
         }
         flushList();
         flushPara();
-        return blocks.join('');
+        // Склеить случайно разорванные списки — иначе последний пункт оказывается в новом <ol> и «съезжает»
+        return blocks
+            .join('<br>')
+            .replace(/<\/ol><br><ol class="chat-numbered">/g, '')
+            .replace(/<\/ul><br><ul>/g, '');
     },
 
     _formatInlineMarkdown(html) {
@@ -274,16 +441,39 @@ const App = {
 
     _formatSegmentMarkdown(text, options = {}) {
         if (!text || !String(text).trim()) return '';
-        let html = this._escapeHtml(this._cleanMarkdownArtifacts(text));
+        let raw = this._boldConclusionHeadings(
+            this._renumberOrderedLists(
+                this._normalizeListBreaks(
+                    this._normalizeParagraphBreaks(
+                        this._repairBrokenDecimals(this._cleanMarkdownArtifacts(text)),
+                    ),
+                ),
+            ),
+        );
+        let html = this._escapeHtml(raw);
         if (options.auditReport) {
             html = html
-                .replace(/^(\*\*)?Общий вывод:(\*\*)?$/gm, '<h4 class="audit-summary-heading">Общий вывод</h4>')
-                .replace(/^(\*\*)?Замечания:(\*\*)?$/gm, '<h4 class="audit-remarks-heading">Замечания</h4>');
+                .replace(
+                    /^(?:\*\*)?Общий вывод:(?:\*\*)?\s*$/gm,
+                    '<h4 class="audit-summary-heading">Общий вывод</h4>',
+                )
+                .replace(
+                    /^(?:\*\*)?Замечания:(?:\*\*)?\s*$/gm,
+                    '<h4 class="audit-remarks-heading">Замечания</h4>',
+                )
+                .replace(
+                    /^\*\*Общий вывод:\*\*\s*$/gm,
+                    '<h4 class="audit-summary-heading">Общий вывод</h4>',
+                )
+                .replace(
+                    /^\*\*Замечания:\*\*\s*$/gm,
+                    '<h4 class="audit-remarks-heading">Замечания</h4>',
+                );
         }
         html = html
             .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-            .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            .replace(/^### (.+)$/gm, '<h4>$1</h4>');
+        // ** → <strong> внутри пунктов — в _linesToHtml через _formatInlineMarkdown
         return this._linesToHtml(html);
     },
 
@@ -321,7 +511,9 @@ const App = {
 
     _applyChatMarkdown(text) {
         return this._formatSegmentMarkdown(
-            this._normalizeListBreaks(this._cleanMarkdownArtifacts(text)),
+            this._normalizeListBreaks(
+                this._normalizeParagraphBreaks(this._cleanMarkdownArtifacts(text)),
+            ),
         );
     },
 
@@ -332,7 +524,9 @@ const App = {
 
     formatCheckReportMarkdown(text) {
         if (!text || !String(text).trim()) return '';
-        const normalized = this._normalizeListBreaks(this._cleanMarkdownArtifacts(text));
+        const normalized = this._normalizeListBreaks(
+            this._normalizeParagraphBreaks(this._cleanMarkdownArtifacts(text)),
+        );
         const segments = this._splitAuditSections(normalized);
         const hasAuditBlocks = segments.some((s) => s.type !== 'text');
         if (!hasAuditBlocks) {

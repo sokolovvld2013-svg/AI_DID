@@ -118,31 +118,225 @@ def strip_urls(text: str) -> str:
     return s.strip()
 
 
+def repair_broken_decimals(text: str) -> str:
+    """Склеить разорванные даты/пункты: «17.\\n1» → «17.1», «26.\\n07.\\n2006» → «26.07.2006»."""
+    if not text:
+        return text
+    s = text
+    prev = None
+    while prev != s:
+        prev = s
+        s = re.sub(r"(\d)\.\s*\n\s*(\d)", r"\1.\2", s)
+    # «статьей\\n17.1» → «статьей 17.1»
+    s = re.sub(r"([A-Za-zА-Яа-яЁё])\s*\n\s*(\d+\.\d+)", r"\1 \2", s)
+    return s
+
+
+# Маркер настоящего пункта списка (не дата 26.07 и не п. 17.1):
+# 1–2 цифры, точка/скобка, пробел, дальше не цифра.
+_LIST_MARKER = r"(?:\*\*)?\d{1,2}[.)](?:\*\*)?\s+(?=[^\d\s])"
+_NUMBERED_ITEM_RE = re.compile(
+    rf"^(\s*)(?:\*\*)?(\d{{1,2}})[.)](?:\*\*)?\s+(.*\S.*)$"
+)
+
+
 def ensure_list_line_breaks(text: str) -> str:
-    """Пункты списков (1. / - / • / *) всегда с новой строки."""
+    """Пункты списков — с новой строки; даты и «п. 17.1» не трогаем."""
     if not text:
         return text
     s = text
     s = re.sub(r"([:;—–])\s*([-*•]\s+\S)", r"\1\n\2", s)
     s = re.sub(r"(\*\*[^*]+\*\*)\s*([-*•]\s+\S)", r"\1\n\2", s)
     s = re.sub(r"([^\n])\s+([-*•]\s+\S)", r"\1\n\2", s)
-    s = re.sub(r"([:;—–])\s*(\d+\.\s+\S)", r"\1\n\2", s)
-    s = re.sub(r"(\*\*[^*]+\*\*)\s*(\d+\.\s+\S)", r"\1\n\2", s)
-    s = re.sub(r"([^\n])\s+(\d+\.\s+\S)", r"\1\n\2", s)
+    # Только после : ; — или конца предложения — и только «настоящий» маркер списка
+    s = re.sub(rf"([:;—–])\s+({_LIST_MARKER})", r"\1\n\2", s)
+    s = re.sub(rf"(?<!\d)([.!?…»])\s+({_LIST_MARKER})", r"\1\n\2", s)
     return s
 
 
+_CONCLUSION_LEAD = (
+    r"(?:\*\*)?(?:Итоговый|Итого(?![а-яё])|Вывод|Заключение|Резюме|"
+    r"Таким образом|Следовательно|Общий вывод|Замечания|Минимальный срок|"
+    r"Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко)"
+)
+
+_CONCLUSION_HEADING_LINE = re.compile(
+    rf"^(?P<indent>\s*)(?P<head>{_CONCLUSION_LEAD}[^\n:]{{0,100}}?)(?P<colon>:)(?P<rest>\s*.*)$",
+    re.IGNORECASE,
+)
+_CONCLUSION_STANDALONE = re.compile(
+    rf"^(?P<indent>\s*)(?P<head>{_CONCLUSION_LEAD})\s*$",
+    re.IGNORECASE,
+)
+
+
+def ensure_paragraph_breaks(text: str) -> str:
+    """Итоги и выводы — всегда с новой строки."""
+    if not text:
+        return text
+    s = text
+    # Любой текст + заголовок итога → перенос (не только после точки)
+    s = re.sub(
+        rf"([^\n])[ \t]+({_CONCLUSION_LEAD})",
+        r"\1\n\2",
+        s,
+        flags=re.IGNORECASE,
+    )
+    s = re.sub(
+        rf"((?:{_CONCLUSION_LEAD})[^\n]{{0,120}}?:)\s+(?=\S)",
+        r"\1\n",
+        s,
+        flags=re.IGNORECASE,
+    )
+    return s
+
+
+def bold_conclusion_headings(text: str) -> str:
+    """Заголовки итогов/выводов/заключений — всегда **жирным**."""
+    if not text:
+        return text
+    out: list[str] = []
+    for line in text.split("\n"):
+        m = _CONCLUSION_HEADING_LINE.match(line) or _CONCLUSION_STANDALONE.match(line)
+        if not m:
+            out.append(line)
+            continue
+        head = re.sub(r"^\*\*|\*\*$", "", m.group("head")).strip()
+        colon = m.groupdict().get("colon") or ""
+        rest = m.groupdict().get("rest")
+        if rest is None:
+            rest = ""
+        # Уже целиком выделено
+        stripped = line.strip()
+        if stripped.startswith("**") and "**" in stripped[2:]:
+            out.append(line)
+            continue
+        out.append(f"{m.group('indent')}**{head}{colon}**{rest}")
+    return "\n".join(out)
+
+
+_FULLWIDTH_LIST_TRANS = str.maketrans(
+    "１２３４５６７８９０．）",
+    "1234567890.)",
+)
+
+
+def _normalize_list_markers(text: str) -> str:
+    """Унифицировать полноширинные цифры/точки в маркерах списков."""
+    return text.translate(_FULLWIDTH_LIST_TRANS)
+
+
+def strip_unpaired_markdown(text: str) -> str:
+    """Убрать только одиночные ** / __, пары **жирный** сохранить для UI."""
+    if not text:
+        return text
+    s = text
+    # Временно защитить парные **…**
+    parts: list[str] = []
+
+    def _keep(m: re.Match[str]) -> str:
+        parts.append(m.group(0))
+        return f"\uE100{len(parts) - 1}\uE101"
+
+    s = re.sub(r"\*\*(.+?)\*\*", _keep, s)
+    s = s.replace("**", "")
+    for i, block in enumerate(parts):
+        s = s.replace(f"\uE100{i}\uE101", block)
+    return s
+
+
+def _is_list_item_match(m: re.Match[str]) -> bool:
+    """Отсечь обрывки дат/статей: «26.» / «1 Федерального» после «17.»."""
+    rest = (m.group(3) or "").strip()
+    if not rest:
+        return False
+    if rest[0].isdigit():
+        return False
+    return True
+
+
+def renumber_ordered_lists(text: str) -> str:
+    """Нумеровать только абзацы-пункты списка (законченная мысль), не даты и не «п. 17.1»."""
+    if not text:
+        return text
+    lines = text.split("\n")
+    out: list[str] = []
+    counter = 0
+    in_list = False
+
+    def _peek_next_nonempty(start: int) -> str | None:
+        for j in range(start, len(lines)):
+            if lines[j].strip():
+                return lines[j]
+        return None
+
+    for i, line in enumerate(lines):
+        m = _NUMBERED_ITEM_RE.match(line)
+        if m and _is_list_item_match(m):
+            counter += 1
+            in_list = True
+            prefix, _old_n, rest = m.groups()
+            rest = re.sub(r"^(?:\d{1,2}[.)]\s+)+", "", (rest or "").lstrip())
+            out.append(f"{prefix}{counter}. {rest}".rstrip())
+            continue
+
+        stripped = line.strip()
+        if not stripped:
+            nxt = _peek_next_nonempty(i + 1)
+            nxt_m = _NUMBERED_ITEM_RE.match(nxt) if nxt else None
+            if in_list and nxt_m and _is_list_item_match(nxt_m):
+                continue
+            in_list = False
+            counter = 0
+            continue
+
+        if in_list and re.match(r"^[-*•]\s+", stripped):
+            in_list = False
+            counter = 0
+            out.append(line)
+            continue
+
+        if in_list and re.match(
+            r"^(?:#{1,6}\s|🔴|🟡|(?:\*\*)?(?:Итоговый|Вывод|Заключение|Общий вывод)\b)",
+            stripped,
+            flags=re.IGNORECASE,
+        ):
+            in_list = False
+            counter = 0
+            out.append(line)
+            continue
+
+        out.append(line)
+
+    return "\n".join(out)
+
+
+def collapse_empty_lines(text: str) -> str:
+    """Убрать пустые строки в ответах (двойные переносы → один)."""
+    if not text:
+        return text
+    s = re.sub(r"[^\S\n]+", " ", text)
+    s = re.sub(r"\n{2,}", "\n", s)
+    return s.strip()
+
+
 def clean_llm_display_text(text: str) -> str:
-    """Убрать лишнюю markdown-разметку из ответа LLM (---, пустые ###)."""
+    """Подготовить ответ LLM к показу: списки, итоги, без ложной нумерации дат."""
     if not text:
         return text
     s = strip_urls(text)
+    s = _normalize_list_markers(s)
     s = re.sub(r"(?m)^\s*[-*_]{3,}\s*$", "", s)
     s = re.sub(r"(?m)^\s*[-*_]{3,}\s+", "", s)
     s = re.sub(r"(?m)^\s*#{1,6}\s*$", "", s)
     s = re.sub(r"[-*_]{3,}\s*#{1,6}\s+", "", s)
+    s = repair_broken_decimals(s)
     s = ensure_list_line_breaks(s)
-    s = re.sub(r"\n{3,}", "\n\n", s)
+    s = ensure_paragraph_breaks(s)
+    s = renumber_ordered_lists(s)
+    s = bold_conclusion_headings(s)
+    s = strip_unpaired_markdown(s)
+    s = collapse_empty_lines(s)
     return s.strip()
 
 
