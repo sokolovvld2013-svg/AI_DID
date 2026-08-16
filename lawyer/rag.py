@@ -1,6 +1,7 @@
 """RAG для юридической базы знаний."""
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 import chromadb
@@ -37,7 +38,7 @@ from lawyer.search_utils import (
     reciprocal_rank_fusion,
     stem_match_count,
 )
-from lawyer.text_encoding import repair_citation_text, repair_filename, repair_text
+from lawyer.text_encoding import repair_filename
 
 logger = logging.getLogger(__name__)
 
@@ -187,16 +188,41 @@ def _balance_hits_by_file(
 
 
 class LawyerRAG:
-    def __init__(self):
-        CHROMA_PERSIST_DIR.mkdir(parents=True, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=str(CHROMA_PERSIST_DIR))
+    def __init__(
+        self,
+        collection_name: str | None = None,
+        upload_dir: Path | None = None,
+        persist_dir: Path | None = None,
+    ):
+        self._collection_name = collection_name or COLLECTION_NAME
+        self._upload_dir = upload_dir or LAWYER_UPLOAD_DIR
+        persist = persist_dir or CHROMA_PERSIST_DIR
+        persist.mkdir(parents=True, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=str(persist))
         self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
+            name=self._collection_name,
             metadata={"hnsw:space": "cosine"},
         )
         self._embedder: Any = None
         self._files: dict[str, str] = {}
         self._load_file_registry()
+
+    def _reset_collection(self) -> None:
+        """Пересоздать коллекцию при повреждении индекса ChromaDB."""
+        logger.warning(
+            "ChromaDB: коллекция «%s» повреждена — создаём заново. "
+            "Загрузите документы повторно.",
+            self._collection_name,
+        )
+        try:
+            self._client.delete_collection(self._collection_name)
+        except Exception:
+            pass
+        self._collection = self._client.get_or_create_collection(
+            name=self._collection_name,
+            metadata={"hnsw:space": "cosine"},
+        )
+        self._files.clear()
 
     @property
     def embedder(self):
@@ -205,7 +231,16 @@ class LawyerRAG:
         return self._embedder
 
     def _load_file_registry(self) -> None:
-        count = self._collection.count()
+        try:
+            count = self._collection.count()
+        except Exception as e:
+            logger.error(
+                "ChromaDB: не удалось прочитать коллекцию «%s»: %s",
+                self._collection_name,
+                e,
+            )
+            self._reset_collection()
+            return
         if count == 0:
             self._files.clear()
             return
@@ -298,22 +333,22 @@ class LawyerRAG:
 
         del self._files[file_id]
 
-        for path in LAWYER_UPLOAD_DIR.glob(f"{file_id}_*"):
+        for path in self._upload_dir.glob(f"{file_id}_*"):
             path.unlink(missing_ok=True)
 
         return True
 
     def clear_all(self) -> None:
         try:
-            self._client.delete_collection(COLLECTION_NAME)
+            self._client.delete_collection(self._collection_name)
         except Exception:
             pass
         self._collection = self._client.get_or_create_collection(
-            name=COLLECTION_NAME,
+            name=self._collection_name,
             metadata={"hnsw:space": "cosine"},
         )
         self._files.clear()
-        for path in LAWYER_UPLOAD_DIR.iterdir():
+        for path in self._upload_dir.iterdir():
             if path.is_file():
                 path.unlink()
 
@@ -962,7 +997,7 @@ class LawyerRAG:
 
         return [
             {
-                "text": repair_citation_text(h["text"] or ""),
+                "text": h["text"] or "",
                 "filename": repair_filename(h["filename"] or ""),
                 "page": int(h.get("page") or 1),
                 "file_id": h["file_id"],
@@ -976,3 +1011,13 @@ class LawyerRAG:
             }
             for h in filtered
         ]
+
+
+_lawyer_rag: LawyerRAG | None = None
+
+
+def get_lawyer_rag() -> LawyerRAG:
+    global _lawyer_rag
+    if _lawyer_rag is None:
+        _lawyer_rag = LawyerRAG()
+    return _lawyer_rag

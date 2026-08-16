@@ -157,6 +157,28 @@ APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Moscow").strip() or "Europe/Mos
 # Пути модулей
 SECRETARY_UPLOAD_DIR = BASE_DIR / "secretary" / "uploaded"
 LAWYER_UPLOAD_DIR = BASE_DIR / "lawyer" / "uploaded"
+PROCUREMENT_UPLOAD_DIR = BASE_DIR / "procurement" / "uploaded"
+PROCUREMENT_POLICY_UPLOAD_DIR = BASE_DIR / "procurement" / "policy"
+PROCUREMENT_CACHE_DIR = BASE_DIR / "procurement" / "cache"
+PROCUREMENT_CACHE_TTL_HOURS = int(os.getenv("PROCUREMENT_CACHE_TTL_HOURS", "24"))
+PROCUREMENT_ACCESS_TOKEN = os.getenv("PROCUREMENT_ACCESS_TOKEN", "").strip()
+PROCUREMENT_HISTORY_SIZE = int(os.getenv("PROCUREMENT_HISTORY_SIZE", "3"))
+PROCUREMENT_CONTEXT_K = int(os.getenv("PROCUREMENT_CONTEXT_K", "8"))
+
+# Модуль «Торги» — проверка торговой документации
+TENDERS_UPLOAD_DIR = BASE_DIR / "tenders" / "uploaded"
+TENDERS_CACHE_DIR = BASE_DIR / "tenders" / "cache"
+TENDERS_CACHE_TTL_HOURS = int(os.getenv("TENDERS_CACHE_TTL_HOURS", "24"))
+TENDERS_ACCESS_TOKEN = os.getenv("TENDERS_ACCESS_TOKEN", "").strip()
+TENDERS_HISTORY_SIZE = int(os.getenv("TENDERS_HISTORY_SIZE", "3"))
+TENDERS_CONTEXT_K = int(os.getenv("TENDERS_CONTEXT_K", "4"))
+TENDERS_AREA_TOLERANCE = float(os.getenv("TENDERS_AREA_TOLERANCE", "0.05"))
+TENDERS_ADDRESS_SIMILARITY = float(os.getenv("TENDERS_ADDRESS_SIMILARITY", "0.80"))
+TENDERS_LEASEHOLDER_SIMILARITY = float(os.getenv("TENDERS_LEASEHOLDER_SIMILARITY", "0.70"))
+TENDERS_EGRN_MAX_AGE_DAYS = int(os.getenv("TENDERS_EGRN_MAX_AGE_DAYS", "30"))
+
+ALLOWED_AUCTION_EXT = {".docx"}
+ALLOWED_TENDERS_PDF_EXT = {".pdf"}
 
 ALLOWED_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 ALLOWED_DOC_EXT = {".pdf", ".docx", ".txt"}

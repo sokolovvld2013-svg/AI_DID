@@ -1,0 +1,16 @@
+{
+  "audit_id": "eef78fe4-b46d-41a4-9c47-ef3906be1d33",
+  "filename": "Положение о закупке (новая редакция) - апрель 2025.docx",
+  "file_hash": "9ba1e69666eddb5f4ed9b91b7c2c4cc013548e8ea71b66acc22f9e4c92e374e0",
+  "parsed_at": "2026-08-16T05:47:33.795693+00:00",
+  "total_chars": 212507,
+  "sections": {},
+  "sections_detected": [],
+  "missing_sections": [
+    "info_card",
+    "tz",
+    "contract",
+    "nmcd"
+  ],
+  "structure_ok": false
+}

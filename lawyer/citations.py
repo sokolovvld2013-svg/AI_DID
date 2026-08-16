@@ -16,12 +16,17 @@ def select_citations_for_display(
     *,
     max_items: int = MAX_DISPLAY_CITATIONS,
 ) -> list[dict]:
-    """Оставить только фрагменты, на которые ссылается ответ [N]."""
+    """Оставить фрагменты, на которые ссылается ответ [N]."""
     if not citations:
         return []
     cited = parse_cited_fragment_ids(answer)
     if cited:
-        chosen = [c for c in citations if c.get("id") in cited]
-        chosen.sort(key=lambda c: int(c.get("id") or 0))
-        return chosen[:max_items]
+        id_map: dict[int, dict] = {}
+        for c in citations:
+            cid = c.get("id")
+            if cid is not None:
+                id_map[int(cid)] = c
+        chosen = [id_map[i] for i in sorted(cited) if i in id_map]
+        if chosen:
+            return chosen
     return citations[:max_items]

@@ -19,6 +19,8 @@
     --success-soft: #d4e8dc;
     --danger: #a83232;
     --danger-soft: #f0dede;
+    --warning: #9a6b00;
+    --warning-soft: #fff3d6;
     --highlight: #e9eef5;
     --shadow-sm: 0 1px 3px rgba(var(--ink-rgb), 0.06);
     --shadow-md: 0 4px 14px rgba(var(--ink-rgb), 0.08);
@@ -573,11 +575,13 @@ body.app-file-processing .upload-zone.is-processing * {
     color: var(--text);
 }
 
-.message.bot ul {
+.message.bot ul,
+.message.bot ol {
     margin: 0.35rem 0 0 1.25rem;
     padding: 0;
 }
-.message.bot ul li { margin: 0.15rem 0; }
+.message.bot ul li,
+.message.bot ol li { margin: 0.15rem 0; }
 .message.bot ul.chat-examples {
     list-style-type: disc;
     list-style-position: outside;
@@ -591,6 +595,130 @@ body.app-file-processing .upload-zone.is-processing * {
 .message.bot .chat-disclaimer {
     margin: 0.75rem 0 0;
     font-size: 0.9rem;
+}
+
+.tenders-verification-banner {
+    margin-bottom: 0.75rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: var(--radius);
+    font-size: 0.9rem;
+    border: 1px solid var(--border-light);
+    background: var(--surface-hover);
+}
+
+.tenders-verification-passed {
+    background: var(--success-soft);
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.tenders-verification-warnings {
+    background: var(--warning-soft);
+    border-color: var(--warning);
+    color: var(--warning);
+}
+
+.tenders-verification-failed {
+    background: var(--danger-soft);
+    border-color: var(--danger);
+    color: var(--danger);
+}
+
+/* Компактные блоки загрузки («Торги», «Закупки») */
+.compact-upload-sidebar .card:not(.history-card) {
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.compact-upload-sidebar .card:not(.history-card) h3 {
+    margin-bottom: 0.5rem;
+    font-size: 0.92rem;
+}
+
+.compact-upload-sidebar .upload-zone {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem 0.65rem;
+    margin-bottom: 0.5rem;
+}
+
+.compact-upload-sidebar .upload-zone p {
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    text-align: left;
+    font-size: 0.78rem;
+    line-height: 1.3;
+}
+
+.compact-upload-sidebar .upload-zone .btn {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.65rem;
+    font-size: 0.78rem;
+    line-height: 1.25;
+}
+
+.compact-upload-sidebar .upload-zone.is-processing::after {
+    flex: 1 0 100%;
+    margin-top: 0.35rem;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.78rem;
+}
+
+.compact-upload-sidebar .progress {
+    height: 5px;
+    margin: 0.35rem 0;
+}
+
+.compact-upload-sidebar .status {
+    margin-top: 0.35rem;
+    min-height: 1rem;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.compact-upload-sidebar .status.loading {
+    gap: 0.4rem;
+    padding: 0.4rem 0.55rem;
+    font-size: 0.8rem;
+}
+
+.compact-upload-sidebar .status.loading::before {
+    width: 0.9rem;
+    height: 0.9rem;
+    border-width: 2px;
+}
+
+.compact-upload-sidebar .file-list {
+    margin: 0.35rem 0 0;
+}
+
+.compact-upload-sidebar .file-list li {
+    padding: 0.3rem 0.45rem;
+    margin-bottom: 0.2rem;
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.compact-upload-sidebar .file-list li small.muted {
+    font-size: 0.72rem;
+}
+
+.compact-upload-sidebar .file-list .btn-icon {
+    font-size: 1.05rem;
+    line-height: 1;
+}
+
+.chat-form.procurement-check-form {
+    justify-content: flex-start;
+}
+
+.chat-form.procurement-check-form .procurement-chat-input {
+    display: none;
 }
 
 .chat-form {
@@ -820,4 +948,129 @@ body.confirm-open { overflow: hidden; }
 
 .economist-table-total td {
     border-top-width: 2px;
+}
+
+.procurement-mode-switch {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    max-width: 720px;
+    padding: 0.35rem;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-light);
+    border-radius: calc(var(--radius) + 2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.procurement-mode-btn {
+    min-height: 2.75rem;
+    padding: 0.65rem 1rem;
+    font-size: 0.9rem;
+    line-height: 1.35;
+    text-align: center;
+    white-space: normal;
+    border-radius: var(--radius);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+}
+
+.procurement-mode-btn:hover:not(.active) {
+    background: var(--surface-hover);
+    border-color: var(--border);
+    color: var(--text);
+}
+
+.procurement-mode-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.35);
+}
+
+.procurement-mode-btn.active:hover {
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
+}
+
+@media (max-width: 640px) {
+    .procurement-mode-switch {
+        grid-template-columns: 1fr;
+        max-width: none;
+    }
+}
+
+.audit-remarks-heading {
+    margin: 1rem 0 0.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.audit-summary-heading {
+    margin: 0 0 0.35rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.audit-block {
+    margin: 0.65rem 0;
+    padding: 0.85rem 1rem;
+    border-radius: var(--radius);
+    border: 1px solid var(--border-light);
+    border-left-width: 4px;
+}
+
+.audit-block-critical {
+    background: var(--danger-soft);
+    border-left-color: var(--danger);
+}
+
+.audit-block-important {
+    background: var(--warning-soft);
+    border-left-color: var(--warning);
+}
+
+.audit-block-title {
+    font-weight: 600;
+    line-height: 1.45;
+    margin-bottom: 0.45rem;
+    color: var(--text);
+}
+
+.audit-block-critical .audit-block-title {
+    color: var(--danger);
+}
+
+.audit-block-important .audit-block-title {
+    color: var(--warning);
+}
+
+.audit-block-body ul,
+.audit-block-body ol {
+    margin: 0.15rem 0 0 1.25rem;
+    padding: 0;
+}
+
+.audit-block-body li {
+    margin: 0.25rem 0;
+}
+
+.audit-block-body .muted {
+    margin: 0;
+    font-style: italic;
+}
+
+.parse-result {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    background: var(--surface-hover);
+    border-radius: var(--radius);
 }

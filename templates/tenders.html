@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Торги — ИИ-помощник ФГУП "ДИД"{% endblock %}
+
+{% block content %}
+<section class="module-header">
+    <h2>Торги</h2>
+    <p>Помогу с проверкой документации по аренде государственного имущества (135-ФЗ, Приказ ФАС №147). Проконсультирую по законодательству.</p>
+    <div class="procurement-mode-switch" role="tablist" aria-label="Режим работы">
+        <button type="button" class="btn procurement-mode-btn active" data-tab="check" role="tab" aria-selected="true">Проверка торговой документации</button>
+        <button type="button" class="btn procurement-mode-btn" data-tab="expert" role="tab" aria-selected="false">Экспертное мнение</button>
+    </div>
+</section>
+
+<div class="grid-2">
+    <aside class="sidebar compact-upload-sidebar">
+        <div class="card">
+            <h3>Торговая документация</h3>
+            <div class="upload-zone" id="auction-drop">
+                <p>DOCX (до 50 МБ)</p>
+                <input type="file" id="auction-file" accept=".docx" hidden>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('auction-file').click()">Загрузить документ</button>
+            </div>
+            <div class="progress hidden" id="auction-progress"><div class="progress-bar"></div></div>
+            <div class="status" id="auction-status" role="status" aria-live="polite"></div>
+            <ul class="file-list" id="auction-info">
+                <li class="muted">Документ не загружен</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h3>Выписка из ЕГРН</h3>
+            <div class="upload-zone" id="egrn-drop">
+                <p>PDF (до 50 МБ)</p>
+                <input type="file" id="egrn-file" accept=".pdf" hidden>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('egrn-file').click()">Загрузить документ</button>
+            </div>
+            <div class="progress hidden" id="egrn-progress"><div class="progress-bar"></div></div>
+            <div class="status" id="egrn-status" role="status" aria-live="polite"></div>
+            <ul class="file-list" id="egrn-info">
+                <li class="muted">Документ не загружен</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h3>Согласование сделки</h3>
+            <div class="upload-zone" id="approval-drop">
+                <p>PDF (до 50 МБ)</p>
+                <input type="file" id="approval-file" accept=".pdf" hidden>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('approval-file').click()">Загрузить документ</button>
+            </div>
+            <div class="progress hidden" id="approval-progress"><div class="progress-bar"></div></div>
+            <div class="status" id="approval-status" role="status" aria-live="polite"></div>
+            <ul class="file-list" id="approval-info">
+                <li class="muted">Документ не загружен</li>
+            </ul>
+        </div>
+
+        <div class="card history-card">
+            <h3>История вопросов</h3>
+            <ul class="history-list" id="history-list">
+                {% for item in history %}
+                <li>
+                    <time>{{ item.timestamp }}</time>
+                    <p class="history-query">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</p>
+                </li>
+                {% else %}
+                <li class="muted">Нет вопросов</li>
+                {% endfor %}
+            </ul>
+        </div>
+    </aside>
+
+    <section class="chat-section card">
+        <h3 id="chat-title">Проверка торговой документации</h3>
+        <div class="tenders-verification-banner hidden" id="verification-banner" role="status"></div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <form class="chat-form procurement-check-form" id="chat-form">
+            <input type="text" id="chat-input" class="procurement-chat-input hidden" placeholder="Задайте вопрос по законодательству об аренде (135-ФЗ, Приказ ФАС №147)…" autocomplete="off">
+            <button type="submit" class="btn btn-primary" id="chat-submit" disabled>Проверить</button>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/tenders.js?v=3"></script>
+{% endblock %}

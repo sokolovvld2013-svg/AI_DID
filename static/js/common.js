@@ -165,14 +165,170 @@ const App = {
         container.scrollTop = container.scrollHeight;
     },
 
+    _escapeHtml(text) {
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    },
+
+    _normalizeListBreaks(text) {
+        return String(text)
+            .replace(/([:;])\s*(-\s)/g, '$1\n$2')
+            .replace(/(\*\*[^*]+\*\*)\s*(-\s)/g, '$1\n$2')
+            .replace(/([^\n])\s+(-\s+\S)/g, '$1\n$2')
+            .replace(/([^\n])\s+(\d+\.\s+\S)/g, '$1\n$2')
+            .replace(/([^\n])\s+(•\s+\S)/g, '$1\n$2')
+            .replace(/([^\n])\s*(🔴\s)/g, '$1\n$2')
+            .replace(/([^\n])\s*(🟡\s)/g, '$1\n$2');
+    },
+
+    _linesToHtml(text) {
+        const lines = String(text).split('\n');
+        const blocks = [];
+        let paraLines = [];
+        let listItems = [];
+        let listType = null;
+
+        const flushPara = () => {
+            if (paraLines.length) {
+                blocks.push(paraLines.join('<br>'));
+                paraLines = [];
+            }
+        };
+
+        const flushList = () => {
+            if (!listItems.length) return;
+            const tag = listType === 'ol' ? 'ol' : 'ul';
+            blocks.push(`<${tag}>${listItems.join('')}</${tag}>`);
+            listItems = [];
+            listType = null;
+        };
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                flushList();
+                flushPara();
+                continue;
+            }
+            const bullet = trimmed.match(/^[-*•]\s+(.+)$/);
+            const numbered = trimmed.match(/^\d+\.\s+(.+)$/);
+            if (bullet) {
+                flushPara();
+                if (listType === 'ol') flushList();
+                listType = 'ul';
+                listItems.push(`<li>${bullet[1]}</li>`);
+            } else if (numbered) {
+                flushPara();
+                if (listType === 'ul') flushList();
+                listType = 'ol';
+                listItems.push(`<li>${numbered[1]}</li>`);
+            } else {
+                flushList();
+                paraLines.push(trimmed);
+            }
+        }
+        flushList();
+        flushPara();
+        return blocks.join('');
+    },
+
+    _formatInlineMarkdown(html) {
+        return String(html).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    },
+
+    _formatSegmentMarkdown(text, options = {}) {
+        if (!text || !String(text).trim()) return '';
+        let html = this._escapeHtml(text);
+        if (options.auditReport) {
+            html = html
+                .replace(/^(\*\*)?Общий вывод:(\*\*)?$/gm, '<h4 class="audit-summary-heading">Общий вывод</h4>')
+                .replace(/^(\*\*)?Замечания:(\*\*)?$/gm, '<h4 class="audit-remarks-heading">Замечания</h4>');
+        }
+        html = html
+            .replace(/^## (.+)$/gm, '<h3>$1</h3>')
+            .replace(/^### (.+)$/gm, '<h4>$1</h4>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        return this._linesToHtml(html);
+    },
+
+    _splitAuditSections(text) {
+        const lines = String(text).split('\n');
+        const segments = [];
+        let current = { type: 'text', lines: [] };
+
+        const pushCurrent = () => {
+            if (current.type === 'text') {
+                if (current.lines.some((l) => l.trim())) segments.push(current);
+            } else {
+                segments.push(current);
+            }
+        };
+
+        for (const line of lines) {
+            const crit = line.match(/^🔴\s*(.+)$/);
+            const imp = line.match(/^🟡\s*(.+)$/);
+            if (crit) {
+                pushCurrent();
+                current = { type: 'critical', title: crit[1], lines: [] };
+                continue;
+            }
+            if (imp) {
+                pushCurrent();
+                current = { type: 'important', title: imp[1], lines: [] };
+                continue;
+            }
+            current.lines.push(line);
+        }
+        pushCurrent();
+        return segments;
+    },
+
+    _applyChatMarkdown(text) {
+        return this._formatSegmentMarkdown(this._normalizeListBreaks(text));
+    },
+
+    formatChatMarkdown(text) {
+        if (!text || !String(text).trim()) return '';
+        return this._applyChatMarkdown(text);
+    },
+
+    formatCheckReportMarkdown(text) {
+        if (!text || !String(text).trim()) return '';
+        const normalized = this._normalizeListBreaks(text);
+        const segments = this._splitAuditSections(normalized);
+        const hasAuditBlocks = segments.some((s) => s.type !== 'text');
+        if (!hasAuditBlocks) {
+            return this._formatSegmentMarkdown(normalized, { auditReport: true });
+        }
+
+        return segments
+            .map((seg) => {
+                if (seg.type === 'text') {
+                    return this._formatSegmentMarkdown(seg.lines.join('\n'), { auditReport: true });
+                }
+                const body = this._formatSegmentMarkdown(seg.lines.join('\n'));
+                const cls =
+                    seg.type === 'critical' ? 'audit-block-critical' : 'audit-block-important';
+                const emoji = seg.type === 'critical' ? '🔴' : '🟡';
+                const title = this._formatInlineMarkdown(this._escapeHtml(seg.title));
+                const content = body || '<p class="muted">Не выявлено</p>';
+                return (
+                    `<div class="audit-block ${cls}">` +
+                    `<div class="audit-block-title">${emoji} ${title}</div>` +
+                    `<div class="audit-block-body">${content}</div>` +
+                    '</div>'
+                );
+            })
+            .join('');
+    },
+
     formatMarkdownSimple(text) {
         if (!text || !String(text).trim()) {
             return '<p class="muted">Протокол пуст</p>';
         }
-        let html = String(text)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+        let html = this._escapeHtml(text);
 
         html = html.replace(/(?:^\|.+\|\s*$\n?)+/gm, block => {
             const rows = block.trim().split('\n').filter(r => r.trim());
@@ -187,11 +343,11 @@ const App = {
             return `<table>${trs}</table>`;
         });
 
-        return html
+        html = html
             .replace(/^## (.+)$/gm, '<h3>$1</h3>')
             .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            .replace(/\n/g, '<br>');
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        return this._linesToHtml(html);
     },
 
   setupDropZone(zoneId, inputId, onFile) {
