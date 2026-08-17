@@ -17,6 +17,12 @@
       "filename": "2.txt",
       "parsed_at": "2026-08-16T07:12:10.184238+00:00",
       "path": "f8e6caba52b2ea05142558d8a83bda7ec9f827813bccbef0a8ad429c5d2127a7.json"
+    },
+    "48fa27ed-8ca0-4b38-8a99-51a840886d78": {
+      "file_hash": "43e505daa249c44e72c868a39c25b870f6f35dec5c2c30b15f16a393bab9b8da",
+      "filename": "Документация - Клининг Гороховая.docx",
+      "parsed_at": "2026-08-17T17:09:24.741697+00:00",
+      "path": "43e505daa249c44e72c868a39c25b870f6f35dec5c2c30b15f16a393bab9b8da.json"
     }
   }
 }

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from config import MAX_LAWYER_CITATION_CHARS, MAX_LAWYER_LLM_CONTEXT_CHARS, PROCUREMENT_CONTEXT_K
+from config import CHECK_LLM_CONTEXT_CHARS, PROCUREMENT_CONTEXT_K
 from lawyer.search_utils import core_query_tokens, keyword_score
 from lawyer.text_encoding import strip_urls
 
@@ -35,23 +35,34 @@ CHECK_SYSTEM_PROMPT = """Ты — эксперт по закупкам по 223-
 - Отвечай структурированно, на русском языке, по существу.
 - Каждый пункт нумерованного списка — отдельная законченная мысль с новой строки: 1. 2. 3. (не дроби даты и номера статей вроде 3.4 или 18.07.2011).
 - Ключевые термины, названия разделов документации, статьи закона и заголовки этапов выделяй **жирным**.
-- Заголовки итогов всегда жирным: **Общий вывод:**, **Замечания:** — с новой строки; после двоеточия — тоже новая строка.
-- Не используй markdown-разделители (`---`, `###`, `##`) — только **жирный** текст, списки и эмодзи 🔴/🟡.
+- Не используй markdown-разделители (`---`, `###`, `##`) — только **жирный** текст, списки и эмодзи 📄/📋/🔴/🟡/🟢.
+- Не используй заголовки «Общий вывод» и отдельную строку «Замечания:».
 
-Формат отчёта о проверке:
+Формат отчёта о проверке — строго такой:
 
-**Общий вывод:** (кратко, 1–3 предложения)
+📄 Документация: [способ / тип процедуры, со ссылкой на норму если есть]
+Предмет: [предмет / лот]
+НМЦД: [сумма, если есть в документации; иначе эту строку не пиши]
 
-**Замечания:**
+📋 Вердикт: 🟢 МОЖНО ПУБЛИКОВАТЬ
+или
+📋 Вердикт: 🔴 ТРЕБУЕТ ОБЯЗАТЕЛЬНОЙ ДОРАБОТКИ
+С новой строки — 1–3 предложения: почему такой вердикт.
 
-🔴 **Критические** (нарушения 223-ФЗ, несоответствие Положению, расхождения между разделами, copy-paste, риск отмены ФАС):
-- каждое замечание — отдельным пунктом списка со ссылками [N] где применимо
+🔴 Критические замечания (нарушения ФЗ, ПП РФ, Приказов ФАС, Положения о закупке; расхождения между разделами; copy-paste, риск отмены ФАС)
+1. Краткий заголовок замечания
+Где: пункт / раздел документации
+Суть: что в пункте написано
+Обоснование: в чём ошибка или неточность, со ссылкой на норму и [N] при опоре на фрагмент
 
-🟡 **Важные** (риски при исполнении, споры с участниками):
-- каждое замечание — отдельным пунктом списка со ссылками [N] где применимо
+🟡 Важные замечания (риски при исполнении, споры с участниками)
+1. Краткий заголовок замечания
+Где: пункт / раздел документации
+Суть: что в пункте написано
+Обоснование: в чём ошибка или неточность, со ссылкой на норму и [N] при опоре на фрагмент
 
 Если в категории замечаний нет — одной строкой: «Не выявлено».
-
+Каждое поле Где / Суть / Обоснование — с новой строки.
 Для точечных вопросов по одному разделу отвечай по существу без обязательной структуры отчёта; ключевые термины всё равно выделяй **жирным**."""
 
 
@@ -91,7 +102,7 @@ def _pick_sections(
     )
 
     if is_full_check or len(available) <= PROCUREMENT_CONTEXT_K:
-        return [(a[0], a[1], a[2], a[3]) for a in available[:PROCUREMENT_CONTEXT_K]]
+        return [(a[0], a[1], a[2], a[3]) for a in available]
 
     available.sort(key=lambda x: x[4], reverse=True)
     return [(a[0], a[1], a[2], a[3]) for a in available[:PROCUREMENT_CONTEXT_K]]
@@ -104,8 +115,8 @@ def build_check_context(
     max_context_chars: int | None = None,
     start_id: int = 1,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Собирает контекст и список источников для LLM."""
-    limit = max_context_chars or MAX_LAWYER_LLM_CONTEXT_CHARS
+    """Собирает контекст и список источников для LLM (полный текст разделов)."""
+    limit = max_context_chars or CHECK_LLM_CONTEXT_CHARS
     sections = parsed.get("sections") or {}
     filename = parsed.get("filename") or "Документация"
     picked = _pick_sections(sections, question)
@@ -118,10 +129,9 @@ def build_check_context(
     context_len = 0
 
     for i, (_key, sec, num, title) in enumerate(picked, start_id):
-        raw = _truncate(
-            strip_urls(sec.get("text") or ""),
-            MAX_LAWYER_CITATION_CHARS,
-        )
+        raw = strip_urls(sec.get("text") or "").strip()
+        if not raw:
+            continue
         part = f"[{i}] {filename}, разд. {num} ({title}):\n{raw}"
         if context_len + len(part) > limit:
             remaining = limit - context_len
@@ -129,6 +139,12 @@ def build_check_context(
                 part = _truncate(part, remaining)
                 context_parts.append(part)
                 context_len += len(part)
+                citations.append({
+                    "id": i,
+                    "filename": filename,
+                    "page": f"разд. {num}",
+                    "section": title,
+                })
             break
         context_parts.append(part)
         context_len += len(part)

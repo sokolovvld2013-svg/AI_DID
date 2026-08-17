@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from config import (
     BASE_DIR,
+    CHECK_LLM_CONTEXT_CHARS,
     MAX_LAWYER_CITATION_CHARS,
     MAX_LAWYER_LLM_CONTEXT_CHARS,
     PROCUREMENT_ACCESS_TOKEN,
@@ -317,7 +318,7 @@ async def _query_check(session_id: str, question: str) -> dict:
             "Документация устарела. Загрузите файл заново.",
         )
 
-    doc_budget = int(MAX_LAWYER_LLM_CONTEXT_CHARS * 0.55)
+    doc_budget = max(int(CHECK_LLM_CONTEXT_CHARS * 0.85), 50000)
     doc_context, citations = build_check_context(
         parsed,
         question,
@@ -331,7 +332,7 @@ async def _query_check(session_id: str, question: str) -> dict:
         procurement_history.add(session_id, question, msg, mode="check")
         return {"answer": msg, "citations": []}
 
-    policy_budget = max(MAX_LAWYER_LLM_CONTEXT_CHARS - len(doc_context) - 400, 4000)
+    policy_budget = max(CHECK_LLM_CONTEXT_CHARS - len(doc_context) - 400, 8000)
     policy_context, policy_citations = _build_policy_context(
         enrich_policy_query(question),
         start_id=len(citations) + 1,
@@ -347,7 +348,10 @@ async def _query_check(session_id: str, question: str) -> dict:
     user_prompt = (
         f"Вопрос пользователя: {question}\n\n"
         "Проверь закупочную документацию на соответствие **223-ФЗ** и **Положению о закупке** "
-        "по фрагментам ниже. Сформируй отчёт: **Общий вывод**, затем блоки 🔴 **Критические** и 🟡 **Важные**. "
+        "по фрагментам ниже. Сформируй отчёт в формате: "
+        "📄 Документация, Предмет, НМЦД (если есть), 📋 Вердикт, "
+        "затем 🔴 Критические замечания и 🟡 Важные замечания "
+        "с полями Где / Суть / Обоснование у каждого пункта. "
         "Ключевые термины и нормы выделяй **жирным**. "
         "Укажи номера [N] фрагментов документации и Положения."
     )

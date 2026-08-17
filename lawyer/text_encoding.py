@@ -157,15 +157,42 @@ def ensure_list_line_breaks(text: str) -> str:
 _CONCLUSION_LEAD = (
     r"(?:\*\*)?(?:Итоговый|Итого(?![а-яё])|Вывод|Заключение|Резюме|"
     r"Таким образом|Следовательно|Общий вывод|Замечания|Минимальный срок|"
-    r"Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко)"
+    r"Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко|"
+    r"Документация|Вердикт)"
+)
+# Перенос с середины строки — только однозначные заголовки (не «Критические замечания»)
+_PARAGRAPH_BREAK_LEAD = (
+    r"(?:\*\*)?(?:Итоговый|Итого(?![а-яё])|Вывод|Заключение|Резюме|"
+    r"Таким образом|Следовательно|Общий вывод|Минимальный срок|"
+    r"Суммарно|В итоге)"
 )
 
+_REMARK_FIELD_RE = re.compile(
+    r"(?<!\n)(?<![📄📋])[ \t]+((?:📄|📋)\s*)?"
+    r"(Где|Суть|Обоснование|Предмет|НМЦД|Начальная цена|Документация|Вердикт):",
+    flags=re.IGNORECASE,
+)
+
+
+def ensure_remark_field_breaks(text: str) -> str:
+    """Поля отчёта проверки (Где / Суть / Обоснование) — каждое с новой строки."""
+    if not text:
+        return text
+    return _REMARK_FIELD_RE.sub(r"\n\1\2:", text)
+
+_FIELD_LABEL = r"(?:Где|Суть|Обоснование|Предмет|НМЦД|Начальная цена)"
+_REPORT_EMOJI = r"(?:📄|📋)\s*"
+
 _CONCLUSION_HEADING_LINE = re.compile(
-    rf"^(?P<indent>\s*)(?P<head>{_CONCLUSION_LEAD}[^\n:]{{0,100}}?)(?P<colon>:)(?P<rest>\s*.*)$",
+    rf"^(?P<indent>\s*)(?P<emoji>{_REPORT_EMOJI})?(?P<head>{_CONCLUSION_LEAD}[^\n:]{{0,100}}?)(?P<colon>:)(?P<rest>\s*.*)$",
     re.IGNORECASE,
 )
 _CONCLUSION_STANDALONE = re.compile(
-    rf"^(?P<indent>\s*)(?P<head>{_CONCLUSION_LEAD})\s*$",
+    rf"^(?P<indent>\s*)(?P<emoji>{_REPORT_EMOJI})?(?P<head>{_CONCLUSION_LEAD})\s*$",
+    re.IGNORECASE,
+)
+_FIELD_HEADING_LINE = re.compile(
+    rf"^(?P<indent>\s*)(?P<head>(?:\*\*)?{_FIELD_LABEL})(?P<colon>:)(?P<rest>\s*.*)$",
     re.IGNORECASE,
 )
 
@@ -177,13 +204,13 @@ def ensure_paragraph_breaks(text: str) -> str:
     s = text
     # Любой текст + заголовок итога → перенос (не только после точки)
     s = re.sub(
-        rf"([^\n])[ \t]+({_CONCLUSION_LEAD})",
+        rf"([^\n])[ \t]+({_PARAGRAPH_BREAK_LEAD})",
         r"\1\n\2",
         s,
         flags=re.IGNORECASE,
     )
     s = re.sub(
-        rf"((?:{_CONCLUSION_LEAD})[^\n]{{0,120}}?:)\s+(?=\S)",
+        rf"((?:{_PARAGRAPH_BREAK_LEAD})[^\n]{{0,120}}?:)\s+(?=\S)",
         r"\1\n",
         s,
         flags=re.IGNORECASE,
@@ -197,7 +224,11 @@ def bold_conclusion_headings(text: str) -> str:
         return text
     out: list[str] = []
     for line in text.split("\n"):
-        m = _CONCLUSION_HEADING_LINE.match(line) or _CONCLUSION_STANDALONE.match(line)
+        m = (
+            _CONCLUSION_HEADING_LINE.match(line)
+            or _FIELD_HEADING_LINE.match(line)
+            or _CONCLUSION_STANDALONE.match(line)
+        )
         if not m:
             out.append(line)
             continue
@@ -206,12 +237,16 @@ def bold_conclusion_headings(text: str) -> str:
         rest = m.groupdict().get("rest")
         if rest is None:
             rest = ""
+        emoji = m.groupdict().get("emoji") or ""
         # Уже целиком выделено
         stripped = line.strip()
         if stripped.startswith("**") and "**" in stripped[2:]:
             out.append(line)
             continue
-        out.append(f"{m.group('indent')}**{head}{colon}**{rest}")
+        if emoji and stripped[len(emoji):].lstrip().startswith("**"):
+            out.append(line)
+            continue
+        out.append(f"{m.group('indent')}{emoji}**{head}{colon}**{rest}")
     return "\n".join(out)
 
 
@@ -297,7 +332,8 @@ def renumber_ordered_lists(text: str) -> str:
             continue
 
         if in_list and re.match(
-            r"^(?:#{1,6}\s|🔴|🟡|(?:\*\*)?(?:Итоговый|Вывод|Заключение|Общий вывод)\b)",
+            r"^(?:#{1,6}\s|🔴|🟡|(?:📄|📋)\s|"
+            r"(?:\*\*)?(?:Итоговый|Вывод|Заключение|Общий вывод|Документация|Вердикт)\b)",
             stripped,
             flags=re.IGNORECASE,
         ):
@@ -333,6 +369,7 @@ def clean_llm_display_text(text: str) -> str:
     s = repair_broken_decimals(s)
     s = ensure_list_line_breaks(s)
     s = ensure_paragraph_breaks(s)
+    s = ensure_remark_field_breaks(s)
     s = renumber_ordered_lists(s)
     s = bold_conclusion_headings(s)
     s = strip_unpaired_markdown(s)

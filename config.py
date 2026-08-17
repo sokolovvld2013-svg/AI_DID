@@ -125,6 +125,8 @@ LAWYER_CITATION_LLM_REPAIR = os.getenv("LAWYER_CITATION_LLM_REPAIR", "true").str
 )
 MAX_LAWYER_CITATION_CHARS = int(os.getenv("MAX_LAWYER_CITATION_CHARS", 2500))
 MAX_LAWYER_LLM_CONTEXT_CHARS = int(os.getenv("MAX_LAWYER_LLM_CONTEXT_CHARS", 28000))
+# Проверка Закупки/Торгов: полный текст документации (DeepSeek V4 — до ~1M токенов)
+CHECK_LLM_CONTEXT_CHARS = int(os.getenv("CHECK_LLM_CONTEXT_CHARS", "500000"))
 
 # Юрист — чанки и векторный поиск
 LAWYER_CHUNK_SIZE = int(os.getenv("LAWYER_CHUNK_SIZE", "1200"))
