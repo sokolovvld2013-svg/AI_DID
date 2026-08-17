@@ -183,8 +183,8 @@ const App = {
             .replace(/([^\n])\s+([-*•]\s+\S)/g, '$1\n$2')
             .replace(new RegExp(`([:;—–])\\s+(${listMark})`, 'g'), '$1\n$2')
             .replace(new RegExp(`(?<!\\d)([.!?…»])\\s+(${listMark})`, 'g'), '$1\n$2')
-            .replace(/([^\n])\s*(🔴\s)/g, '$1\n$2')
-            .replace(/([^\n])\s*(🟡\s)/g, '$1\n$2');
+            .replace(/([^\n])\s*(🔴\s+(?:\*\*)?Критическ)/g, '$1\n$2')
+            .replace(/([^\n])\s*(🟡\s+(?:\*\*)?Важн)/g, '$1\n$2');
         // Пункты 1. … 1. … на одной строке → каждый с новой (после схлопывания переносов)
         const splitNumbered = new RegExp(
             `((?:\\*\\*)?\\d{1,2}[.)](?:\\*\\*)?\\s+[^\\n]+?)\\s+(?=${listMark})`,
@@ -201,37 +201,43 @@ const App = {
     _normalizeParagraphBreaks(text) {
         const lead =
             '(?:\\*\\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|' +
-            'Таким образом|Следовательно|Общий вывод|Замечания|Минимальный срок|' +
-            'Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко)';
+            'Таким образом|Следовательно|Общий вывод|Минимальный срок|' +
+            'Суммарно|В итоге)';
+        const fields =
+            '(?<![📄📋])(?:\\*\\*)?(?:Где|Суть|Обоснование|Предмет|НМЦД|Начальная цена|Документация|Вердикт):';
         return String(text)
             .replace(new RegExp(`([^\\n])[ \\t]+(${lead})`, 'gi'), '$1\n$2')
-            .replace(new RegExp(`((?:${lead})[^\\n]{0,120}?:)\\s+(?=\\S)`, 'gi'), '$1\n');
+            .replace(new RegExp(`((?:${lead})[^\\n]{0,120}?:)\\s+(?=\\S)`, 'gi'), '$1\n')
+            .replace(new RegExp(`([^\\n📄📋])[ \\t]+(${fields})`, 'gi'), '$1\n$2');
     },
 
     _boldConclusionHeadings(text) {
         const lead =
             '(?:\\*\\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|' +
             'Таким образом|Следовательно|Общий вывод|Замечания|Минимальный срок|' +
-            'Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко)';
+            'Суммарно|В итоге|Важно|Обратите внимание|Ответ|Кратко|' +
+            'Документация|Вердикт|Предмет|НМЦД|Начальная цена|Где|Суть|Обоснование)';
         const withColon = new RegExp(
-            `^(\\s*)(${lead}[^\\n:]{0,100}?)(:)(\\s*.*)$`,
+            `^(\\s*)((?:📄|📋)\\s*)?(${lead}[^\\n:]{0,100}?)(:)(\\s*.*)$`,
             'i',
         );
-        const standalone = new RegExp(`^(\\s*)(${lead})\\s*$`, 'i');
+        const standalone = new RegExp(`^(\\s*)((?:📄|📋)\\s*)?(${lead})\\s*$`, 'i');
         return String(text)
             .split('\n')
             .map((line) => {
                 const stripped = line.trim();
-                if (stripped.startsWith('**') && stripped.indexOf('**', 2) > 1) {
+                const afterEmoji = stripped.replace(/^(?:📄|📋)\s*/, '');
+                if (afterEmoji.startsWith('**') && afterEmoji.indexOf('**', 2) > 1) {
                     return line;
                 }
                 let m = line.match(withColon) || line.match(standalone);
                 if (!m) return line;
                 const indent = m[1];
-                const head = String(m[2]).replace(/^\*\*|\*\*$/g, '').trim();
-                const colon = m[3] || '';
-                const rest = m[4] || '';
-                return `${indent}**${head}${colon}**${rest}`;
+                const emoji = m[2] || '';
+                const head = String(m[3]).replace(/^\*\*|\*\*$/g, '').trim();
+                const colon = m[4] || '';
+                const rest = m[5] || '';
+                return `${indent}${emoji}**${head}${colon}**${rest}`;
             })
             .join('\n');
     },
@@ -299,12 +305,13 @@ const App = {
         if (/^#{1,6}\s/.test(trimmed)) return true;
         if (/^<h[1-4][\s>]/i.test(trimmed)) return true;
         if (/^[🔴🟡]/.test(trimmed)) return true;
-        if (/^<(strong|b)>/i.test(trimmed) && /Общий вывод|Замечания/i.test(trimmed)) {
+        if (/^(?:📄|📋)\s/.test(trimmed)) return true;
+        if (/^<(strong|b)>/i.test(trimmed) && /Общий вывод|Замечания|Документация|Вердикт/i.test(trimmed)) {
             return true;
         }
         // Заголовки итогов/выводов — не продолжение пункта списка
         if (
-            /^(?:\*\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|Общий вывод|Замечания|Минимальный срок|Суммарно|В итоге|Таким образом|Следовательно|Важно|Обратите внимание|Ответ|Кратко)\b/i.test(
+            /^(?:\*\*)?(?:Итоговый|Итого(?![а-яёА-ЯЁ])|Вывод|Заключение|Резюме|Общий вывод|Замечания|Минимальный срок|Суммарно|В итоге|Таким образом|Следовательно|Важно|Обратите внимание|Ответ|Кратко|Документация|Вердикт)\b/i.test(
                 trimmed,
             )
         ) {
@@ -462,19 +469,31 @@ const App = {
                     '<h4 class="audit-remarks-heading">Замечания</h4>',
                 )
                 .replace(
-                    /^\*\*Общий вывод:\*\*\s*$/gm,
-                    '<h4 class="audit-summary-heading">Общий вывод</h4>',
+                    /^(?:📄\s*)?(?:\*\*)?Документация:(?:\*\*)?/gm,
+                    '📄 <strong>Документация:</strong>',
                 )
                 .replace(
-                    /^\*\*Замечания:\*\*\s*$/gm,
-                    '<h4 class="audit-remarks-heading">Замечания</h4>',
+                    /^(?:📋\s*)?(?:\*\*)?Вердикт:(?:\*\*)?/gm,
+                    '📋 <strong>Вердикт:</strong>',
                 );
         }
         html = html
             .replace(/^## (.+)$/gm, '<h3>$1</h3>')
             .replace(/^### (.+)$/gm, '<h4>$1</h4>');
         // ** → <strong> внутри пунктов — в _linesToHtml через _formatInlineMarkdown
-        return this._linesToHtml(html);
+        html = this._linesToHtml(html);
+        if (options.auditReport) {
+            html = html
+                .replace(
+                    /(📋\s*<strong>Вердикт:<\/strong>\s*)(🔴[^<]*)/gi,
+                    '$1<span class="audit-verdict audit-verdict-fail">$2</span>',
+                )
+                .replace(
+                    /(📋\s*<strong>Вердикт:<\/strong>\s*)(🟢[^<]*)/gi,
+                    '$1<span class="audit-verdict audit-verdict-ok">$2</span>',
+                );
+        }
+        return html;
     },
 
     _splitAuditSections(text) {
@@ -491,8 +510,8 @@ const App = {
         };
 
         for (const line of lines) {
-            const crit = line.match(/^🔴\s*(.+)$/);
-            const imp = line.match(/^🟡\s*(.+)$/);
+            const crit = line.match(/^🔴\s*((?:\*\*)?Критическ.*)$/i);
+            const imp = line.match(/^🟡\s*((?:\*\*)?Важн.*)$/i);
             if (crit) {
                 pushCurrent();
                 current = { type: 'critical', title: crit[1], lines: [] };

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from config import MAX_LAWYER_CITATION_CHARS, MAX_LAWYER_LLM_CONTEXT_CHARS
+from config import CHECK_LLM_CONTEXT_CHARS
 from lawyer.text_encoding import strip_urls
 from tenders.services.parser import DOC_LABELS
 from tenders.services.validators import run_all_validations
@@ -19,21 +19,35 @@ CHECK_SYSTEM_PROMPT = """Ты — эксперт по аукционам аре�
 - Учитывай выводы автоматической проверки, но формулируй итог для пользователя.
 - Опирайся только на действующее законодательство: 135-ФЗ (в т.ч. ст. 17.1), Приказ ФАС России от 21.03.2023 № 147/23 и иные актуальные акты.
 - Не ссылайся на утратившие силу акты, в том числе Приказ ФАС России от 10.02.2010 № 67 и связанные с ним разъяснения.
-- Не используй markdown-разделители (`---`, `###`, `##`) — только **жирный** текст, списки и эмодзи 🔴/🟡.
+- Не используй markdown-разделители (`---`, `###`, `##`) — только **жирный** текст, списки и эмодзи 📄/📋/🔴/🟡/🟢.
+- Не используй заголовки «Общий вывод» и отдельную строку «Замечания:».
+- Учитывай оценку автопроверки в вердикте, но не выводи служебные статусы passed / warnings / failed.
 
-Формат отчёта:
+Формат отчёта — строго такой:
 
-**Общий вывод:** (кратко; укажи оценку 0–100 и статус: passed / warnings / failed)
+📄 Документация: [тип процедуры]
+Предмет: [объект аренды / лот]
+НМЦД: [начальная цена, если есть в документах; иначе эту строку не пиши]
 
-**Замечания:**
+📋 Вердикт: 🟢 МОЖНО ПУБЛИКОВАТЬ
+или
+📋 Вердикт: 🔴 ТРЕБУЕТ ОБЯЗАТЕЛЬНОЙ ДОРАБОТКИ
+С новой строки — 1–3 предложения: почему такой вердикт.
 
-🔴 **Критические** (нарушения 135-ФЗ, Приказ ФАС №147, расхождения между документами, риск отмены):
-- пункты списка со ссылками [N]
+🔴 Критические замечания (нарушения ФЗ, ПП РФ, Приказов ФАС; расхождения между разделами и документами; copy-paste, риск отмены ФАС)
+1. Краткий заголовок замечания
+Где: пункт документации / документ
+Суть: что в пункте написано
+Обоснование: в чём ошибка или неточность, со ссылкой на норму и [N] при опоре на фрагмент
 
-🟡 **Важные** (риски при проведении торгов, споры с участниками):
-- пункты списка со ссылками [N]
+🟡 Важные замечания (риски при исполнении, споры с участниками)
+1. Краткий заголовок замечания
+Где: пункт документации / документ
+Суть: что в пункте написано
+Обоснование: в чём ошибка или неточность, со ссылкой на норму и [N] при опоре на фрагмент
 
-Если замечаний нет — «Не выявлено»."""
+Если в категории замечаний нет — одной строкой: «Не выявлено».
+Каждое поле Где / Суть / Обоснование — с новой строки."""
 
 EXPERT_SYSTEM_PROMPT = """Ты — эксперт по аукционам аренды государственного и муниципального имущества.
 
@@ -94,18 +108,24 @@ def build_check_context(
         label = DOC_LABELS.get(key, key)
         filename = doc.get("filename") or label
         fields_json = json.dumps(doc.get("fields") or {}, ensure_ascii=False, indent=0)
-        body = _truncate(strip_urls(doc.get("text") or ""), MAX_LAWYER_CITATION_CHARS // 2)
+        body = strip_urls(doc.get("text") or "").strip()
         part = (
             f"[{num}] {filename} ({label}):\n"
             f"Извлечённые поля: {fields_json}\n"
             f"Текст:\n{body}"
         )
-        if context_len + len(part) > MAX_LAWYER_LLM_CONTEXT_CHARS - 2000:
-            remaining = MAX_LAWYER_LLM_CONTEXT_CHARS - context_len - 2000
+        if context_len + len(part) > CHECK_LLM_CONTEXT_CHARS - 4000:
+            remaining = CHECK_LLM_CONTEXT_CHARS - context_len - 4000
             if remaining > 300:
                 part = _truncate(part, remaining)
                 context_parts.append(part)
                 context_len += len(part)
+                citations.append({
+                    "id": num,
+                    "filename": filename,
+                    "page": label,
+                    "section": label,
+                })
             break
         context_parts.append(part)
         context_len += len(part)
@@ -119,7 +139,7 @@ def build_check_context(
     cross_part = (
         f"[4] Перекрёстная проверка и автоматические правила:\n{_format_checks(validation)}"
     )
-    if context_len + len(cross_part) <= MAX_LAWYER_LLM_CONTEXT_CHARS:
+    if context_len + len(cross_part) <= CHECK_LLM_CONTEXT_CHARS:
         context_parts.append(cross_part)
         citations.append({
             "id": 4,
