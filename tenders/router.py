@@ -22,7 +22,7 @@ from core.llm_client import get_llm
 from core.llm_errors import LLMUserFacingError
 from core.session import get_session_id
 from lawyer.citations import select_citations_for_display
-from lawyer.text_encoding import clean_llm_display_text, repair_filename
+from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
 from tenders.services.cache_store import get_by_doc_id, get_by_hash, save_parsed
 from tenders.services.check_context import (
     CHECK_SYSTEM_PROMPT,
