@@ -23,6 +23,7 @@ from core.llm_errors import LLMUserFacingError
 from core.session import get_session_id
 from lawyer.citations import select_citations_for_display
 from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
+from core.prompt_guards import EXPERT_REFUSAL_HINT
 from tenders.services.cache_store import get_by_doc_id, get_by_hash, save_parsed
 from tenders.services.check_context import (
     CHECK_SYSTEM_PROMPT,
@@ -285,7 +286,8 @@ async def _query_expert(session_id: str, question: str) -> dict:
         raw_answer = llm.generate(
             f"Вопрос пользователя: {question}\n\n"
             "Отвечай только по действующему праву (135-ФЗ, Приказ ФАС № 147/23 и иные актуальные акты). "
-            "Не ссылайся на Приказ ФАС № 67 и другие утратившие силу акты.",
+            "Не ссылайся на Приказ ФАС № 67 и другие утратившие силу акты. "
+            f"{EXPERT_REFUSAL_HINT}",
             system_prompt=EXPERT_SYSTEM_PROMPT,
         )
         answer = clean_llm_display_text(raw_answer)
