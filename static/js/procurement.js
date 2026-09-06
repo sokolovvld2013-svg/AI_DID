@@ -203,6 +203,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function showBotReply(answer, citations, replyMode) {
         const text = safeText(answer) || "Ответ пуст. Попробуйте переформулировать вопрос.";
+        const useMode = replyMode || mode;
         const msgDiv = document.createElement("div");
         msgDiv.className = "message bot";
 
@@ -211,7 +212,7 @@ document.addEventListener("DOMContentLoaded", () => {
         body.innerHTML = formatAnswer(text, replyMode);
         msgDiv.appendChild(body);
 
-        if (citations && citations.length) {
+        if (citations && citations.length && useMode !== "expert") {
             const box = document.createElement("div");
             box.className = "citations";
             const title = document.createElement("strong");

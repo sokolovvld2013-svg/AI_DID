@@ -221,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
         body.innerHTML = formatAnswer(text, useMode);
         msgDiv.appendChild(body);
 
-        if (citations && citations.length) {
+        if (citations && citations.length && useMode !== "expert") {
             const box = document.createElement("div");
             box.className = "citations";
             const title = document.createElement("strong");

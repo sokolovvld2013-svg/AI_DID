@@ -23,7 +23,12 @@ from core.llm_errors import LLMUserFacingError
 from core.session import get_session_id
 from lawyer.citations import select_citations_for_display
 from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
-from core.prompt_guards import EXPERT_REFUSAL_HINT
+from core.prompt_guards import (
+    EXPERT_FORMAT_HINT,
+    EXPERT_REFUSAL_HINT,
+    TENDERS_EXPERT_FALLBACK_SOURCES,
+    ensure_expert_sources_block,
+)
 from tenders.services.cache_store import get_by_doc_id, get_by_hash, save_parsed
 from tenders.services.check_context import (
     CHECK_SYSTEM_PROMPT,
@@ -287,10 +292,14 @@ async def _query_expert(session_id: str, question: str) -> dict:
             f"Вопрос пользователя: {question}\n\n"
             "Отвечай только по действующему праву (135-ФЗ, Приказ ФАС № 147/23 и иные актуальные акты). "
             "Не ссылайся на Приказ ФАС № 67 и другие утратившие силу акты. "
-            f"{EXPERT_REFUSAL_HINT}",
+            f"{EXPERT_FORMAT_HINT} {EXPERT_REFUSAL_HINT}",
             system_prompt=EXPERT_SYSTEM_PROMPT,
         )
         answer = clean_llm_display_text(raw_answer)
+        answer = ensure_expert_sources_block(
+            answer,
+            fallback_lines=TENDERS_EXPERT_FALLBACK_SOURCES,
+        )
         tenders_history.add(session_id, question, answer, mode="expert")
         return {"answer": answer, "citations": [], "verification": None}
     except LLMUserFacingError as e:
