@@ -30,10 +30,10 @@ from lawyer.text_encoding import (
 )
 from core.prompt_guards import (
     ANTI_HALLUCINATION_RULES,
-    EXPERT_ANSWER_FORMAT,
+EXPERT_ANSWER_FORMAT,
     EXPERT_FORMAT_HINT,
-    EXPERT_REFUSAL_HINT,
     ensure_expert_sources_block,
+    renumber_inline_citations,
 )
 from procurement.kb_rag import get_policy_rag
 from procurement.services.cache_store import get_by_audit_id, get_by_hash, save_parsed
@@ -429,6 +429,7 @@ async def _query_expert(session_id: str, question: str) -> dict:
             context=context or None,
         )
         answer = clean_llm_display_text(raw_answer)
+        answer = renumber_inline_citations(answer)
         if citations:
             citations = select_citations_for_display(answer, citations, max_items=20)
         answer = ensure_expert_sources_block(

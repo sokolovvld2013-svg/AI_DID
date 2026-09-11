@@ -257,6 +257,29 @@ const App = {
         return s;
     },
 
+    // Склеить оторванный номер пункта: «1.\n**Заголовок.**» → «1. **Заголовок.**»
+    _mergeOrphanListNumbers(text) {
+        const lines = String(text).split('\n');
+        const isBareNumber = (s) => /^\d{1,2}[.)](?:\*\*)?\s*$/.test(s.trim());
+        const isNumberedItem = (s) => /^(?:\*\*)?\d{1,2}[.)](?:\*\*)?\s+\S/.test(s.trim());
+        const out = [];
+        for (let i = 0; i < lines.length; i++) {
+            const bare = lines[i].trim().match(/^(\d{1,2})[.)](?:\*\*)?\s*$/);
+            if (bare) {
+                let j = i + 1;
+                while (j < lines.length && !lines[j].trim()) j++;
+                const nxt = j < lines.length ? lines[j].trim() : '';
+                if (nxt && !isBareNumber(nxt) && !isNumberedItem(nxt)) {
+                    out.push(`${bare[1]}. ${nxt}`);
+                    i = j;
+                    continue;
+                }
+            }
+            out.push(lines[i]);
+        }
+        return out.join('\n');
+    },
+
     _cleanMarkdownArtifacts(text) {
         return String(text)
             .replace(/^\s*[-*_]{3,}\s*$/gm, '')
@@ -456,7 +479,9 @@ const App = {
             this._renumberOrderedLists(
                 this._normalizeListBreaks(
                     this._normalizeParagraphBreaks(
-                        this._repairBrokenDecimals(this._cleanMarkdownArtifacts(text)),
+                        this._repairBrokenDecimals(
+                            this._mergeOrphanListNumbers(this._cleanMarkdownArtifacts(text)),
+                        ),
                     ),
                 ),
             ),

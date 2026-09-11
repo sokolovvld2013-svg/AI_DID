@@ -159,6 +159,38 @@ def ensure_list_line_breaks(text: str) -> str:
     return s
 
 
+_ORPHAN_LIST_NUMBER_RE = re.compile(r"^\s*(\d{1,2})[.)](?:\*\*)?\s*$")
+_NUMBERED_ITEM_START_RE = re.compile(r"^(?:\*\*)?\d{1,2}[.)](?:\*\*)?\s+\S")
+
+
+def merge_orphan_list_numbers(text: str) -> str:
+    """Склеить оторванный номер пункта: «1.\\n**Заголовок.**» → «1. **Заголовок.**».
+
+    Исправляет случай, когда модель печатает «1.» и заголовок отдельными строками.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        m = _ORPHAN_LIST_NUMBER_RE.match(lines[i])
+        if m:
+            j = i + 1
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            nxt = lines[j].strip() if j < len(lines) else ""
+            is_bare = bool(re.match(r"^\d{1,2}[.)](?:\*\*)?\s*$", nxt))
+            is_item = bool(_NUMBERED_ITEM_START_RE.match(nxt))
+            if nxt and not is_bare and not is_item:
+                out.append(f"{m.group(1)}. {nxt}")
+                i = j + 1
+                continue
+        out.append(lines[i])
+        i += 1
+    return "\n".join(out)
+
+
 _CONCLUSION_LEAD = (
     r"(?:\*\*)?(?:Итоговый\b|Итого(?![а-яё])|Вывод\b|Заключение\b|Резюме\b|"
     r"Таким образом\b|Следовательно\b|Общий вывод\b|Замечания\b|Минимальный срок\b|"
@@ -374,6 +406,7 @@ def clean_llm_display_text(text: str) -> str:
     s = re.sub(r"[-*_]{3,}\s*#{1,6}\s+", "", s)
     s = repair_broken_decimals(s)
     s = ensure_list_line_breaks(s)
+    s = merge_orphan_list_numbers(s)
     s = ensure_paragraph_breaks(s)
     s = ensure_remark_field_breaks(s)
     s = renumber_ordered_lists(s)
