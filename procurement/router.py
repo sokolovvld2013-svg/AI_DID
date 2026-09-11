@@ -30,8 +30,9 @@ from lawyer.text_encoding import (
 )
 from core.prompt_guards import (
     ANTI_HALLUCINATION_RULES,
-EXPERT_ANSWER_FORMAT,
+    EXPERT_ANSWER_FORMAT,
     EXPERT_FORMAT_HINT,
+    EXPERT_REFUSAL_HINT,
     ensure_expert_sources_block,
     renumber_inline_citations,
 )
