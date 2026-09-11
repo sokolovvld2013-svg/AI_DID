@@ -28,6 +28,7 @@ from core.prompt_guards import (
     EXPERT_REFUSAL_HINT,
     TENDERS_EXPERT_FALLBACK_SOURCES,
     ensure_expert_sources_block,
+    renumber_inline_citations,
 )
 from tenders.services.cache_store import get_by_doc_id, get_by_hash, save_parsed
 from tenders.services.check_context import (
@@ -296,6 +297,7 @@ async def _query_expert(session_id: str, question: str) -> dict:
             system_prompt=EXPERT_SYSTEM_PROMPT,
         )
         answer = clean_llm_display_text(raw_answer)
+        answer = renumber_inline_citations(answer)
         answer = ensure_expert_sources_block(
             answer,
             fallback_lines=TENDERS_EXPERT_FALLBACK_SOURCES,

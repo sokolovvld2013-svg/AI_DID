@@ -110,6 +110,84 @@ TENDERS_EXPERT_FALLBACK_SOURCES = [
     "Приказ ФАС России от 21.03.2023 № 147/23",
 ]
 
+_SOURCE_HEADER_RE = re.compile(
+    r"^\s*(?:\*\*)?Источники\s*:[^\n]*$", re.IGNORECASE | re.MULTILINE
+)
+_CITATION_RE = re.compile(r"\[([^\]\n]+)\]")
+_MODAL_ANNOTATION_RE = re.compile(
+    r"^\s*(?:требуется|нужно|необходимо|норма|уточн|укажите|примечан)",
+    re.IGNORECASE,
+)
+
+_STOP_TOKENS = {
+    "п", "ст", "ч", "разд", "раздел", "раздела", "разделе", "разделу", "разделом",
+    "таблиц", "таблица", "таблице", "таблицы", "таблицу", "пункт", "пункта",
+    "пункту", "пункте", "пункты", "прил", "приложение", "приложении", "приложения",
+    "глава", "главе", "абзац", "абзаца", "абзаце", "подпункт", "подпункта", "подпункту",
+}
+
+
+def _norm_citation_key(text: str) -> str:
+    """Ключ источника для дедупликации: без «п.», «ст.», «ч.», номеров пунктов;
+    номер закона (223-ФЗ, 135-ФЗ) сохраняется."""
+    tokens = re.findall(r"[а-яёa-z]+|\d+", text.lower())
+    parts: list[str] = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.isdigit():
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            if nxt in {"фз", "фас", "пп", "рф"}:
+                parts.append(tok + nxt)
+                i += 2
+                continue
+            i += 1
+            continue
+        if tok in _STOP_TOKENS:
+            i += 1
+            continue
+        parts.append(tok)
+        i += 1
+    return " ".join(parts)
+
+
+def renumber_inline_citations(answer: str) -> str:
+    """Развёрнутые ссылки в тексте возвращают вид [1], [2], …: [п. 2.13 … Положения о закупке] → [1].
+
+    Блок «Источники» строится из расшифровок, встреченных в тексте (по порядку первого упоминания),
+    один акт с несколькими пунктами сводится к одной записи.
+    Уже числовые ссылки [1] и служебные пометки [требуется проверка …] не меняются.
+    """
+    if not answer:
+        return answer
+    m = _SOURCE_HEADER_RE.search(answer)
+    body = answer[: m.start()].rstrip() if m else answer.rstrip()
+
+    by_key: dict[str, str] = {}
+    order: list[str] = []
+
+    def _repl(match: re.Match[str]) -> str:
+        inner = match.group(1).strip()
+        if re.fullmatch(r"\d{1,2}", inner):
+            return match.group(0)
+        if _MODAL_ANNOTATION_RE.match(inner):
+            return match.group(0)
+        key = _norm_citation_key(inner)
+        if not key:
+            return match.group(0)
+        if key not in by_key:
+            by_key[key] = inner
+            order.append(key)
+        return f"[{order.index(key) + 1}]"
+
+    new_body = _CITATION_RE.sub(_repl, body)
+    if not order:
+        return answer
+    block = "\n\n**Источники:**\n" + "\n".join(
+        f"[{i + 1}] {by_key[key]}" for i, key in enumerate(order)
+    )
+    return (new_body.rstrip() + block).strip()
+
 
 def format_expert_source_lines(citations: list[dict]) -> list[str]:
     lines: list[str] = []
