@@ -203,6 +203,13 @@ _PARAGRAPH_BREAK_LEAD = (
     r"Таким образом\b|Следовательно\b|Общий вывод\b|Минимальный срок\b|"
     r"Суммарно\b|В итоге\b|Источники\b|Суть вопроса\b)"
 )
+# «Суть вопроса» — это подпись к одному предложению, а не самостоятельный
+# заголовок: текст после двоеточия должен оставаться в той же строке.
+_INLINE_PARAGRAPH_BREAK_LEAD = (
+    r"(?:\*\*)?(?:Итоговый\b|Итого(?![а-яё])|Вывод\b|Заключение\b|Резюме\b|"
+    r"Таким образом\b|Следовательно\b|Общий вывод\b|Минимальный срок\b|"
+    r"Суммарно\b|В итоге\b|Источники\b)"
+)
 
 _REMARK_FIELD_RE = re.compile(
     r"(?<!\n)(?<![📄📋])[ \t]+((?:📄|📋)\s*)?"
@@ -248,7 +255,7 @@ def ensure_paragraph_breaks(text: str) -> str:
         flags=re.IGNORECASE,
     )
     s = re.sub(
-        rf"((?:{_PARAGRAPH_BREAK_LEAD})[^\n]{{0,120}}?:)\s+(?=\S)",
+        rf"((?:{_INLINE_PARAGRAPH_BREAK_LEAD})[^\n]{{0,120}}?:)\s+(?=\S)",
         r"\1\n",
         s,
         flags=re.IGNORECASE,
@@ -328,6 +335,60 @@ def _is_list_item_match(m: re.Match[str]) -> bool:
     return True
 
 
+_DECOR_SECTION_RE = re.compile(r"^(?:#{1,6}\s|🔴|🟡|(?:📄|📋)\s)", flags=re.IGNORECASE)
+_TEXT_SECTION_RE = re.compile(
+    r"^(?:\*\*)?(?:Итоговый|Вывод|Заключение|Общий вывод|Документация|Вердикт|Источники|Суть вопроса)\b",
+    flags=re.IGNORECASE,
+)
+_LIST_ITEM_LINE_RE = re.compile(r"^\s*(?:\*\*)?\d{1,2}[.)](?:\*\*)?\s")
+_BULLET_LINE_RE = re.compile(r"^\s*[-*•]\s+")
+
+
+def _is_heading_only_line(trimmed: str) -> bool:
+    """Строка — только заголовок («Вывод:», «**Источники:**»), без продолжения текста.
+
+    Этим «Вывод:» отличается от начала аргумента, перенесённого моделью
+    на новую строку («Вывод о необходимости торгов… [1]»).
+    """
+    head = (
+        r"(?:Итоговый|Итого|Вывод|Заключение|Резюме|Таким образом|Следовательно|"
+        r"Общий вывод|Замечания|Минимальный срок|Суммарно|В итоге|Важно|"
+        r"Обратите внимание|Ответ|Кратко|Документация|Вердикт|Предмет|НМЦД|"
+        r"Начальная цена|Где|Суть|Обоснование|Источники|Суть вопроса)"
+    )
+    return bool(
+        re.match(rf"\*\*{head}:?\*\*\s*$", trimmed, flags=re.IGNORECASE)
+        or re.match(rf"{head}:?\s*$", trimmed, flags=re.IGNORECASE)
+    )
+
+
+def _is_section_break_line(lines: list[str], i: int) -> bool:
+    """Настоящая граница секции, а не перенос строки внутри пункта списка.
+
+    Декоративные маркеры (🔴/🟡/#/📄/📋) всегда начинают новую секцию.
+    Текстовые заголовки («Вывод:», «Источники:») считаются границей, если это
+    заголовок-строка либо строке предшествует пустая строка; если прямо перед ней
+    идёт пункт списка и это не заголовок-строка — продолжение аргумента,
+    перенесённое моделью на новую строку.
+    """
+    stripped = lines[i].strip()
+    if not stripped:
+        return False
+    if _DECOR_SECTION_RE.match(stripped):
+        return True
+    if not _TEXT_SECTION_RE.match(stripped):
+        return False
+    if _is_heading_only_line(stripped):
+        return True
+    for j in range(i - 1, -1, -1):
+        prev = lines[j].strip()
+        if not prev:
+            return True
+        if _LIST_ITEM_LINE_RE.match(prev) or _BULLET_LINE_RE.match(prev):
+            return False
+    return True
+
+
 def renumber_ordered_lists(text: str) -> str:
     """Нумеровать только абзацы-пункты списка (законченная мысль), не даты и не «п. 17.1»."""
     if not text:
@@ -369,12 +430,7 @@ def renumber_ordered_lists(text: str) -> str:
             out.append(line)
             continue
 
-        if in_list and re.match(
-            r"^(?:#{1,6}\s|🔴|🟡|(?:📄|📋)\s|"
-            r"(?:\*\*)?(?:Итоговый|Вывод|Заключение|Общий вывод|Документация|Вердикт|Источники|Суть вопроса)\b)",
-            stripped,
-            flags=re.IGNORECASE,
-        ):
+        if in_list and _is_section_break_line(lines, i):
             in_list = False
             counter = 0
             out.append(line)
