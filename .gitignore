@@ -17,6 +17,7 @@ dist/
 # Виртуальное окружение
 venv/
 .venv/
+venv311/
 .venv311/
 
 # IDE
