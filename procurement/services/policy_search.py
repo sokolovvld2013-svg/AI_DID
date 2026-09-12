@@ -107,8 +107,11 @@ def prioritize_policy_hits(
     pool = list(hits or [])
     seen = {_hit_uid(h) for h in pool}
 
-    # Доп. поиск по точной формулировке Таблицы 1 — иначе тонет в разделе 13.
-    if search_fn is not None:
+    # Целевой поиск по формулировке Таблицы 1 — только если нужный фрагмент
+    # ещё не найден основным поиском; иначе это лишний запрос в RAG
+    # (эмбеддинг запроса + retrieve из Chroma, ~10-40 с на обращение).
+    need_targeted = not any(_hit_has_auction_table_row(h) for h in pool)
+    if search_fn is not None and need_targeted:
         for extra in search_fn(_TARGET_AUCTION_DEADLINE_QUERY) or []:
             uid = _hit_uid(extra)
             if uid not in seen:
