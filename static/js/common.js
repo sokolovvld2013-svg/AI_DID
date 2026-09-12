@@ -281,12 +281,13 @@ const App = {
     },
 
     _cleanMarkdownArtifacts(text) {
+        // Пустые строки сохраняются: они отличают настоящий заголовок («Вывод:»)
+        // от переноса строки внутри пункта списка (продолжение абзаца).
         return String(text)
             .replace(/^\s*[-*_]{3,}\s*$/gm, '')
             .replace(/^\s*[-*_]{3,}\s+/gm, '')
             .replace(/^\s*#{1,6}\s*$/gm, '')
             .replace(/[-*_]{3,}\s*#{1,6}\s+/g, '')
-            .replace(/\n{2,}/g, '\n')
             .trim();
     },
 
@@ -347,6 +348,40 @@ const App = {
         return false;
     },
 
+    // Строка — только заголовок («Вывод:», «**Источники:**»), без продолжения текста.
+    // Этим «Вывод:» отличается от начала аргумента, перенесённого моделью
+    // на новую строку («Вывод о необходимости торгов… [1]»).
+    _isHeadingOnlyLine(trimmed) {
+        const head =
+            '(?:Итоговый|Итого|Вывод|Заключение|Резюме|Таким образом|Следовательно|' +
+            'Общий вывод|Замечания|Минимальный срок|Суммарно|В итоге|Важно|' +
+            'Обратите внимание|Ответ|Кратко|Документация|Вердикт|Предмет|НМЦД|' +
+            'Начальная цена|Где|Суть|Обоснование|Источники|Суть вопроса)';
+        return (
+            new RegExp(`^\\*\\*${head}:?\\*\\*\\s*$`, 'i').test(trimmed) ||
+            new RegExp(`^${head}:?\\s*$`, 'i').test(trimmed)
+        );
+    },
+
+    // Настоящая граница секции, а не перенос строки внутри пункта списка.
+    // Декоративные разделители (🔴/🟡/#/📄/📋, заголовки HTML) всегда начинают секцию.
+    // Текстовый заголовок («Вывод:», «Источники:») считается границей, если это
+    // заголовок-строка либо строке предшествует пустая строка; если прямо перед ней
+    // идёт пункт списка и это не заголовок-строка — продолжение аргумента,
+    // перенесённое моделью на новую строку.
+    _isRealSectionBreak(lines, index, trimmed) {
+        trimmed = trimmed || String(lines[index] || '').trim();
+        if (this._isListSectionBreak(trimmed) === false) return false;
+        if (/^(?:#{1,6}\s|<h[1-4][\s>]|[🔴🟡]|(?:📄|📋)\s)/i.test(trimmed)) return true;
+        if (this._isHeadingOnlyLine(trimmed)) return true;
+        for (let j = index - 1; j >= 0; j--) {
+            const prev = lines[j].trim();
+            if (!prev) return true;
+            if (this._isNumberedListLine(prev) || this._isBulletListLine(prev)) return false;
+        }
+        return true;
+    },
+
     _renumberOrderedLists(text) {
         const lines = String(text).split('\n');
         const out = [];
@@ -373,7 +408,7 @@ const App = {
                 counter = 0;
                 continue;
             }
-            if (inList && (this._isBulletListLine(trimmed) || this._isListSectionBreak(trimmed))) {
+            if (inList && (this._isBulletListLine(trimmed) || this._isRealSectionBreak(lines, i, trimmed))) {
                 inList = false;
                 counter = 0;
             }
@@ -412,7 +447,11 @@ const App = {
         const appendToLastItem = (html) => {
             const last = listItems[listItems.length - 1];
             if (last.endsWith('</li>')) {
-                listItems[listItems.length - 1] = last.replace(/<\/li>$/, `<br>${html}</li>`);
+                // Заголовок-пункт («1. **Заголовок.**» без текста) — тело с новой строки;
+                // продолжение длинного аргумента — склеить пробелом, чтобы текст не «рвался».
+                const bareHeader = /<strong>[^<]*<\/strong>\s*<\/li>$/.test(last);
+                const join = bareHeader ? '<br>' : ' ';
+                listItems[listItems.length - 1] = last.replace(/<\/li>$/, `${join}${html}</li>`);
             }
         };
 
@@ -424,7 +463,7 @@ const App = {
                 const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
                 if (listType === 'ol' && next && this._isNumberedListLine(next)) continue;
                 if (listType === 'ul' && next && this._isBulletListLine(next)) continue;
-                if (listType && next && this._isListSectionBreak(next)) {
+                if (listType && next && this._isRealSectionBreak(lines, lineIndex + 1, next)) {
                     flushList();
                     continue;
                 }
@@ -450,10 +489,10 @@ const App = {
                 olIndex += 1;
                 const body = inline(this._stripLeadingListNumber(numbered.body));
                 listItems.push(`<li>${body}</li>`);
-            } else if (listType && listItems.length && !this._isListSectionBreak(trimmed)) {
+            } else if (listType && listItems.length && !this._isRealSectionBreak(lines, lineIndex, trimmed)) {
                 appendToLastItem(inline(trimmed));
             } else {
-                if (this._isListSectionBreak(trimmed)) {
+                if (this._isRealSectionBreak(lines, lineIndex, trimmed)) {
                     olIndex = 0;
                 }
                 flushList();
