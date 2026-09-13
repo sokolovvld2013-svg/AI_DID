@@ -43,6 +43,7 @@ lawyer/uploaded/*
 !lawyer/uploaded/.gitkeep
 logs/*
 !logs/.gitkeep
+Защита проекта/
 
 # Загружаемые пользователем файлы
 *.xlsx

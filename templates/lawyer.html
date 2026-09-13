@@ -4,13 +4,35 @@
 {% block content %}
 <section class="module-header">
     <h2>Юрист</h2>
-    <p>База знаний: поиск по документам со ссылками на источники.</p>
+    <p>Проверю договор на риски и проконсультирую по внутренним нормативным документам.</p>
+    <div class="lawyer-mode-switch" role="tablist" aria-label="Режим работы">
+        <button type="button" class="btn lawyer-mode-btn active" data-tab="contract" role="tab" aria-selected="true">Проверка договора</button>
+        <button type="button" class="btn lawyer-mode-btn" data-tab="kb" role="tab" aria-selected="false">Внутренние нормативные документы</button>
+    </div>
 </section>
 
 <div class="grid-2">
     <aside class="sidebar">
-        <div class="card">
-            <h3>База знаний</h3>
+        <div class="card" id="contract-card">
+            <h3>Договор</h3>
+            <div class="upload-zone" id="contract-drop">
+                <p>DOCX, TXT, PDF (до 50 МБ)</p>
+                <input type="file" id="contract-file" accept=".pdf,.docx,.txt" hidden>
+                <button type="button" class="btn btn-secondary" onclick="document.getElementById('contract-file').click()">Загрузить договор</button>
+            </div>
+            <div class="progress hidden" id="contract-progress"><div class="progress-bar"></div></div>
+            <div class="status" id="contract-status" role="status" aria-live="polite"></div>
+            <ul class="file-list" id="contract-info">
+                {% if contract %}
+                <li><span>{{ contract.filename }}</span></li>
+                {% else %}
+                <li class="muted">Договор не загружен</li>
+                {% endif %}
+            </ul>
+        </div>
+
+        <div class="card hidden" id="kb-card">
+            <h3>Внутренние нормативные документы</h3>
             <div class="upload-zone" id="doc-drop">
                 <p>DOCX, TXT, поиск по PDF не эффективен (до 50 МБ)</p>
                 <input type="file" id="doc-file" accept=".pdf,.docx,.txt" hidden>
@@ -35,7 +57,7 @@
                 {% for item in history %}
                 <li>
                     <time>{{ item.timestamp }}</time>
-                    <p class="history-query">{{ item.query[:60] }}...</p>
+                    <p class="history-query">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</p>
                 </li>
                 {% else %}
                 <li class="muted">Нет вопросов</li>
@@ -45,16 +67,16 @@
     </aside>
 
     <section class="chat-section card">
-        <h3>Юридический чат</h3>
+        <h3 id="chat-title">Проверка договора</h3>
         <div class="chat-messages" id="chat-messages"></div>
-        <form class="chat-form" id="chat-form">
-            <input type="text" id="chat-input" placeholder="Задайте вопрос по документам..." autocomplete="off">
-            <button type="submit" class="btn btn-primary">Спросить</button>
+        <form class="chat-form lawyer-check-form" id="chat-form">
+            <input type="text" id="chat-input" class="lawyer-chat-input hidden" placeholder="Задайте вопрос по внутренним нормативным документам…" autocomplete="off">
+            <button type="submit" class="btn btn-primary" id="chat-submit" disabled>Проверить</button>
         </form>
     </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/lawyer.js"></script>
+<script src="/static/js/lawyer.js?v=1"></script>
 {% endblock %}

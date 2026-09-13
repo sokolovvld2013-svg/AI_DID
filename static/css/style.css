@@ -795,11 +795,13 @@ body.app-file-processing .upload-zone.is-processing * {
     line-height: 1;
 }
 
-.chat-form.procurement-check-form {
+.chat-form.procurement-check-form,
+.chat-form.lawyer-check-form {
     justify-content: flex-start;
 }
 
-.chat-form.procurement-check-form .procurement-chat-input {
+.chat-form.procurement-check-form .procurement-chat-input,
+.chat-form.lawyer-check-form .lawyer-chat-input {
     display: none;
 }
 
@@ -1032,7 +1034,8 @@ body.confirm-open { overflow: hidden; }
     border-top-width: 2px;
 }
 
-.procurement-mode-switch {
+.procurement-mode-switch,
+.lawyer-mode-switch {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 0.5rem;
@@ -1045,7 +1048,8 @@ body.confirm-open { overflow: hidden; }
     box-shadow: var(--shadow-sm);
 }
 
-.procurement-mode-btn {
+.procurement-mode-btn,
+.lawyer-mode-btn {
     min-height: 2.75rem;
     padding: 0.65rem 1rem;
     font-size: 0.9rem;
@@ -1060,13 +1064,15 @@ body.confirm-open { overflow: hidden; }
     transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
 }
 
-.procurement-mode-btn:hover:not(.active) {
+.procurement-mode-btn:hover:not(.active),
+.lawyer-mode-btn:hover:not(.active) {
     background: var(--surface-hover);
     border-color: var(--border);
     color: var(--text);
 }
 
-.procurement-mode-btn.active {
+.procurement-mode-btn.active,
+.lawyer-mode-btn.active {
     background: var(--accent);
     border-color: var(--accent);
     color: #fff;
@@ -1074,13 +1080,15 @@ body.confirm-open { overflow: hidden; }
     box-shadow: 0 2px 8px rgba(var(--accent-rgb), 0.35);
 }
 
-.procurement-mode-btn.active:hover {
+.procurement-mode-btn.active:hover,
+.lawyer-mode-btn.active:hover {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
 }
 
 @media (max-width: 640px) {
-    .procurement-mode-switch {
+    .procurement-mode-switch,
+    .lawyer-mode-switch {
         grid-template-columns: 1fr;
         max-width: none;
     }
