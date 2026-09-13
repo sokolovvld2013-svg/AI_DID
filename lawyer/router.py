@@ -3,6 +3,7 @@ import logging
 import re
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
@@ -23,11 +24,24 @@ from core.history import lawyer_history
 from core.session import get_session_id
 from core.llm_errors import LLMUserFacingError
 from core.llm_client import get_llm
-from lawyer.doc_processor import process_upload
+from lawyer.contract_check import (
+    CONTRACT_SYSTEM_PROMPT,
+    build_contract_context,
+    contract_summary,
+    split_contract_fragments,
+)
+from lawyer.contract_state import clear_contract, get_contract, set_contract
+from lawyer.doc_processor import load_document, process_upload
 from lawyer.rag import LawyerRAG, MIN_CITATION_SCORE_RATIO, get_lawyer_rag
 from lawyer.search_utils import core_query_tokens, min_core_matches_required
 from lawyer.citations import select_citations_for_display
-from lawyer.text_encoding import decode_upload_filename, repair_filename, strip_urls
+from lawyer.text_encoding import (
+    clean_llm_display_text,
+    decode_upload_filename,
+    repair_filename,
+    strip_urls,
+)
+from procurement.services.file_upload import read_upload_file, write_temp_file
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lawyer", tags=["lawyer"])
@@ -57,6 +71,7 @@ SYSTEM_PROMPT = """Ты — юридический ассистент. Отве�
 
 class LawyerQuery(BaseModel):
     question: str
+    mode: Literal["kb", "contract"] = "kb"
 
 
 def _truncate_fragment(text: str, max_len: int) -> str:
@@ -76,8 +91,10 @@ def _citation_ref(citation: dict) -> dict:
     }
 
 
-def _lawyer_error_reply(session_id: str, question: str, message: str) -> dict:
-    lawyer_history.add(session_id, question, message)
+def _lawyer_error_reply(
+    session_id: str, question: str, message: str, mode: str = "kb"
+) -> dict:
+    lawyer_history.add(session_id, question, message, mode=mode)
     return {"answer": message, "citations": []}
 
 
@@ -222,8 +239,67 @@ async def lawyer_page(request: Request):
             "active": "lawyer",
             "history": lawyer_history.list(sid),
             "files": _rag().list_files(),
+            "contract": get_contract(sid) or None,
         },
     )
+
+
+@router.get("/contract/status")
+async def contract_status(request: Request):
+    sid = get_session_id(request)
+    contract = get_contract(sid)
+    if not contract:
+        return {"loaded": False}
+    return contract_summary(contract)
+
+
+@router.post("/contract/upload")
+async def upload_contract(request: Request, file: UploadFile = File(...)):
+    """Загрузка договора (DOCX, TXT, PDF до 50 МБ) для проверки."""
+    sid = get_session_id(request)
+    content, orig_name, ext = await read_upload_file(file)
+    temp_path = write_temp_file(LAWYER_UPLOAD_DIR, content, orig_name, ext)
+
+    try:
+        pages = load_document(temp_path)
+        if not pages:
+            raise ValueError("Не удалось извлечь текст договора (пустой или битый файл)")
+        full_text = "\n\n".join(
+            (p.get("text") or "").strip() for p in pages if (p.get("text") or "").strip()
+        ).strip()
+        if not full_text:
+            raise ValueError("В договоре не найден текст")
+
+        fragments = split_contract_fragments(full_text)
+        if not fragments:
+            raise ValueError("Не удалось извлечь пункты договора")
+
+        set_contract(
+            sid,
+            filename=orig_name,
+            total_chars=len(full_text),
+            pages=len(pages),
+            fragments=fragments,
+        )
+        summary = contract_summary(get_contract(sid))
+        summary["status"] = "ok"
+        return summary
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        logger.exception("Ошибка зависимостей при разборе договора")
+        raise HTTPException(503, str(e)) from e
+    except Exception as e:
+        logger.exception("Ошибка обработки договора: %s", orig_name)
+        raise HTTPException(500, f"Ошибка обработки: {e}") from e
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+@router.delete("/contract")
+async def delete_contract(request: Request):
+    clear_contract(get_session_id(request))
+    return {"status": "ok"}
 
 
 @router.get("/files")
@@ -304,11 +380,83 @@ async def query(req: LawyerQuery, request: Request):
     sid = get_session_id(request)
     if not question:
         raise HTTPException(400, "Пустой вопрос")
+    if req.mode == "contract":
+        return await _query_contract(sid, question)
+    return _query_kb(sid, question)
 
+
+async def _query_contract(session_id: str, question: str) -> dict:
+    contract = get_contract(session_id)
+    if not contract:
+        raise HTTPException(
+            400,
+            "Сначала загрузите договор в блоке «Проверка договора».",
+        )
+
+    fragments = contract.get("fragments") or []
+    if not fragments:
+        raise HTTPException(400, "Договор не удалось разобрать. Загрузите файл заново.")
+
+    context, citations = build_contract_context(
+        fragments,
+        filename=contract.get("filename") or "Договор",
+    )
+    if not context:
+        msg = "Не удалось извлечь текст договора для проверки. Загрузите файл заново."
+        _lawyer_error_reply(session_id, question, msg, mode="contract")
+        return {"answer": msg, "citations": []}
+
+    user_prompt = (
+        f"Вопрос пользователя: {question}\n\n"
+        "Проверь договор на соответствие законодательству РФ и самому договору "
+        "по фрагментам ниже. Сформируй отчёт в строгом формате: "
+        "📄 Договор, Предмет, 📋 Вердикт, "
+        "затем 🔴 Критические замечания и 🟡 Важные замечания "
+        "с полями Где / Суть / Обоснование у каждого пункта. "
+        "Ключевые термины и нормы выделяй **жирным**. "
+        "Для пунктов договора указывай номера [N] из блока «Договор»."
+    )
+
+    try:
+        llm = get_llm()
+        raw_answer = llm.generate(
+            user_prompt,
+            system_prompt=CONTRACT_SYSTEM_PROMPT,
+            context=context,
+        )
+        answer = clean_llm_display_text(raw_answer)
+        citations = select_citations_for_display(answer, citations)
+        lawyer_history.add(
+            session_id,
+            question,
+            answer,
+            mode="contract",
+            citations=citations,
+        )
+        return {
+            "answer": answer,
+            "citations": [_citation_ref(c) for c in citations],
+        }
+    except LLMUserFacingError as e:
+        logger.warning("Lawyer contract check LLM error: %s", e.original or e)
+        return _lawyer_error_reply(
+            session_id, question, e.user_message, mode="contract"
+        )
+    except Exception as e:
+        logger.exception("Lawyer contract check failed: %s", e)
+        return _lawyer_error_reply(
+            session_id,
+            question,
+            "Произошла ошибка при проверке договора. Попробуйте ещё раз.",
+            mode="contract",
+        )
+
+
+def _query_kb(session_id: str, question: str) -> dict:
     all_hits = _rag().search(question)
     if not all_hits:
         answer = "База знаний пуста. Загрузите документы для ответа на вопросы."
-        lawyer_history.add(sid, question, answer)
+        lawyer_history.add(session_id, question, answer, mode="kb")
         return {"answer": answer, "citations": []}
 
     try:
@@ -318,7 +466,7 @@ async def query(req: LawyerQuery, request: Request):
                 "По загруженным документам не найдено фрагментов, подходящих к вопросу. "
                 "Переформулируйте вопрос или загрузите другой документ."
             )
-            lawyer_history.add(sid, question, answer)
+            lawyer_history.add(session_id, question, answer, mode="kb")
             return {"answer": answer, "citations": []}
 
         llm = get_llm()
@@ -364,20 +512,21 @@ async def query(req: LawyerQuery, request: Request):
         citations = select_citations_for_display(answer, citations)
         if not citations and hits:
             logger.info("В ответе нет ссылок [N] — источники не показаны")
-        lawyer_history.add(sid, question, answer, citations=citations)
+        lawyer_history.add(session_id, question, answer, mode="kb", citations=citations)
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
         }
     except LLMUserFacingError as e:
         logger.warning("Lawyer query LLM error: %s", e.original or e)
-        return _lawyer_error_reply(sid, question, e.user_message)
+        return _lawyer_error_reply(session_id, question, e.user_message, mode="kb")
     except Exception as e:
         logger.exception("Lawyer query failed: %s", e)
         return _lawyer_error_reply(
-            sid,
+            session_id,
             question,
             "Произошла ошибка при обработке запроса. Попробуйте переформулировать вопрос.",
+            mode="kb",
         )
 
 
