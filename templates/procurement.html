@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Закупка 223-ФЗ — ИИ-помощник ФГУП "ДИД"{% endblock %}
+{% block main_class %}main--module-full{% endblock %}
 
 {% block content %}
 <section class="module-header">
@@ -11,7 +12,7 @@
     </div>
 </section>
 
-<div class="grid-2">
+<div class="grid-2 module-layout">
     <aside class="sidebar compact-upload-sidebar">
         <div class="card">
             <h3>Закупочная документация</h3>
@@ -58,7 +59,7 @@
                 {% for item in history %}
                 <li>
                     <time>{{ item.timestamp }}</time>
-                    <p class="history-query">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</p>
+                    <button type="button" class="history-query module-history-link" data-history-index="{{ loop.index0 }}">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</button>
                 </li>
                 {% else %}
                 <li class="muted">Нет вопросов</li>
@@ -67,17 +68,21 @@
         </div>
     </aside>
 
-    <section class="chat-section card">
+    <section class="chat-section card module-chat">
         <h3 id="chat-title">Проверка закупочной документации</h3>
-        <div class="chat-messages" id="chat-messages"></div>
+        <div class="module-guidance" id="module-guidance" role="status">1. Загрузите закупочную документацию. 2. Дождитесь обработки. 3. Запустите проверку.</div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="module-empty-state" id="chat-empty-state"><strong>Результат появится здесь</strong><span>Загрузите документацию, чтобы начать проверку.</span></div>
+        </div>
         <form class="chat-form procurement-check-form" id="chat-form">
             <input type="text" id="chat-input" class="procurement-chat-input hidden" placeholder="Задайте вопрос по законодательству о закупках…" autocomplete="off">
-            <button type="submit" class="btn btn-primary" id="chat-submit" disabled>Проверить</button>
+            <button type="submit" class="btn btn-primary" id="chat-submit" aria-describedby="chat-action-hint" disabled>Проверить</button>
         </form>
+        <p class="module-action-hint" id="chat-action-hint">Сначала загрузите закупочную документацию.</p>
     </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/procurement.js?v=11"></script>
+<script src="/static/js/procurement.js?v=12"></script>
 {% endblock %}

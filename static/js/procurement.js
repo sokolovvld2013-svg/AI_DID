@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const policyFileInput = document.getElementById("policy-file");
     const docInfo = document.getElementById("doc-info");
     const policyList = document.getElementById("policy-list");
+    const actionHint = document.getElementById("chat-action-hint");
+    const guidance = document.getElementById("module-guidance");
 
     const CHECK_QUESTION =
         "Проверь закупочную документацию и сформируй отчёт о проверке с замечаниями.";
@@ -16,6 +18,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let mode = "check";
     let docLoaded = false;
+    let requestPending = false;
 
     function safeText(s) {
         const t = stripSiteUrls(s || "");
@@ -30,7 +33,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function updateChatAvailability() {
         const checkMode = mode === "check";
-        const disabled = checkMode && !docLoaded;
+        const disabled = requestPending || (checkMode ? !docLoaded : !chatInput?.value.trim());
 
         if (chatForm) {
             chatForm.classList.toggle("procurement-check-form", checkMode);
@@ -50,6 +53,20 @@ document.addEventListener("DOMContentLoaded", () => {
             chatSubmit.disabled = disabled;
             chatSubmit.textContent = checkMode ? "Проверить" : "Спросить";
         }
+        if (actionHint) {
+            actionHint.className = "module-action-hint";
+            if (requestPending) {
+                actionHint.textContent = checkMode ? "Проверяю документацию…" : "Формирую ответ…";
+                actionHint.classList.add("is-loading");
+            } else if (checkMode && !docLoaded) {
+                actionHint.textContent = "Сначала загрузите закупочную документацию.";
+            } else if (checkMode) {
+                actionHint.textContent = "Документация готова к проверке.";
+                actionHint.classList.add("is-ready");
+            } else {
+                actionHint.textContent = chatInput?.value.trim() ? "Вопрос готов к отправке." : "Введите вопрос по законодательству о закупках.";
+            }
+        }
     }
 
     function setMode(nextMode) {
@@ -66,6 +83,9 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.setAttribute("aria-selected", isActive ? "true" : "false");
         });
         updateChatAvailability();
+        if (guidance) guidance.textContent = mode === "check"
+            ? "1. Загрузите закупочную документацию. 2. Дождитесь обработки. 3. Запустите проверку."
+            : "Задайте вопрос по законодательству и загруженному Положению о закупке.";
     }
 
     document.querySelectorAll(".procurement-mode-btn").forEach((btn) => {
@@ -73,6 +93,25 @@ document.addEventListener("DOMContentLoaded", () => {
             setMode(btn.getAttribute("data-tab") || "check");
         });
     });
+    chatInput?.addEventListener("input", updateChatAvailability);
+
+    function removeEmptyState() { document.getElementById("chat-empty-state")?.remove(); }
+    function historyTargetId(index) { return `procurement-history-${index}`; }
+    function scrollToHistory(index) {
+        const target = document.getElementById(historyTargetId(index));
+        if (!target || !chatMessages) return;
+        const top = target.offsetTop;
+        chatMessages.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+        target.classList.remove("module-message-highlight");
+        void target.offsetWidth;
+        target.classList.add("module-message-highlight");
+        setTimeout(() => target.classList.remove("module-message-highlight"), 1800);
+    }
+    function bindHistoryLinks() {
+        document.querySelectorAll(".module-history-link").forEach(button => {
+            button.onclick = () => scrollToHistory(button.dataset.historyIndex);
+        });
+    }
 
     async function refreshDocStatus() {
         try {
@@ -249,9 +288,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!question) return;
 
         const userLabel = mode === "check" ? CHECK_USER_LABEL : question;
+        removeEmptyState();
         App.addMessage("chat-messages", userLabel, "user");
         if (mode !== "check") chatInput.value = "";
         chatForm.classList.add("loading");
+        requestPending = true;
+        updateChatAvailability();
 
         try {
             const resp = await fetch("/procurement/query", {
@@ -264,11 +306,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(data.detail || resp.statusText || "Ошибка запроса");
             }
             showBotReply(data.answer, data.citations || [], mode);
-            refreshHistory();
+            await refreshHistory();
+            await loadChatHistory();
         } catch (err) {
             showBotReply(safeText(err.message) || "Ошибка запроса", [], mode);
         } finally {
             chatForm.classList.remove("loading");
+            requestPending = false;
+            updateChatAvailability();
         }
     });
 
@@ -303,13 +348,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!list) return;
             list.innerHTML = data.history.length
                 ? data.history
-                      .map((h) => {
+                      .map((h, index) => {
                           const isCheck = (h.mode || "check") === "check";
                           const q = isCheck ? CHECK_USER_LABEL : safeText(h.query);
-                          return `<li><time>${h.timestamp}</time><p class="history-query">${escapeHtml(q.length > 60 ? q.slice(0, 60) + "…" : q)}</p></li>`;
+                           return `<li><time>${h.timestamp}</time><button type="button" class="history-query module-history-link" data-history-index="${index}">${escapeHtml(q.length > 60 ? q.slice(0, 60) + "…" : q)}</button></li>`;
                       })
                       .join("")
                 : '<li class="muted">Нет вопросов</li>';
+            bindHistoryLinks();
         } catch (e) {
             console.error("refreshHistory", e);
         }
@@ -322,12 +368,22 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!chatMessages || !data.history || !data.history.length) return;
             chatMessages.innerHTML = "";
             const items = [...data.history].reverse();
-            for (const h of items) {
+            for (const [index, h] of items.entries()) {
                 const isCheck = (h.mode || "check") === "check";
                 const label = isCheck ? CHECK_USER_LABEL : safeText(h.query);
-                App.addMessage("chat-messages", label, "user");
+                const group = document.createElement("div");
+                group.className = "module-message-group";
+                group.id = historyTargetId(data.history.length - 1 - index);
+                chatMessages.appendChild(group);
+                const user = document.createElement("div");
+                user.className = "message message-text user";
+                user.textContent = label;
+                group.appendChild(user);
                 showBotReply(h.response, h.citations || [], h.mode || "check");
+                const bot = chatMessages.lastElementChild;
+                if (bot && bot !== group) group.appendChild(bot);
             }
+            bindHistoryLinks();
         } catch (e) {
             console.error("loadChatHistory", e);
         }
@@ -336,5 +392,6 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshDocStatus();
     refreshPolicyFiles();
     loadChatHistory();
+    bindHistoryLinks();
     setMode("check");
 });

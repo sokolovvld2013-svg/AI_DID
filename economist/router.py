@@ -38,7 +38,10 @@ from economist.n8n_client import (
 
 logger = logging.getLogger(__name__)
 
-ECONOMIST_CHAT_ERROR = "Произошла ошибка или отсутствуют данные! Попробуйте переформулировать вопрос."
+ECONOMIST_CHAT_ERROR = (
+    "Не удалось получить ответ. Попробуйте уточнить формулировку вопроса "
+    "или повторить запрос позже."
+)
 
 router = APIRouter(prefix="/economist", tags=["economist"])
 
@@ -77,6 +80,11 @@ def _economist_error_reply(query: str, session_id: str) -> dict:
 async def economist_page(request: Request):
 
     sid = get_session_id(request)
+    from economist.fact_sheet import get_fact_sheet_update_date
+
+    fact_updated_date = await get_fact_sheet_update_date(
+        ECONOMIST_FACT_SHEET_EDIT_URL
+    )
     return templates.TemplateResponse(
 
         request=request,
@@ -90,6 +98,8 @@ async def economist_page(request: Request):
             "history": economist_history.list(sid),
 
             "fact_sheet_url": ECONOMIST_FACT_SHEET_EDIT_URL,
+
+            "fact_updated_date": fact_updated_date,
 
         },
 
@@ -158,9 +168,18 @@ async def query(req: QueryRequest, request: Request):
             response_text = "\n\n".join(_format_article_record(r) for r in records)
 
         if not table_html and records:
+            from economist.fact_sheet import get_fact_sheet_update_date
             from economist.n8n_client import render_economist_html
 
-            table_html = render_economist_html(records)
+            fact_updated_date = ""
+            if any("Факт" in record for record in records):
+                fact_updated_date = await get_fact_sheet_update_date(
+                    ECONOMIST_FACT_SHEET_EDIT_URL
+                )
+            table_html = render_economist_html(
+                records,
+                fact_updated_date=fact_updated_date,
+            )
 
     except ValueError as e:
         logger.warning("Ошибка запроса к n8n: %s", e)
@@ -206,5 +225,3 @@ async def query(req: QueryRequest, request: Request):
 async def history(request: Request):
 
     return {"history": economist_history.list(get_session_id(request))}
-
-

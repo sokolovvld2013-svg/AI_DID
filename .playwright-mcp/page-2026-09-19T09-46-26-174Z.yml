@@ -1,0 +1,56 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - img "Логотип ФГУП «Дирекция по инвестиционной деятельности»" [ref=f1e4]
+      - heading "ИИ-помощник ФГУП \"ДИД\"" [level=1] [ref=f1e5]
+    - navigation [ref=f1e6]:
+      - link "Экономист" [ref=f1e7] [cursor=pointer]:
+        - /url: /economist
+      - link "Юрист" [ref=f1e8] [cursor=pointer]:
+        - /url: /lawyer
+      - link "Закупка" [ref=f1e9] [cursor=pointer]:
+        - /url: /procurement
+      - link "Торги" [ref=f1e10] [cursor=pointer]:
+        - /url: /tenders
+      - link "Секретарь" [ref=f1e11] [cursor=pointer]:
+        - /url: /secretary
+  - main [ref=f1e12]:
+    - generic [ref=f1e13]:
+      - heading "Закупка 223-ФЗ" [level=2] [ref=f1e14]
+      - paragraph [ref=f1e15]: Помогу с проверкой закупочной документации. Проконсультирую по законодательству о закупках.
+      - tablist "Режим работы" [ref=f1e16]:
+        - tab "Проверка закупочной документации" [selected] [ref=f1e17] [cursor=pointer]
+        - tab "Экспертное мнение" [ref=f1e18] [cursor=pointer]
+    - generic [ref=f1e19]:
+      - complementary [ref=f1e20]:
+        - generic [ref=f1e21]:
+          - heading "Закупочная документация" [level=3] [ref=f1e22]
+          - generic [ref=f1e23]:
+            - paragraph [ref=f1e24]: DOCX, TXT, PDF (до 50 МБ)
+            - button "Загрузить документ" [ref=f1e25] [cursor=pointer]
+          - status [ref=f1e26]
+          - list [ref=f1e27]:
+            - listitem [ref=f1e28]: Документ не загружен
+        - generic [ref=f1e29]:
+          - heading "Положение о закупке" [level=3] [ref=f1e30]
+          - generic [ref=f1e31]:
+            - paragraph [ref=f1e32]: DOCX, TXT, PDF (до 50 МБ)
+            - button "Загрузить документ" [ref=f1e33] [cursor=pointer]
+          - status [ref=f1e34]
+          - list [ref=f1e35]:
+            - listitem [ref=f1e36]:
+              - generic [ref=f1e37]: Положение о закупке (новая редакция) - апрель 2025.docx
+              - button "×" [ref=f1e38] [cursor=pointer]
+        - generic [ref=f1e39]:
+          - heading "История вопросов" [level=3] [ref=f1e40]
+          - list [ref=f1e41]:
+            - listitem [ref=f1e42]: Нет вопросов
+      - generic [ref=f1e43]:
+        - heading "Проверка закупочной документации" [level=3] [ref=f1e44]
+        - status [ref=f1e45]: 1. Загрузите закупочную документацию. 2. Дождитесь обработки. 3. Запустите проверку.
+        - generic [ref=f1e47]:
+          - strong [ref=f1e48]: Результат появится здесь
+          - generic [ref=f1e49]: Загрузите документацию, чтобы начать проверку.
+        - button "Проверить" [disabled] [ref=f1e51] [cursor=pointer]
+        - paragraph [ref=f1e52]: Сначала загрузите закупочную документацию.
+  - contentinfo [ref=f1e53]: ФГУП "ДИД"

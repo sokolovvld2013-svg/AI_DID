@@ -2,6 +2,8 @@
 
 {% block title %}Экономист — ИИ-помощник ФГУП "ДИД"{% endblock %}
 
+{% block main_class %}main--economist{% endblock %}
+
 
 
 {% block content %}
@@ -16,13 +18,13 @@
 
 
 
-<div class="grid-2">
+<div class="grid-2 economist-layout">
 
     <aside class="sidebar">
 
         <div class="card">
 
-            <h3>Факт</h3>
+            <h3>Факт{% if fact_updated_date %} <span class="fact-updated-date">(обновлён {{ fact_updated_date }})</span>{% endif %}</h3>
 
             {% if fact_sheet_url %}
 
@@ -36,7 +38,7 @@
 
             </p>
 
-            <p class="hint">Таблица открыта на редактирование.</p>
+            <p class="hint">Таблица откроется в новой вкладке и доступна для редактирования.</p>
 
             {% else %}
 
@@ -62,7 +64,7 @@
 
                     <time>{{ item.timestamp }}</time>
 
-                    <p class="history-query">{{ item['query'][:80] }}{% if item['query']|length > 80 %}...{% endif %}</p>
+                    <button type="button" class="history-query economist-history-link" data-history-index="{{ loop.index0 }}">{{ item['query'][:80] }}{% if item['query']|length > 80 %}...{% endif %}</button>
 
                 </li>
 
@@ -80,17 +82,22 @@
 
 
 
-    <section class="chat-section card">
+    <section class="chat-section card economist-chat">
 
-        <h3>Чат</h3>
+        <div class="economist-chat-heading">
+            <div>
+                <h3>Помощник экономиста</h3>
+                <p class="hint">Опишите задачу своими словами или выберите один из примеров.</p>
+            </div>
+        </div>
 
         <div class="chat-messages" id="chat-messages">
 
-            <div class="message bot">
+            <div class="message bot economist-welcome" id="economist-welcome">
 
                 <p>Примеры вопросов, на которые я могу ответить:</p>
                 <ul class="chat-examples">
-                    <li>Какую статью использовать при хранениии яхты?</li>
+                    <li>Какую статью использовать при хранении яхты?</li>
                     <li>Хочу посмотреть факт по статье 2221 или по статье теплоснабжение.</li>
                     <li>Выведи годовые лимиты по статьям по объекту Гороховая 2/6.</li>
                 </ul>
@@ -100,13 +107,22 @@
 
         </div>
 
-        <form class="chat-form" id="chat-form">
+        <div class="economist-request-status" id="economist-request-status" role="status" aria-live="polite"></div>
+        <form class="chat-form economist-chat-form" id="chat-form">
 
-            <input type="text" id="chat-input" placeholder="Введите вопрос..." autocomplete="off">
+            <label class="sr-only" for="chat-input">Вопрос помощнику экономиста</label>
+            <input type="text" id="chat-input" placeholder="Например: покажи факт по статье 2221" autocomplete="off" maxlength="1000">
 
-            <button type="submit" class="btn btn-primary">Отправить</button>
+            <button type="submit" class="btn btn-primary" id="chat-submit" disabled>Отправить</button>
 
         </form>
+        <div class="economist-compact-examples" id="economist-compact-examples" aria-label="Быстрые подсказки">
+            <span>Примеры:</span>
+            <button type="button" data-query="Подбери статью для расхода ">Подбери статью для расхода</button>
+            <button type="button" data-query="Покажи факт по статье ">Покажи факт по статье</button>
+            <button type="button" data-query="Покажи лимиты по объекту ">Покажи лимиты по объекту</button>
+        </div>
+        <p class="economist-form-hint">Нажмите Enter, чтобы отправить вопрос.</p>
 
     </section>
 
@@ -118,8 +134,6 @@
 
 {% block scripts %}
 
-<script src="/static/js/economist.js?v=9"></script>
+<script src="/static/js/economist.js?v=14"></script>
 
 {% endblock %}
-
-

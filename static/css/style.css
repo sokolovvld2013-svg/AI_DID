@@ -165,7 +165,7 @@ body {
     text-align: center;
     padding: 1rem;
     color: var(--text-muted);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     border-top: 1px solid var(--border-light);
     background: var(--surface-elevated);
 }
@@ -845,9 +845,508 @@ body.app-file-processing .upload-zone.is-processing * {
 .history-list li:last-child { border-bottom: none; }
 .history-list time { color: var(--text-muted); font-size: 0.75rem; }
 .history-query { margin-top: 0.25rem; color: var(--text); }
+.economist-history-link {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+}
+.economist-history-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+.economist-history-link:focus-visible {
+    outline: 3px solid rgba(var(--accent-rgb), 0.28);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+.economist-message-group {
+    border-radius: var(--radius);
+    transition: background 0.3s, box-shadow 0.3s;
+}
+.economist-message-highlight {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 5px var(--accent-soft);
+}
 .history-link { color: var(--accent); text-decoration: none; font-weight: 500; }
 .history-link:hover { color: var(--accent-hover); text-decoration: underline; }
 .muted { color: var(--text-muted); }
+
+/* Единые состояния рабочих модулей */
+.module-guidance,
+.module-progress-summary {
+    margin-bottom: 0.75rem;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: var(--surface-hover);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+.module-progress-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    background: var(--surface-elevated);
+    box-shadow: var(--shadow-sm);
+}
+
+.module-progress-summary strong { color: var(--text); }
+.module-progress-summary.is-ready {
+    background: var(--success-soft);
+    border-color: rgba(26, 107, 71, 0.3);
+}
+.module-progress-summary.is-ready strong { color: var(--success); }
+
+.module-empty-state {
+    display: flex;
+    min-height: 180px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 1.5rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+.module-empty-state strong { color: var(--text); font-size: 1rem; }
+
+.module-action-hint {
+    min-height: 1.1rem;
+    margin-top: 0.45rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+}
+.module-action-hint.is-ready { color: var(--success); }
+.module-action-hint.is-loading { color: var(--accent-hover); font-weight: 600; }
+
+.module-history-link {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    line-height: 1.4;
+    text-align: left;
+    cursor: pointer;
+}
+.module-history-link:hover { color: var(--accent); text-decoration: underline; }
+.module-history-link:focus-visible {
+    outline: 3px solid rgba(var(--accent-rgb), 0.28);
+    outline-offset: 3px;
+    border-radius: 3px;
+}
+.module-message-group {
+    border-radius: var(--radius);
+    transition: background 0.3s, box-shadow 0.3s;
+}
+.module-message-highlight {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 5px var(--accent-soft);
+}
+
+.selected-file-meta {
+    margin-top: 0.75rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: var(--surface-hover);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+.selected-file-meta strong { color: var(--text); }
+
+.result-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+.result-heading h3 { margin: 0; }
+.result-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.result-actions .btn-sm { margin-top: 0; }
+
+.history-link.is-active {
+    color: var(--accent-hover);
+    font-weight: 700;
+}
+
+@media (max-width: 640px) {
+    .module-guidance,
+    .module-progress-summary {
+        padding: 0.6rem 0.7rem;
+        font-size: 0.8rem;
+    }
+
+    .module-empty-state {
+        min-height: 140px;
+        padding: 1rem;
+    }
+
+    .result-heading {
+        display: block;
+    }
+
+    .result-actions {
+        margin-top: 0.75rem;
+    }
+
+    .result-actions .btn {
+        flex: 1 1 auto;
+    }
+}
+
+/* Экономист: быстрый старт и понятная обратная связь в чате */
+.fact-updated-date {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 400;
+}
+
+.main--economist {
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    height: calc(100vh - 131px);
+    height: calc(100dvh - 131px);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.main--economist .module-header {
+    flex: 0 0 auto;
+}
+
+.economist-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+.economist-layout .sidebar {
+    align-self: start;
+}
+
+.economist-chat {
+    height: 100%;
+    min-height: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+}
+
+.economist-chat .chat-messages {
+    height: 0;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.economist-chat-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.economist-chat-heading h3 {
+    margin-bottom: 0.25rem;
+}
+
+.economist-welcome-title {
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+}
+
+.economist-examples {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+}
+
+.economist-example {
+    width: 100%;
+    min-height: 3.25rem;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: var(--surface-hover);
+    color: var(--accent-hover);
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    line-height: 1.3;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.economist-example-item {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.economist-example-item small {
+    display: block;
+    margin-top: 0.4rem;
+    padding: 0 0.15rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    line-height: 1.35;
+}
+
+.economist-example:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-muted);
+}
+
+.economist-example:focus-visible,
+.economist-chat-form input:focus-visible,
+.economist-chat-form .btn:focus-visible {
+    outline: 3px solid rgba(var(--accent-rgb), 0.28);
+    outline-offset: 2px;
+}
+
+.economist-request-status {
+    min-height: 1.35rem;
+    margin: -0.25rem 0 0.65rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.economist-request-status.loading {
+    opacity: 1;
+    pointer-events: auto;
+    color: var(--accent-hover);
+    font-weight: 600;
+}
+
+.economist-request-status.loading::before {
+    content: '';
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    margin-right: 0.45rem;
+    vertical-align: -0.08rem;
+    border: 2px solid var(--accent-muted);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: status-spin 0.7s linear infinite;
+}
+
+.economist-request-status.ok { color: var(--success); }
+.economist-request-status.error { color: var(--danger); }
+
+.economist-chat-form .btn:disabled {
+    background: var(--border);
+    color: var(--surface-elevated);
+    box-shadow: none;
+    cursor: not-allowed;
+}
+
+.economist-form-hint {
+    margin-top: 0.4rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.economist-compact-examples {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.economist-compact-examples > span {
+    margin-right: 0.1rem;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.economist-compact-examples button {
+    padding: 0.25rem 0.55rem;
+    border: 1px solid var(--border-light);
+    border-radius: 999px;
+    background: var(--surface-hover);
+    color: var(--accent-hover);
+    font: inherit;
+    font-size: 0.75rem;
+    line-height: 1.25;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.economist-compact-examples button:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-muted);
+}
+
+.economist-compact-examples button:focus-visible {
+    outline: 3px solid rgba(var(--accent-rgb), 0.28);
+    outline-offset: 2px;
+}
+
+@media (max-width: 700px) {
+    .economist-examples {
+        grid-template-columns: 1fr;
+    }
+
+    .economist-welcome {
+        margin-right: 0;
+    }
+
+    .economist-chat .chat-messages {
+        height: 420px;
+        min-height: 420px;
+        max-height: 420px;
+        overflow-y: auto;
+    }
+
+    .economist-chat-form {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .economist-chat-form input[type="text"],
+    .economist-chat-form .btn {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 900px) {
+    .main--economist {
+        display: block;
+        height: auto;
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .economist-layout {
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .economist-chat {
+        height: auto;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+}
+
+/* Полноэкранный рабочий блок: Юрист, Закупки, Торги, Секретарь */
+.main--module-full {
+    max-width: none;
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    height: calc(100vh - 131px);
+    height: calc(100dvh - 131px);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.main--module-full .module-header {
+    flex: 0 0 auto;
+}
+
+.module-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    align-items: stretch;
+    overflow: hidden;
+}
+
+.module-layout .sidebar {
+    align-self: start;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.module-chat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    margin-bottom: 0;
+    overflow: hidden;
+}
+
+.module-chat .chat-messages,
+.module-chat .protocol-output {
+    height: 0;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+@media (max-width: 700px) {
+    .module-chat .chat-messages,
+    .module-chat .protocol-output {
+        height: 420px;
+        min-height: 420px;
+        max-height: 420px;
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 900px) {
+    .main--module-full {
+        display: block;
+        height: auto;
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .module-layout {
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .module-layout .sidebar {
+        max-height: none;
+        overflow-y: visible;
+    }
+
+    .module-chat {
+        height: auto;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+}
 
 code {
     font-size: 0.8em;

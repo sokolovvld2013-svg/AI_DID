@@ -1,0 +1,46 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - img "Логотип ФГУП «Дирекция по инвестиционной деятельности»" [ref=e4]
+      - heading "ИИ-помощник ФГУП \"ДИД\"" [level=1] [ref=e5]
+    - navigation [ref=e6]:
+      - link "Экономист" [ref=e7] [cursor=pointer]:
+        - /url: /economist
+      - link "Юрист" [ref=e8] [cursor=pointer]:
+        - /url: /lawyer
+      - link "Закупка" [ref=e9] [cursor=pointer]:
+        - /url: /procurement
+      - link "Торги" [ref=e10] [cursor=pointer]:
+        - /url: /tenders
+      - link "Секретарь" [ref=e11] [cursor=pointer]:
+        - /url: /secretary
+  - main [ref=e12]:
+    - generic [ref=e13]:
+      - heading "Юрист" [level=2] [ref=e14]
+      - paragraph [ref=e15]: Проверю договор на риски и проконсультирую по внутренним нормативным документам.
+      - tablist "Режим работы" [ref=e16]:
+        - tab "Проверка договора" [selected] [ref=e17] [cursor=pointer]
+        - tab "Внутренние нормативные документы" [ref=e18] [cursor=pointer]
+    - generic [ref=e19]:
+      - complementary [ref=e20]:
+        - generic [ref=e21]:
+          - heading "Договор" [level=3] [ref=e22]
+          - generic [ref=e23]:
+            - paragraph [ref=e24]: DOCX, TXT, PDF (до 50 МБ)
+            - button "Загрузить договор" [ref=e25] [cursor=pointer]
+          - status [ref=e26]
+          - list [ref=e27]:
+            - listitem [ref=e28]: Договор не загружен
+        - generic [ref=e29]:
+          - heading "История вопросов" [level=3] [ref=e30]
+          - list [ref=e31]:
+            - listitem [ref=e32]: Нет вопросов
+      - generic [ref=e33]:
+        - heading "Проверка договора" [level=3] [ref=e34]
+        - status [ref=e35]: 1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.
+        - generic [ref=e37]:
+          - strong [ref=e38]: Результат появится здесь
+          - generic [ref=e39]: Загрузите договор, чтобы начать проверку.
+        - button "Проверить" [disabled] [ref=e41] [cursor=pointer]
+        - paragraph [ref=e42]: Сначала загрузите договор.
+  - contentinfo [ref=e43]: ФГУП "ДИД"

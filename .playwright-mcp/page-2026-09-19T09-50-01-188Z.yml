@@ -1,0 +1,65 @@
+- generic [active] [ref=f8e1]:
+  - banner [ref=f8e2]:
+    - generic [ref=f8e3]:
+      - img "Логотип ФГУП «Дирекция по инвестиционной деятельности»" [ref=f8e4]
+      - heading "ИИ-помощник ФГУП \"ДИД\"" [level=1] [ref=f8e5]
+    - navigation [ref=f8e6]:
+      - link "Экономист" [ref=f8e7] [cursor=pointer]:
+        - /url: /economist
+      - link "Юрист" [ref=f8e8] [cursor=pointer]:
+        - /url: /lawyer
+      - link "Закупка" [ref=f8e9] [cursor=pointer]:
+        - /url: /procurement
+      - link "Торги" [ref=f8e10] [cursor=pointer]:
+        - /url: /tenders
+      - link "Секретарь" [ref=f8e11] [cursor=pointer]:
+        - /url: /secretary
+  - main [ref=f8e12]:
+    - generic [ref=f8e13]:
+      - heading "Торги" [level=2] [ref=f8e14]
+      - paragraph [ref=f8e15]: Помогу с проверкой документации по аренде государственного имущества (135-ФЗ, Приказ ФАС №147). Проконсультирую по законодательству.
+      - tablist "Режим работы" [ref=f8e16]:
+        - tab "Проверка торговой документации" [selected] [ref=f8e17] [cursor=pointer]
+        - tab "Экспертное мнение" [ref=f8e18] [cursor=pointer]
+    - generic [ref=f8e19]:
+      - complementary [ref=f8e20]:
+        - status [ref=f8e21]:
+          - strong [ref=f8e22]: "Комплект документов: 0 из 3"
+          - generic [ref=f8e23]: Загрузите недостающие документы для проверки.
+        - generic [ref=f8e24]:
+          - heading "Торговая документация" [level=3] [ref=f8e25]
+          - generic [ref=f8e26]:
+            - paragraph [ref=f8e27]: DOCX (до 50 МБ)
+            - button "Загрузить документ" [ref=f8e28] [cursor=pointer]
+          - status [ref=f8e29]
+          - list [ref=f8e30]:
+            - listitem [ref=f8e31]: Документ не загружен
+        - generic [ref=f8e32]:
+          - heading "Выписка из ЕГРН" [level=3] [ref=f8e33]
+          - generic [ref=f8e34]:
+            - paragraph [ref=f8e35]: PDF (до 50 МБ)
+            - button "Загрузить документ" [ref=f8e36] [cursor=pointer]
+          - status [ref=f8e37]
+          - list [ref=f8e38]:
+            - listitem [ref=f8e39]: Документ не загружен
+        - generic [ref=f8e40]:
+          - heading "Согласование сделки" [level=3] [ref=f8e41]
+          - generic [ref=f8e42]:
+            - paragraph [ref=f8e43]: PDF (до 50 МБ)
+            - button "Загрузить документ" [ref=f8e44] [cursor=pointer]
+          - status [ref=f8e45]
+          - list [ref=f8e46]:
+            - listitem [ref=f8e47]: Документ не загружен
+        - generic [ref=f8e48]:
+          - heading "История вопросов" [level=3] [ref=f8e49]
+          - list [ref=f8e50]:
+            - listitem [ref=f8e51]: Нет вопросов
+      - generic [ref=f8e52]:
+        - heading "Проверка торговой документации" [level=3] [ref=f8e53]
+        - status [ref=f8e54]: Соберите комплект из трёх документов, затем запустите проверку.
+        - generic [ref=f8e56]:
+          - strong [ref=f8e57]: Результат появится здесь
+          - generic [ref=f8e58]: Загрузите три обязательных документа.
+        - button "Проверить" [disabled] [ref=f8e60] [cursor=pointer]
+        - paragraph [ref=f8e61]: Загружено 0 из 3 документов.
+  - contentinfo [ref=f8e62]: ФГУП "ДИД"

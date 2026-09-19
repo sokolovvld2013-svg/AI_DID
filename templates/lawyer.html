@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Юрист — ИИ-помощник ФГУП "ДИД"{% endblock %}
+{% block main_class %}main--module-full{% endblock %}
 
 {% block content %}
 <section class="module-header">
@@ -11,7 +12,7 @@
     </div>
 </section>
 
-<div class="grid-2">
+<div class="grid-2 module-layout">
     <aside class="sidebar">
         <div class="card" id="contract-card">
             <h3>Договор</h3>
@@ -57,7 +58,7 @@
                 {% for item in history %}
                 <li>
                     <time>{{ item.timestamp }}</time>
-                    <p class="history-query">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</p>
+                    <button type="button" class="history-query module-history-link" data-history-index="{{ loop.index0 }}">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</button>
                 </li>
                 {% else %}
                 <li class="muted">Нет вопросов</li>
@@ -66,17 +67,21 @@
         </div>
     </aside>
 
-    <section class="chat-section card">
+    <section class="chat-section card module-chat">
         <h3 id="chat-title">Проверка договора</h3>
-        <div class="chat-messages" id="chat-messages"></div>
+        <div class="module-guidance" id="module-guidance" role="status">1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.</div>
+        <div class="chat-messages" id="chat-messages">
+            <div class="module-empty-state" id="chat-empty-state"><strong>Результат появится здесь</strong><span>Загрузите договор, чтобы начать проверку.</span></div>
+        </div>
         <form class="chat-form lawyer-check-form" id="chat-form">
             <input type="text" id="chat-input" class="lawyer-chat-input hidden" placeholder="Задайте вопрос по внутренним нормативным документам…" autocomplete="off">
-            <button type="submit" class="btn btn-primary" id="chat-submit" disabled>Проверить</button>
+            <button type="submit" class="btn btn-primary" id="chat-submit" aria-describedby="chat-action-hint" disabled>Проверить</button>
         </form>
+        <p class="module-action-hint" id="chat-action-hint">Сначала загрузите договор.</p>
     </section>
 </div>
 {% endblock %}
 
 {% block scripts %}
-<script src="/static/js/lawyer.js?v=1"></script>
+<script src="/static/js/lawyer.js?v=2"></script>
 {% endblock %}

@@ -1,0 +1,65 @@
+- generic [active] [ref=f10e1]:
+  - banner [ref=f10e2]:
+    - generic [ref=f10e3]:
+      - img "Логотип ФГУП «Дирекция по инвестиционной деятельности»" [ref=f10e4]
+      - heading "ИИ-помощник ФГУП \"ДИД\"" [level=1] [ref=f10e5]
+    - navigation [ref=f10e6]:
+      - link "Экономист" [ref=f10e7] [cursor=pointer]:
+        - /url: /economist
+      - link "Юрист" [ref=f10e8] [cursor=pointer]:
+        - /url: /lawyer
+      - link "Закупка" [ref=f10e9] [cursor=pointer]:
+        - /url: /procurement
+      - link "Торги" [ref=f10e10] [cursor=pointer]:
+        - /url: /tenders
+      - link "Секретарь" [ref=f10e11] [cursor=pointer]:
+        - /url: /secretary
+  - main [ref=f10e12]:
+    - generic [ref=f10e13]:
+      - heading "Торги" [level=2] [ref=f10e14]
+      - paragraph [ref=f10e15]: Помогу с проверкой документации по аренде государственного имущества (135-ФЗ, Приказ ФАС №147). Проконсультирую по законодательству.
+      - tablist "Режим работы" [ref=f10e16]:
+        - tab "Проверка торговой документации" [selected] [ref=f10e17] [cursor=pointer]
+        - tab "Экспертное мнение" [ref=f10e18] [cursor=pointer]
+    - generic [ref=f10e19]:
+      - complementary [ref=f10e20]:
+        - status [ref=f10e21]:
+          - strong [ref=f10e22]: "Комплект документов: 0 из 3"
+          - generic [ref=f10e23]: Обязательна только торговая документация. Выписка ЕГРН и согласование сделки — по желанию.
+        - generic [ref=f10e24]:
+          - heading "Торговая документация" [level=3] [ref=f10e25]
+          - generic [ref=f10e26]:
+            - paragraph [ref=f10e27]: DOCX (до 50 МБ)
+            - button "Загрузить документ" [ref=f10e28] [cursor=pointer]
+          - status [ref=f10e29]
+          - list [ref=f10e30]:
+            - listitem [ref=f10e31]: Документ не загружен
+        - generic [ref=f10e32]:
+          - heading "Выписка из ЕГРН" [level=3] [ref=f10e33]
+          - generic [ref=f10e34]:
+            - paragraph [ref=f10e35]: PDF (до 50 МБ)
+            - button "Загрузить документ" [ref=f10e36] [cursor=pointer]
+          - status [ref=f10e37]
+          - list [ref=f10e38]:
+            - listitem [ref=f10e39]: Документ не загружен
+        - generic [ref=f10e40]:
+          - heading "Согласование сделки" [level=3] [ref=f10e41]
+          - generic [ref=f10e42]:
+            - paragraph [ref=f10e43]: PDF (до 50 МБ)
+            - button "Загрузить документ" [ref=f10e44] [cursor=pointer]
+          - status [ref=f10e45]
+          - list [ref=f10e46]:
+            - listitem [ref=f10e47]: Документ не загружен
+        - generic [ref=f10e48]:
+          - heading "История вопросов" [level=3] [ref=f10e49]
+          - list [ref=f10e50]:
+            - listitem [ref=f10e51]: Нет вопросов
+      - generic [ref=f10e52]:
+        - heading "Проверка торговой документации" [level=3] [ref=f10e53]
+        - status [ref=f10e54]: Загрузите торговую документацию — единственный обязательный документ. Выписку ЕГРН и согласование сделки можно добавить по желанию.
+        - generic [ref=f10e56]:
+          - strong [ref=f10e57]: Результат появится здесь
+          - generic [ref=f10e58]: Загрузите торговую документацию — обязательный документ для проверки.
+        - button "Проверить" [disabled] [ref=f10e60] [cursor=pointer]
+        - paragraph [ref=f10e61]: Загрузите торговую документацию — единственный обязательный документ.
+  - contentinfo [ref=f10e62]: ФГУП "ДИД"

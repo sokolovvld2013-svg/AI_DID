@@ -53,8 +53,9 @@ router = APIRouter(prefix="/tenders", tags=["tenders"])
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
 CHECK_QUESTION = (
-    "Проверь комплект торговой документации (аукцион, выписка ЕГРН, согласование) "
-    "и сформируй отчёт о проверке с замечаниями."
+    "Проверь торговую документацию на соответствии требованиям торгов "
+    "(135-ФЗ, Приказ ФАС № 147/23) и сформируй отчёт о проверке с замечаниями. "
+    "Если загружены выписка из ЕГРН и согласование сделки — сверь с ними данные документации."
 )
 
 ZONE_LABELS = {
@@ -141,7 +142,7 @@ async def documents_status(request: Request):
         summary["loaded"] = True
         summary["filename"] = meta.get("filename") or summary.get("filename")
         result["zones"][zone] = summary
-    if not all(result["zones"].get(z, {}).get("loaded") for z in ZONES):
+    if not (result["zones"].get("auction") or {}).get("loaded"):
         result["all_loaded"] = False
     return result
 
@@ -194,7 +195,7 @@ async def upload_approval(request: Request, file: UploadFile = File(...)):
 
 @router.post("/query")
 async def query_check(request: Request, body: TendersQuery):
-    """Проверка комплекта торговой документации (требуются все 3 файла)."""
+    """Проверка торговой документации (обязателен только файл торговой документации)."""
     _check_access(request)
     sid = get_session_id(request)
     question = (body.question or CHECK_QUESTION).strip() or CHECK_QUESTION
@@ -218,27 +219,38 @@ async def _query_check(session_id: str, question: str) -> dict:
     if not all_loaded(sid):
         raise HTTPException(
             400,
-            "Загрузите все три документа: торговую документацию (DOCX), "
-            "выписку из ЕГРН (PDF) и согласование сделки (PDF).",
+            "Загрузите торговую документацию (DOCX) — это единственный "
+            "обязательный документ для проверки.",
         )
 
     docs = get_documents(sid)
-    parsed_docs: dict[str, dict] = {}
-    for zone in ZONES:
-        meta = docs.get(zone)
-        if not meta:
-            clear_documents(sid)
-            raise HTTPException(400, "Документы устарели. Загрузите файлы заново.")
-        parsed = get_by_doc_id(meta["doc_id"])
-        if not parsed:
-            clear_documents(sid)
-            raise HTTPException(400, "Документы устарели. Загрузите файлы заново.")
-        parsed_docs[zone] = parsed
+    auction_meta = docs.get("auction")
+    if not auction_meta:
+        clear_documents(sid)
+        raise HTTPException(400, "Документы устарели. Загрузите файлы заново.")
+    parsed_auction = get_by_doc_id(auction_meta["doc_id"])
+    if not parsed_auction:
+        clear_documents(sid)
+        raise HTTPException(400, "Документы устарели. Загрузите файлы заново.")
+
+    parsed_egrn = None
+    egrn_meta = docs.get("egrn")
+    if egrn_meta:
+        parsed_egrn = get_by_doc_id(egrn_meta["doc_id"])
+        if not parsed_egrn:
+            parsed_egrn = None
+
+    parsed_approval = None
+    approval_meta = docs.get("approval")
+    if approval_meta:
+        parsed_approval = get_by_doc_id(approval_meta["doc_id"])
+        if not parsed_approval:
+            parsed_approval = None
 
     context, citations, validation = build_check_context(
-        parsed_docs["auction"],
-        parsed_docs["egrn"],
-        parsed_docs["approval"],
+        parsed_auction,
+        parsed_egrn,
+        parsed_approval,
     )
 
     try:

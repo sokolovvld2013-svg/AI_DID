@@ -1,0 +1,38 @@
+- generic [active] [ref=f3e1]:
+  - banner [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - img "Логотип ФГУП «Дирекция по инвестиционной деятельности»" [ref=f3e4]
+      - heading "ИИ-помощник ФГУП \"ДИД\"" [level=1] [ref=f3e5]
+    - navigation [ref=f3e6]:
+      - link "Экономист" [ref=f3e7] [cursor=pointer]:
+        - /url: /economist
+      - link "Юрист" [ref=f3e8] [cursor=pointer]:
+        - /url: /lawyer
+      - link "Закупка" [ref=f3e9] [cursor=pointer]:
+        - /url: /procurement
+      - link "Торги" [ref=f3e10] [cursor=pointer]:
+        - /url: /tenders
+      - link "Секретарь" [ref=f3e11] [cursor=pointer]:
+        - /url: /secretary
+  - main [ref=f3e12]:
+    - generic [ref=f3e13]:
+      - heading "Секретарь" [level=2] [ref=f3e14]
+      - paragraph [ref=f3e15]: Транскрибация аудиозаписей совещаний и формирование протоколов.
+    - generic [ref=f3e16]:
+      - complementary [ref=f3e17]:
+        - generic [ref=f3e18]:
+          - heading "Загрузка аудио" [level=3] [ref=f3e19]
+          - generic [ref=f3e20]:
+            - paragraph [ref=f3e21]: Перетащите файл или выберите
+            - paragraph [ref=f3e22]: .mp3, .wav, .m4a, .ogg, .flac (до 100 МБ)
+            - button "Выбрать файл" [ref=f3e23] [cursor=pointer]
+          - status [ref=f3e24]
+          - paragraph [ref=f3e25]: Обычно обработка занимает 5–15 минут. Не закрывайте страницу до сообщения «Готово».
+        - generic [ref=f3e26]:
+          - heading "История протоколов" [level=3] [ref=f3e27]
+          - list [ref=f3e28]:
+            - listitem [ref=f3e29]: Нет записей
+      - generic [ref=f3e30]:
+        - heading "Протокол совещания" [level=3] [ref=f3e32]
+        - paragraph [ref=f3e34]: Загрузите аудиофайл для формирования протокола
+  - contentinfo [ref=f3e35]: ФГУП "ДИД"
