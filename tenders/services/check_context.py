@@ -94,8 +94,8 @@ def _format_checks(validation: dict[str, Any]) -> str:
 
 def build_check_context(
     auction: dict[str, Any],
-    egrn: dict[str, Any],
-    approval: dict[str, Any],
+    egrn: dict[str, Any] | None = None,
+    approval: dict[str, Any] | None = None,
 ) -> tuple[str, list[dict[str, Any]], dict[str, Any]]:
     validation = run_all_validations(auction, egrn, approval)
 
@@ -109,6 +109,8 @@ def build_check_context(
     context_len = 0
 
     for num, key, doc in docs:
+        if not doc:
+            continue
         label = DOC_LABELS.get(key, key)
         filename = doc.get("filename") or label
         fields_json = json.dumps(doc.get("fields") or {}, ensure_ascii=False, indent=0)

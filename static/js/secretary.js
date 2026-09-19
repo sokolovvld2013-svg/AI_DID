@@ -3,6 +3,10 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     const output = document.getElementById('protocol-output');
+    const audioMeta = document.getElementById('audio-meta');
+    const protocolActions = document.getElementById('protocol-actions');
+    let currentProtocol = '';
+    let currentFilename = '';
 
     const STORAGE_KEY = 'secretary_last_protocol';
 
@@ -23,6 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         output.innerHTML = App.formatMarkdownSimple(protocol);
+        currentProtocol = String(protocol);
+        currentFilename = filename || 'Протокол совещания';
+        protocolActions?.classList.remove('hidden');
 
         output.scrollTop = 0;
 
@@ -101,6 +108,12 @@ document.addEventListener('DOMContentLoaded', () => {
     async function processAudio(file) {
 
         document.getElementById('audio-name').textContent = file.name;
+        if (audioMeta) {
+            const sizeMb = (file.size / (1024 * 1024)).toFixed(file.size >= 10 * 1024 * 1024 ? 1 : 2);
+            const extension = file.name.includes('.') ? file.name.split('.').pop().toUpperCase() : 'Аудио';
+            audioMeta.innerHTML = `<strong>${escapeHtml(file.name)}</strong><br>Формат: ${escapeHtml(extension)} · Размер: ${sizeMb} МБ`;
+            audioMeta.classList.remove('hidden');
+        }
 
         App.setFileProcessing({
             statusId: 'upload-status',
@@ -138,7 +151,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 : e.message;
 
-            if (output) output.innerHTML = `<p class="status error">${msg}</p>`;
+            if (output) {
+                output.innerHTML = '';
+                const error = document.createElement('p');
+                error.className = 'status error';
+                error.textContent = msg;
+                output.appendChild(error);
+            }
 
             App.setStatus('upload-status', msg, 'error', { zoneId: 'audio-drop' });
 
@@ -175,6 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!fileId) return;
 
         App.setStatus('upload-status', 'Загрузка протокола…', 'loading');
+        document.querySelectorAll('.history-link').forEach(item => item.classList.remove('is-active'));
+        link.classList.add('is-active');
 
         try {
 
@@ -194,6 +215,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
         }
 
+    });
+
+    document.getElementById('copy-protocol')?.addEventListener('click', async () => {
+        if (!currentProtocol) return;
+        try {
+            await navigator.clipboard.writeText(currentProtocol);
+            App.setStatus('upload-status', 'Протокол скопирован', 'ok');
+        } catch (_) {
+            App.setStatus('upload-status', 'Не удалось скопировать протокол', 'error');
+        }
+    });
+
+    document.getElementById('download-protocol')?.addEventListener('click', () => {
+        if (!currentProtocol) return;
+        const blob = new Blob([currentProtocol], { type: 'text/plain;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        const base = currentFilename.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]+/g, '_') || 'protocol';
+        link.download = `${base}.txt`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+    });
+
+    document.getElementById('new-protocol')?.addEventListener('click', () => {
+        currentProtocol = '';
+        currentFilename = '';
+        protocolActions?.classList.add('hidden');
+        if (output) output.innerHTML = '<p class="muted">Загрузите аудиофайл для формирования протокола</p>';
+        const audioName = document.getElementById('audio-name');
+        if (audioName) audioName.textContent = '';
+        audioMeta?.classList.add('hidden');
+        App.setStatus('upload-status', '', '');
+        document.getElementById('audio-file')?.click();
     });
 
 

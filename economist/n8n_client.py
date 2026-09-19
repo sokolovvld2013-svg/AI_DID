@@ -399,6 +399,7 @@ def _render_data_table(
     total_label: str | None = None,
     total_row: dict[str, Any] | None = None,
     table_class: str = "economist-table",
+    fact_updated_date: str = "",
 ) -> str:
     if not records and not total_row:
         return ""
@@ -426,7 +427,10 @@ def _render_data_table(
         for idx, rec in enumerate(all_records)
     ]
 
-    header = "".join(f"<th>{html_module.escape(c)}</th>" for c in cols)
+    header = "".join(
+        f"<th>{html_module.escape(f'Факт (обновлён {fact_updated_date})' if c == 'Факт' and fact_updated_date else c)}</th>"
+        for c in cols
+    )
     if show_remainder:
         header += "<th>Остаток</th>"
     return (
@@ -435,7 +439,10 @@ def _render_data_table(
     )
 
 
-def render_economist_report_html(report: dict[str, Any]) -> str:
+def render_economist_report_html(
+    report: dict[str, Any],
+    fact_updated_date: str = "",
+) -> str:
     """HTML-отчёт по объекту: доходы, расходы, финансовый результат."""
     parts: list[str] = ['<div class="economist-report">']
 
@@ -457,6 +464,7 @@ def render_economist_report_html(report: dict[str, Any]) -> str:
                 preferred_cols=_ITEM_FIELD_ORDER,
                 total_label=section.get("total_label"),
                 total_row=section.get("total"),
+                fact_updated_date=fact_updated_date,
             )
         )
 
@@ -486,12 +494,16 @@ def render_economist_report_html(report: dict[str, Any]) -> str:
 def render_economist_html(
     records: list[dict[str, Any]],
     report: dict[str, Any] | None = None,
+    fact_updated_date: str = "",
 ) -> str:
     if report:
-        html = render_economist_report_html(report)
+        html = render_economist_report_html(
+            report,
+            fact_updated_date=fact_updated_date,
+        )
         if html.strip():
             return html
-    return render_economist_table_html(records)
+    return render_economist_table_html(records, fact_updated_date=fact_updated_date)
 
 
 def _collect_article_records(data: Any) -> list[dict[str, Any]]:
@@ -557,9 +569,16 @@ def _format_article_record(record: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def render_economist_table_html(records: list[dict[str, Any]]) -> str:
+def render_economist_table_html(
+    records: list[dict[str, Any]],
+    fact_updated_date: str = "",
+) -> str:
     """HTML-таблица для чата (генерируется на сервере)."""
-    return _render_data_table(records, preferred_cols=_ARTICLE_FIELD_ORDER)
+    return _render_data_table(
+        records,
+        preferred_cols=_ARTICLE_FIELD_ORDER,
+        fact_updated_date=fact_updated_date,
+    )
 
 
 def _is_js_object_string(text: str) -> bool:
@@ -785,5 +804,14 @@ async def ask_economist_n8n(
         len(resp.content or b""),
     )
     text, records, report = _parse_response_body(resp)
-    table_html = render_economist_html(records, report)
+    fact_updated_date = ""
+    if any("Факт" in record for record in records):
+        from economist.fact_sheet import get_fact_sheet_update_date
+
+        fact_updated_date = await get_fact_sheet_update_date(fact_sheet_url)
+    table_html = render_economist_html(
+        records,
+        report,
+        fact_updated_date=fact_updated_date,
+    )
     return text, records, table_html

@@ -6,7 +6,7 @@
     <title>{% block title %}ИИ-помощник ФГУП "ДИД"{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=9">
+    <link rel="stylesheet" href="/static/css/style.css?v=17">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -24,7 +24,7 @@
         </nav>
     </header>
 
-    <main class="main">
+    <main class="main {% block main_class %}{% endblock %}">
         {% block content %}{% endblock %}
     </main>
 

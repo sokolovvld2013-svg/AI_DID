@@ -29,5 +29,6 @@ def clear_documents(session_id: str) -> None:
 
 
 def all_loaded(session_id: str) -> bool:
+    """Готовность к проверке: обязательна только торговая документация."""
     docs = _docs_by_session.get(session_id) or {}
-    return all(zone in docs for zone in ZONES)
+    return "auction" in docs

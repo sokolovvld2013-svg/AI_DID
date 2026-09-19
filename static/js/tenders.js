@@ -6,9 +6,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const chatMessages = document.getElementById("chat-messages");
     const chatTitle = document.getElementById("chat-title");
     const verificationBanner = document.getElementById("verification-banner");
+    const actionHint = document.getElementById("chat-action-hint");
+    const guidance = document.getElementById("module-guidance");
+    const progressSummary = document.getElementById("tenders-progress");
 
     const CHECK_QUESTION =
-        "Проверь комплект торговой документации и сформируй отчёт о проверке с замечаниями.";
+        "Проверь торговую документацию на соответствие требованиям торгов (135-ФЗ, Приказ ФАС №147/23) и сформируй отчёт о проверке с замечаниями.";
     const CHECK_USER_LABEL = "Проверка документации";
 
     const ZONES = [
@@ -46,6 +49,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     let mode = "check";
     let allLoaded = false;
+    let loadedCount = 0;
+    let requestPending = false;
 
     function safeText(s) {
         const t = stripSiteUrls(s || "");
@@ -60,7 +65,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function updateChatAvailability() {
         const checkMode = mode === "check";
-        const disabled = checkMode && !allLoaded;
+        const disabled = requestPending || (checkMode ? !allLoaded : !chatInput?.value.trim());
 
         if (chatForm) {
             chatForm.classList.toggle("procurement-check-form", checkMode);
@@ -81,6 +86,20 @@ document.addEventListener("DOMContentLoaded", () => {
             chatSubmit.disabled = disabled;
             chatSubmit.textContent = checkMode ? "Проверить" : "Спросить";
         }
+        if (actionHint) {
+            actionHint.className = "module-action-hint";
+            if (requestPending) {
+                actionHint.textContent = checkMode ? "Проверяю торговую документацию…" : "Формирую ответ…";
+                actionHint.classList.add("is-loading");
+            } else if (checkMode && !allLoaded) {
+                actionHint.textContent = "Загрузите торговую документацию — единственный обязательный документ.";
+            } else if (checkMode) {
+                actionHint.textContent = "Торговая документация загружена. Можно запускать проверку.";
+                actionHint.classList.add("is-ready");
+            } else {
+                actionHint.textContent = chatInput?.value.trim() ? "Вопрос готов к отправке." : "Введите вопрос по законодательству об аренде.";
+            }
+        }
     }
 
     function setMode(nextMode) {
@@ -100,6 +119,9 @@ document.addEventListener("DOMContentLoaded", () => {
             showVerificationBanner(null);
         }
         updateChatAvailability();
+        if (guidance) guidance.textContent = mode === "check"
+            ? "Загрузите торговую документацию — единственный обязательный документ. Выписку ЕГРН и согласование сделки можно добавить по желанию."
+            : "Задайте вопрос по законодательству об аренде государственного имущества.";
     }
 
     document.querySelectorAll(".procurement-mode-btn").forEach((btn) => {
@@ -107,6 +129,25 @@ document.addEventListener("DOMContentLoaded", () => {
             setMode(btn.getAttribute("data-tab") || "check");
         });
     });
+    chatInput?.addEventListener("input", updateChatAvailability);
+
+    function removeEmptyState() { document.getElementById("chat-empty-state")?.remove(); }
+    function historyTargetId(index) { return `tenders-history-${index}`; }
+    function scrollToHistory(index) {
+        const target = document.getElementById(historyTargetId(index));
+        if (!target || !chatMessages) return;
+        const top = target.offsetTop;
+        chatMessages.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+        target.classList.remove("module-message-highlight");
+        void target.offsetWidth;
+        target.classList.add("module-message-highlight");
+        setTimeout(() => target.classList.remove("module-message-highlight"), 1800);
+    }
+    function bindHistoryLinks() {
+        document.querySelectorAll(".module-history-link").forEach(button => {
+            button.onclick = () => scrollToHistory(button.dataset.historyIndex);
+        });
+    }
 
     function renderFileInfo(infoId, name, cadastral) {
         const el = document.getElementById(infoId);
@@ -124,13 +165,21 @@ document.addEventListener("DOMContentLoaded", () => {
             const resp = await fetch("/tenders/status");
             const data = await resp.json().catch(() => ({}));
             allLoaded = Boolean(data.all_loaded);
+            loadedCount = 0;
             for (const z of ZONES) {
                 const zone = (data.zones || {})[z.key] || {};
                 if (zone.loaded) {
+                    loadedCount += 1;
                     renderFileInfo(z.infoId, safeText(zone.filename) || "Документ", zone.cadastral);
                 } else {
                     renderFileInfo(z.infoId, null);
                 }
+            }
+            if (progressSummary) {
+                progressSummary.classList.toggle("is-ready", allLoaded);
+                progressSummary.innerHTML = allLoaded
+                    ? `<strong>Комплект документов: ${loadedCount} из 3</strong><span>Торговая документация загружена — можно запускать проверку. Остальное — по желанию.</span>`
+                    : `<strong>Комплект документов: ${loadedCount} из 3</strong><span>Обязательна только торговая документация. Выписка ЕГРН и согласование сделки — по желанию.</span>`;
             }
             updateChatAvailability();
         } catch (e) {
@@ -257,9 +306,12 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!question) return;
 
         const userLabel = mode === "check" ? CHECK_USER_LABEL : question;
+        removeEmptyState();
         App.addMessage("chat-messages", userLabel, "user");
         if (mode !== "check") chatInput.value = "";
         chatForm.classList.add("loading");
+        requestPending = true;
+        updateChatAvailability();
 
         try {
             const endpoint = mode === "expert" ? "/tenders/expert/query" : "/tenders/query";
@@ -277,11 +329,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(data.detail || resp.statusText || "Ошибка запроса");
             }
             showBotReply(data.answer, data.citations || [], data.verification, mode);
-            refreshHistory();
+            await refreshHistory();
+            await loadChatHistory();
         } catch (err) {
             showBotReply(safeText(err.message) || "Ошибка запроса", [], null, mode);
         } finally {
             chatForm.classList.remove("loading");
+            requestPending = false;
+            updateChatAvailability();
         }
     });
 
@@ -293,13 +348,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!list) return;
             list.innerHTML = data.history.length
                 ? data.history
-                      .map((h) => {
+                      .map((h, index) => {
                           const isCheck = (h.mode || "check") === "check";
                           const q = isCheck ? CHECK_USER_LABEL : safeText(h.query);
-                          return `<li><time>${h.timestamp}</time><p class="history-query">${escapeHtml(q.length > 60 ? q.slice(0, 60) + "…" : q)}</p></li>`;
+                           return `<li><time>${h.timestamp}</time><button type="button" class="history-query module-history-link" data-history-index="${index}">${escapeHtml(q.length > 60 ? q.slice(0, 60) + "…" : q)}</button></li>`;
                       })
                       .join("")
                 : '<li class="muted">Нет вопросов</li>';
+            bindHistoryLinks();
         } catch (e) {
             console.error("refreshHistory", e);
         }
@@ -312,17 +368,27 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!chatMessages || !data.history || !data.history.length) return;
             chatMessages.innerHTML = "";
             const items = [...data.history].reverse();
-            for (const h of items) {
+            for (const [index, h] of items.entries()) {
                 const isCheck = (h.mode || "check") === "check";
                 const label = isCheck ? CHECK_USER_LABEL : safeText(h.query);
-                App.addMessage("chat-messages", label, "user");
+                const group = document.createElement("div");
+                group.className = "module-message-group";
+                group.id = historyTargetId(data.history.length - 1 - index);
+                chatMessages.appendChild(group);
+                const user = document.createElement("div");
+                user.className = "message message-text user";
+                user.textContent = label;
+                group.appendChild(user);
                 showBotReply(
                     h.response,
                     h.citations || [],
                     h.verification || null,
                     h.mode || "check",
                 );
+                const bot = chatMessages.lastElementChild;
+                if (bot && bot !== group) group.appendChild(bot);
             }
+            bindHistoryLinks();
         } catch (e) {
             console.error("loadChatHistory", e);
         }
@@ -330,5 +396,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     refreshStatus();
     loadChatHistory();
+    bindHistoryLinks();
     setMode("check");
 });
