@@ -32,6 +32,7 @@ from economist.n8n_client import (
     _is_meaningless_text,
     ask_economist_n8n,
     is_test_webhook_url,
+    records_are_empty,
 )
 
 
@@ -41,6 +42,11 @@ logger = logging.getLogger(__name__)
 ECONOMIST_CHAT_ERROR = (
     "Не удалось получить ответ. Попробуйте уточнить формулировку вопроса "
     "или повторить запрос позже."
+)
+
+ECONOMIST_NO_DATA = (
+    "Данные по вашему запросу не найдены или пусты. "
+    "Попробуйте переформулировать запрос: уточните статью, объект или период."
 )
 
 router = APIRouter(prefix="/economist", tags=["economist"])
@@ -72,6 +78,25 @@ def _economist_error_reply(query: str, session_id: str) -> dict:
         "html": "",
         "render": "text",
         "intent": "error",
+    }
+
+
+def _economist_no_data_reply(query: str, session_id: str) -> dict:
+    """Ответ в чат, когда данные не найдены или нулевые."""
+    economist_history.add(
+        session_id,
+        query,
+        ECONOMIST_NO_DATA,
+        intent="empty",
+        html="",
+        render="text",
+    )
+    return {
+        "answer": ECONOMIST_NO_DATA,
+        "records": [],
+        "html": "",
+        "render": "text",
+        "intent": "empty",
     }
 
 
@@ -196,6 +221,10 @@ async def query(req: QueryRequest, request: Request):
     if _is_meaningless_text(response_text) and not records and not table_html:
         logger.warning("n8n вернул пустой ответ (%r) для запроса: %s", response_text, message[:80])
         return _economist_error_reply(message, sid)
+
+    if records and records_are_empty(records):
+        logger.warning("n8n вернул пустые/нулевые данные для запроса: %s", message[:80])
+        return _economist_no_data_reply(message, sid)
 
 
 

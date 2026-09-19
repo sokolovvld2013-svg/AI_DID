@@ -926,6 +926,18 @@ body.app-file-processing .upload-zone.is-processing * {
 }
 .module-action-hint.is-ready { color: var(--success); }
 .module-action-hint.is-loading { color: var(--accent-hover); font-weight: 600; }
+.module-action-hint.is-loading::before {
+    content: '';
+    display: inline-block;
+    width: 0.8rem;
+    height: 0.8rem;
+    margin-right: 0.45rem;
+    vertical-align: -0.08rem;
+    border: 2px solid var(--accent-muted);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: status-spin 0.7s linear infinite;
+}
 
 .module-history-link {
     display: block;

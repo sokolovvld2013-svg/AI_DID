@@ -224,8 +224,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 **Продакшен (фон):**
 
 ```bash
-nohup uvicorn main:app --host 0.0.0.0 --port 8000 > logs/uvicorn.log 2>&1 &
-tail -f logs/uvicorn.log
+nohup uvicorn main:app --host 0.0.0.0 --port 8000 > logs/uvicorn.log 2>&1 & tail -f logs/uvicorn.log
 ```
 
 На продакшене **без** `--reload`. После обновления кода **перезапускайте** uvicorn — иначе новые маршруты и правки API не подхватятся.
