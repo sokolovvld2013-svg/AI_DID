@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (actionHint) {
             actionHint.className = 'module-action-hint';
             if (requestPending) {
-                actionHint.textContent = checkMode ? 'Проверяю договор…' : 'Формирую ответ…';
+                actionHint.textContent = 'Формирую ответ. Это может занять некоторое время…';
                 actionHint.classList.add('is-loading');
             } else if (checkMode && !contractLoaded) {
                 actionHint.textContent = 'Сначала загрузите договор.';

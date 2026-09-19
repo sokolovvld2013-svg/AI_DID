@@ -46,6 +46,7 @@ logs/*
 procurement/cache/
 tenders/cache/
 Защита проекта/
+.playwright-mcp
 
 # Загружаемые пользователем файлы
 *.xlsx

@@ -336,6 +336,24 @@ def _cell_is_empty(val: Any) -> bool:
     return False
 
 
+_NO_DATA_COLUMNS = ("Факт", "Текущий лимит", "Годовой лимит", "Остаток")
+
+
+def records_are_empty(records: list[dict[str, Any]]) -> bool:
+    """Все значения в записях пустые или нулевые — данные по факту отсутствуют."""
+    for rec in records:
+        for col in _NO_DATA_COLUMNS:
+            val = rec.get(col)
+            if _cell_is_empty(val):
+                continue
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                if float(val) != 0:
+                    return False
+                continue
+            return False
+    return True
+
+
 def _column_has_data(col: str, records: list[dict[str, Any]]) -> bool:
     return any(not _cell_is_empty(rec.get(col)) for rec in records)
 
@@ -427,10 +445,7 @@ def _render_data_table(
         for idx, rec in enumerate(all_records)
     ]
 
-    header = "".join(
-        f"<th>{html_module.escape(f'Факт (обновлён {fact_updated_date})' if c == 'Факт' and fact_updated_date else c)}</th>"
-        for c in cols
-    )
+    header = "".join(f"<th>{html_module.escape(c)}</th>" for c in cols)
     if show_remainder:
         header += "<th>Остаток</th>"
     return (

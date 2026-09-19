@@ -89,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (actionHint) {
             actionHint.className = "module-action-hint";
             if (requestPending) {
-                actionHint.textContent = checkMode ? "Проверяю торговую документацию…" : "Формирую ответ…";
+                actionHint.textContent = "Формирую ответ. Это может занять некоторое время…";
                 actionHint.classList.add("is-loading");
             } else if (checkMode && !allLoaded) {
                 actionHint.textContent = "Загрузите торговую документацию — единственный обязательный документ.";
