@@ -389,6 +389,27 @@ def _is_section_break_line(lines: list[str], i: int) -> bool:
     return True
 
 
+_CONTINUATION_HEADING_RE = re.compile(
+    r"^(\s*(?:\*\*)?(?:🔴|🟡)\s*[^\n]{0,40}?)\s*"
+    r"[\(（]\s*продолжени[ея]\s*[\)）]\s*(?::)?(?:\*\*)?\s*$",
+    flags=re.IGNORECASE,
+)
+
+
+def drop_continuation_headings(text: str) -> str:
+    """Убрать заголовки-дубликаты категорий вида «🔴 Критические замечания (продолжение)».
+
+    После удаления списки категорий склеиваются в один непрерывный блок,
+    а renumber_ordered_lists перенумерует их сквозной нумерацией.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    return "\n".join(
+        line for line in lines if not _CONTINUATION_HEADING_RE.match(line.strip())
+    )
+
+
 def renumber_ordered_lists(text: str) -> str:
     """Нумеровать только абзацы-пункты списка (законченная мысль), не даты и не «п. 17.1»."""
     if not text:
@@ -465,6 +486,7 @@ def clean_llm_display_text(text: str) -> str:
     s = merge_orphan_list_numbers(s)
     s = ensure_paragraph_breaks(s)
     s = ensure_remark_field_breaks(s)
+    s = drop_continuation_headings(s)
     s = renumber_ordered_lists(s)
     s = bold_conclusion_headings(s)
     s = strip_unpaired_markdown(s)
