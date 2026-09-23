@@ -15,7 +15,7 @@ from lawyer.doc_processor import load_document
 logger = logging.getLogger(__name__)
 
 # Увеличивать при изменении логики извлечения текста (инвалидация disk cache).
-PARSE_VERSION = 2
+PARSE_VERSION = 3
 
 SECTION_KEYS = {
     1: "general",
@@ -87,6 +87,26 @@ def _classify_section(num: int, title: str) -> str:
     return f"section_{num}"
 
 
+def _section_match_score(match: re.Match[str]) -> int:
+    """Оценка «правдоподобности» заголовка раздела.
+
+    Оглавление и вложенные заголовки (например, «Раздел 2. Потолки» внутри
+    сметы/ТЗ) ломают выбор «последнего вхождения». Настоящие заголовки
+    документации обычно содержат «№» и известное название раздела
+    (_TITLE_HINTS), поэтому они получают больший вес.
+    """
+    header = match.group(0).lower()
+    title = (match.group("title") or "").strip().lower()
+    key = SECTION_KEYS.get(int(match.group("num")))
+    score = 0
+    if "№" in header or "#" in header:
+        score += 10
+    for hint, hint_key in _TITLE_HINTS:
+        if hint in title:
+            score += 50 if hint_key == key else 20
+    return score
+
+
 def split_sections(full_text: str) -> dict[str, dict[str, Any]]:
     """Разбивает текст на разделы по заголовкам «РАЗДЕЛ № N» и «ПРОЕКТ ДОГОВОРА»."""
     text = full_text.replace("\r\n", "\n").replace("\r", "\n")
@@ -96,11 +116,22 @@ def split_sections(full_text: str) -> dict[str, dict[str, Any]]:
     if not raw_matches:
         return {}
 
-    # Оставляем последнее вхождение каждого номера раздела (оглавление — выше по тексту)
-    by_num: dict[int, re.Match[str]] = {}
+    # Для каждого номера раздела выбираем самое «правдоподобное» вхождение:
+    # оглавление идёт выше настоящего заголовка, а вложенные подзаголовки
+    # (смета/ТЗ) идут ниже и не должны подменять реальный раздел.
+    best_by_num: dict[int, re.Match[str]] = {}
     for match in raw_matches:
-        by_num[int(match.group("num"))] = match
-    matches = sorted(by_num.values(), key=lambda m: m.start())
+        num = int(match.group("num"))
+        current = best_by_num.get(num)
+        if current is None or (
+            _section_match_score(match),
+            match.start(),
+        ) >= (
+            _section_match_score(current),
+            current.start(),
+        ):
+            best_by_num[num] = match
+    matches = sorted(best_by_num.values(), key=lambda m: m.start())
 
     sections: dict[str, dict[str, Any]] = {}
     for i, match in enumerate(matches):
