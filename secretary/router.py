@@ -7,17 +7,28 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 
 from core.llm_errors import LLMUserFacingError
 from fastapi.responses import HTMLResponse
+<<<<<<< HEAD
 from fastapi.templating import Jinja2Templates
 
 from config import ALLOWED_AUDIO_EXT, BASE_DIR, MAX_AUDIO_SIZE, SECRETARY_UPLOAD_DIR
 from core.history import secretary_history
 from core.session import get_session_id
+=======
+
+from config import ALLOWED_AUDIO_EXT, MAX_AUDIO_SIZE, SECRETARY_UPLOAD_DIR
+from core.history import secretary_history
+from core.session import get_session_id
+from core.templates import templates
+>>>>>>> fcd02a2 (1)
 from secretary.summarizer import build_protocol
 from secretary.transcriber import transcribe
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/secretary", tags=["secretary"])
+<<<<<<< HEAD
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+=======
+>>>>>>> fcd02a2 (1)
 
 
 def _validate_audio(file: UploadFile) -> None:

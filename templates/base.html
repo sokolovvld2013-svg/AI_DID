@@ -3,23 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
     <title>{% block title %}ИИ-помощник ФГУП "ДИД"{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
     <link rel="stylesheet" href="/static/css/style.css?v=19">
+=======
+    <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
+    <link rel="icon" href="/static/img/favicon.png" type="image/png">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/png">
+    <link rel="stylesheet" href="/static/css/style.css?v=31">
+>>>>>>> fcd02a2 (1)
     {% block head %}{% endblock %}
 </head>
 <body>
     <header class="header">
         <div class="header-brand">
+<<<<<<< HEAD
             <img src="/static/img/logo.png" alt="Логотип ФГУП «Дирекция по инвестиционной деятельности»" class="logo-img">
             <h1 class="logo-text">ИИ-помощник ФГУП "ДИД"</h1>
+=======
+            <img src="/static/img/logo.png" alt="Логотип {{ company_name() }}" class="logo-img">
+            <h1 class="logo-text">ИИ-помощник <span data-company-name>{{ company_name() }}</span></h1>
+>>>>>>> fcd02a2 (1)
         </div>
         <nav class="nav">
             <a href="/economist" class="nav-link {% if active == 'economist' %}active{% endif %}">Экономист</a>
             <a href="/lawyer" class="nav-link {% if active == 'lawyer' %}active{% endif %}">Юрист</a>
+<<<<<<< HEAD
             <a href="/procurement" class="nav-link {% if active == 'procurement' %}active{% endif %}">Закупка</a>
             <a href="/tenders" class="nav-link {% if active == 'tenders' %}active{% endif %}">Торги</a>
+=======
+            <a href="/procurement" class="nav-link {% if active == 'procurement' %}active{% endif %}">Специалист по закупкам</a>
+            <a href="/tenders" class="nav-link {% if active == 'tenders' %}active{% endif %}">Специалист по торгам</a>
+>>>>>>> fcd02a2 (1)
             <a href="/secretary" class="nav-link {% if active == 'secretary' %}active{% endif %}">Секретарь</a>
         </nav>
     </header>
@@ -29,10 +46,68 @@
     </main>
 
     <footer class="footer">
+<<<<<<< HEAD
         <span>ФГУП "ДИД"</span>
     </footer>
 
     <script src="/static/js/common.js?v=20"></script>
+=======
+        <span data-company-name>{{ company_name() }}</span>
+        <button type="button" class="settings-gear" id="settingsOpen" title="Настройки" aria-label="Настройки">
+            <span class="settings-gear-icon" aria-hidden="true"></span>
+        </button>
+    </footer>
+
+    <div class="settings-overlay" id="settingsOverlay" hidden>
+        <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+            <div class="settings-head">
+                <h2 id="settingsTitle">Настройки</h2>
+                <button type="button" class="settings-close" id="settingsClose" aria-label="Закрыть настройки">&times;</button>
+            </div>
+
+            <div class="settings-body">
+                <section class="settings-section">
+                    <h3>Модель ИИ</h3>
+                    <p class="settings-hint">
+                        Цена указана за 1&nbsp;млн выходных токенов.
+                        <span id="settingsPricesAt"></span>
+                    </p>
+                    <div class="settings-table-wrap">
+                        <table class="settings-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col" class="settings-col-pick"><span class="sr-only">Выбор</span></th>
+                                    <th scope="col">Модель</th>
+                                    <th scope="col">Цена выхода</th>
+                                    <th scope="col">Параметры</th>
+                                    <th scope="col">Контекст</th>
+                                </tr>
+                            </thead>
+                            <tbody id="settingsModels"></tbody>
+                        </table>
+                    </div>
+                    <p class="settings-error" id="settingsError" hidden></p>
+                </section>
+
+                <section class="settings-section">
+                    <h3>Наименование компании</h3>
+                    <p class="settings-hint">Выводится в шапке, подвале и заголовке вкладки.</p>
+                    <input type="text" id="settingsCompany" class="settings-input" maxlength="120"
+                           autocomplete="off">
+                </section>
+            </div>
+
+            <div class="settings-foot">
+                <span class="settings-current" id="settingsCurrent"></span>
+                <button type="button" class="btn btn-secondary" id="settingsCancel">Отмена</button>
+                <button type="button" class="btn btn-primary" id="settingsSave">Сохранить</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/common.js?v=20"></script>
+    <script src="/static/js/settings.js?v=5"></script>
+>>>>>>> fcd02a2 (1)
     {% block scripts %}{% endblock %}
 </body>
 </html>

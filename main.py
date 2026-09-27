@@ -8,6 +8,11 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from core.session import SessionMiddleware
+<<<<<<< HEAD
+=======
+from core.settings import get_company_name
+from core.settings_router import router as settings_router
+>>>>>>> fcd02a2 (1)
 
 from config import (
     BASE_DIR,
@@ -31,6 +36,10 @@ from lawyer.router import router as lawyer_router
 from procurement.router import legacy_router, router as procurement_router
 from secretary.router import router as secretary_router
 from tenders.router import router as tenders_router
+<<<<<<< HEAD
+=======
+from secretary.anomizer.src.anomizer import router as anomizer_router
+>>>>>>> fcd02a2 (1)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -101,13 +110,35 @@ async def lifespan(app: FastAPI):
             preload_model()
         except Exception as e:
             logger.warning("Предзагрузка Whisper не удалась: %s", e)
+<<<<<<< HEAD
+=======
+    try:
+        from secretary.anomizer.src.anomizer.availability import (
+            missing_dependencies,
+            unavailable_message,
+        )
+
+        _missing = missing_dependencies()
+        if _missing:
+            logger.warning(
+                "Модуль Секретарь (обезличивание) недоступен — /api/anonymize "
+                "вернёт 503. %s",
+                unavailable_message(_missing),
+            )
+    except Exception as e:
+        logger.warning("Проверка модуля обезличивания не удалась: %s", e)
+>>>>>>> fcd02a2 (1)
     logger.info("Приложение запущено")
     yield
     logger.info("Приложение остановлено")
 
 
 app = FastAPI(
+<<<<<<< HEAD
     title='ИИ-помощник ФГУП "ДИД"',
+=======
+    title=f'ИИ-помощник {get_company_name()}',
+>>>>>>> fcd02a2 (1)
     description="Модули: Экономист, Юрист, Закупка, Торги, Секретарь",
     lifespan=lifespan,
 )
@@ -122,6 +153,11 @@ app.include_router(lawyer_router)
 app.include_router(procurement_router)
 app.include_router(tenders_router)
 app.include_router(legacy_router)
+<<<<<<< HEAD
+=======
+app.include_router(anomizer_router)
+app.include_router(settings_router)
+>>>>>>> fcd02a2 (1)
 
 
 @app.get("/favicon.ico", include_in_schema=False)

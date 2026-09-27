@@ -1,14 +1,28 @@
 {% extends "base.html" %}
+<<<<<<< HEAD
 {% block title %}Закупка 223-ФЗ — ИИ-помощник ФГУП "ДИД"{% endblock %}
+=======
+{% block title %}Закупка 223-ФЗ — ИИ-помощник {{ company_name() }}{% endblock %}
+>>>>>>> fcd02a2 (1)
 {% block main_class %}main--module-full{% endblock %}
 
 {% block content %}
 <section class="module-header">
+<<<<<<< HEAD
     <h2>Закупка 223-ФЗ</h2>
     <p>Помогу с проверкой закупочной документации. Проконсультирую по законодательству о закупках.</p>
     <div class="procurement-mode-switch" role="tablist" aria-label="Режим работы">
         <button type="button" class="btn procurement-mode-btn active" data-tab="check" role="tab" aria-selected="true">Проверка закупочной документации</button>
         <button type="button" class="btn procurement-mode-btn" data-tab="expert" role="tab" aria-selected="false">Экспертное мнение</button>
+=======
+    <h2>Закупка 223-ФЗ <span class="module-title-note">(Помогу с проверкой закупочной документации. Проконсультирую по законодательству о закупках.)</span></h2>
+    <div class="module-header-row">
+        <div class="procurement-mode-switch" role="tablist" aria-label="Режим работы">
+            <button type="button" class="btn procurement-mode-btn active" data-tab="check" role="tab" aria-selected="true">Проверка закупочной документации</button>
+            <button type="button" class="btn procurement-mode-btn" data-tab="expert" role="tab" aria-selected="false">Экспертное мнение</button>
+        </div>
+        <div class="module-guidance" id="module-guidance" role="status"><span class="guidance-inner"><span class="guidance-text">1. Загрузите закупочную документацию. 2. Дождитесь обработки. 3. Запустите проверку.</span> <span class="privacy-note">Убедитесь, что персональная и иная чувствительная информация не уходит в интернет! Для обезличивания документов воспользуйтесь разделом Секретарь.</span></span></div>
+>>>>>>> fcd02a2 (1)
     </div>
 </section>
 
@@ -70,7 +84,10 @@
 
     <section class="chat-section card module-chat">
         <h3 id="chat-title">Проверка закупочной документации</h3>
+<<<<<<< HEAD
         <div class="module-guidance" id="module-guidance" role="status">1. Загрузите закупочную документацию. 2. Дождитесь обработки. 3. Запустите проверку.</div>
+=======
+>>>>>>> fcd02a2 (1)
         <div class="chat-messages" id="chat-messages">
             <div class="module-empty-state" id="chat-empty-state"><strong>Результат появится здесь</strong><span>Загрузите документацию, чтобы начать проверку.</span></div>
         </div>
@@ -84,5 +101,9 @@
 {% endblock %}
 
 {% block scripts %}
+<<<<<<< HEAD
 <script src="/static/js/procurement.js?v=13"></script>
+=======
+<script src="/static/js/procurement.js?v=14"></script>
+>>>>>>> fcd02a2 (1)
 {% endblock %}

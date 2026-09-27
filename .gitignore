@@ -46,7 +46,11 @@ logs/*
 procurement/cache/
 tenders/cache/
 Защита проекта/
+<<<<<<< HEAD
 .playwright-mcp
+=======
+.playwright-mcp/
+>>>>>>> fcd02a2 (1)
 
 # Загружаемые пользователем файлы
 *.xlsx

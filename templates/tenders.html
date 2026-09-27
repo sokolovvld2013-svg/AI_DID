@@ -1,14 +1,28 @@
 {% extends "base.html" %}
+<<<<<<< HEAD
 {% block title %}Торги — ИИ-помощник ФГУП "ДИД"{% endblock %}
+=======
+{% block title %}Торги — ИИ-помощник {{ company_name() }}{% endblock %}
+>>>>>>> fcd02a2 (1)
 {% block main_class %}main--module-full{% endblock %}
 
 {% block content %}
 <section class="module-header">
+<<<<<<< HEAD
     <h2>Торги</h2>
     <p>Помогу с проверкой документации по аренде государственного имущества (135-ФЗ, Приказ ФАС №147). Проконсультирую по законодательству.</p>
     <div class="procurement-mode-switch" role="tablist" aria-label="Режим работы">
         <button type="button" class="btn procurement-mode-btn active" data-tab="check" role="tab" aria-selected="true">Проверка торговой документации</button>
         <button type="button" class="btn procurement-mode-btn" data-tab="expert" role="tab" aria-selected="false">Экспертное мнение</button>
+=======
+    <h2>Торги <span class="module-title-note">(Помогу с проверкой документации по аренде государственного имущества (135-ФЗ, Приказ ФАС №147). Проконсультирую по законодательству.)</span></h2>
+    <div class="module-header-row">
+        <div class="procurement-mode-switch" role="tablist" aria-label="Режим работы">
+            <button type="button" class="btn procurement-mode-btn active" data-tab="check" role="tab" aria-selected="true">Проверка торговой документации</button>
+            <button type="button" class="btn procurement-mode-btn" data-tab="expert" role="tab" aria-selected="false">Экспертное мнение</button>
+        </div>
+        <div class="module-guidance" id="module-guidance" role="status"><span class="guidance-inner"><span class="guidance-text">Загрузите торговую документацию — единственный обязательный документ. Выписку ЕГРН и согласование сделки можно добавить по желанию.</span> <span class="privacy-note">Убедитесь, что персональная и иная чувствительная информация не уходит в интернет! Для обезличивания документов воспользуйтесь разделом Секретарь.</span></span></div>
+>>>>>>> fcd02a2 (1)
     </div>
 </section>
 
@@ -77,7 +91,10 @@
 
     <section class="chat-section card module-chat">
         <h3 id="chat-title">Проверка торговой документации</h3>
+<<<<<<< HEAD
         <div class="module-guidance" id="module-guidance" role="status">Загрузите торговую документацию — единственный обязательный документ. Выписку ЕГРН и согласование сделки можно добавить по желанию.</div>
+=======
+>>>>>>> fcd02a2 (1)
         <div class="tenders-verification-banner hidden" id="verification-banner" role="status"></div>
         <div class="chat-messages" id="chat-messages">
             <div class="module-empty-state" id="chat-empty-state"><strong>Результат появится здесь</strong><span>Загрузите торговую документацию — обязательный документ для проверки.</span></div>
@@ -92,5 +109,9 @@
 {% endblock %}
 
 {% block scripts %}
+<<<<<<< HEAD
 <script src="/static/js/tenders.js?v=8"></script>
+=======
+<script src="/static/js/tenders.js?v=9"></script>
+>>>>>>> fcd02a2 (1)
 {% endblock %}

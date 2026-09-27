@@ -4,11 +4,17 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
+<<<<<<< HEAD
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from config import (
     BASE_DIR,
+=======
+from pydantic import BaseModel
+
+from config import (
+>>>>>>> fcd02a2 (1)
     CHECK_LLM_CONTEXT_CHARS,
     MAX_LAWYER_CITATION_CHARS,
     MAX_LAWYER_LLM_CONTEXT_CHARS,
@@ -20,6 +26,10 @@ from core.history import procurement_history
 from core.llm_client import get_llm
 from core.llm_errors import LLMUserFacingError
 from core.session import get_session_id
+<<<<<<< HEAD
+=======
+from core.templates import templates
+>>>>>>> fcd02a2 (1)
 from lawyer.citations import select_citations_for_display
 from lawyer.doc_processor import process_upload
 from lawyer.router import _select_relevant_hits
@@ -47,7 +57,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/procurement", tags=["procurement"])
 legacy_router = APIRouter(tags=["procurement"])
+<<<<<<< HEAD
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+=======
+>>>>>>> fcd02a2 (1)
 
 
 def _policy_rag():

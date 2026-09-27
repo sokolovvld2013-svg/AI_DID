@@ -74,9 +74,21 @@ body {
     font-weight: 600;
     line-height: 1.2;
     color: var(--text);
+<<<<<<< HEAD
 }
 
 .nav { display: flex; gap: 0.35rem; }
+=======
+    white-space: nowrap;
+}
+
+.nav {
+    display: flex;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+>>>>>>> fcd02a2 (1)
 
 .nav-link {
     color: var(--text-muted);
@@ -98,6 +110,31 @@ body {
     box-shadow: 0 2px 5px rgba(var(--accent-rgb), 0.22);
 }
 
+<<<<<<< HEAD
+=======
+/* Ниже 1280 px название и переключатели не помещаются в одну строку: переносим
+   навигацию под название, иначе она наезжает на текст. */
+@media (max-width: 1280px) {
+    .header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.6rem;
+        padding: 0.75rem 1.5rem;
+    }
+
+    .header-brand {
+        flex: 0 0 auto;
+        justify-content: center;
+        text-align: center;
+    }
+
+    .nav {
+        justify-content: center;
+        width: 100%;
+    }
+}
+
+>>>>>>> fcd02a2 (1)
 @media (max-width: 768px) {
     .header {
         flex-direction: column;
@@ -147,6 +184,13 @@ body {
         font-size: 1.25rem;
     }
 
+<<<<<<< HEAD
+=======
+    .module-title-note {
+        font-size: 0.85rem;
+    }
+
+>>>>>>> fcd02a2 (1)
     .module-header p {
         font-size: 0.92rem;
     }
@@ -163,11 +207,16 @@ body {
 
 .footer {
     text-align: center;
+<<<<<<< HEAD
     padding: 1rem;
+=======
+    padding: 1rem 3rem;
+>>>>>>> fcd02a2 (1)
     color: var(--text-muted);
     font-size: 0.8rem;
     border-top: 1px solid var(--border-light);
     background: var(--surface-elevated);
+<<<<<<< HEAD
 }
 
 .module-header { margin-bottom: 1.5rem; }
@@ -179,6 +228,69 @@ body {
 }
 .module-header p { color: var(--text-muted); line-height: 1.5; }
 
+=======
+    position: relative;
+}
+
+.module-header {
+    margin-bottom: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+}
+.module-header h2 {
+    font-size: 1.5rem;
+    margin-bottom: 0;
+    color: var(--text);
+    font-weight: 600;
+    line-height: 1.25;
+}
+.module-header p { color: var(--text-muted); line-height: 1.5; }
+
+/* Пояснение к блоку — сразу после его названия, обычным начертанием. */
+.module-title-note {
+    font-size: 0.92rem;
+    font-weight: 400;
+    color: var(--text-muted);
+}
+.module-header .module-guidance {
+    margin: 0;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.8rem;
+    flex: 1 1 340px;
+    min-width: 0;
+    min-height: 3.6rem;
+    display: flex;
+    align-items: center;
+}
+.module-header .module-guidance .guidance-inner {
+    display: block;
+    min-width: 0;
+}
+
+/* Пояснение выровнено по верхнему краю и по высоте с переключателями режимов. */
+.module-header-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 0.55rem 1rem;
+}
+.module-header-row > .lawyer-mode-switch,
+.module-header-row > .procurement-mode-switch {
+    flex: 0 0 auto;
+    margin-top: 0;
+    align-content: center;
+}
+
+/* Предупреждение о чувствительных данных — с новой строки. */
+.module-header .module-guidance .privacy-note {
+    display: block;
+    margin-top: 0.35rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid var(--border-light);
+}
+
+>>>>>>> fcd02a2 (1)
 .grid-2 {
     display: grid;
     grid-template-columns: 320px 1fr;
@@ -440,6 +552,16 @@ body.app-file-processing .upload-zone.is-processing * {
     color: #ffffff;
 }
 .btn-danger:hover { filter: brightness(0.92); }
+<<<<<<< HEAD
+=======
+.btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+    box-shadow: none;
+    filter: none;
+}
+.btn:disabled:hover { filter: none; }
+>>>>>>> fcd02a2 (1)
 .btn-sm { font-size: 0.8rem; padding: 0.35rem 0.75rem; margin-top: 0.75rem; }
 .btn-icon {
     background: none;
@@ -891,6 +1013,18 @@ body.app-file-processing .upload-zone.is-processing * {
     line-height: 1.45;
 }
 
+<<<<<<< HEAD
+=======
+.module-guidance .privacy-note {
+    display: block;
+    margin-top: 0.45rem;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--border-light);
+    color: var(--danger);
+    font-weight: 600;
+}
+
+>>>>>>> fcd02a2 (1)
 .module-progress-summary {
     display: flex;
     flex-direction: column;
@@ -979,6 +1113,73 @@ body.app-file-processing .upload-zone.is-processing * {
 }
 .selected-file-meta strong { color: var(--text); }
 
+<<<<<<< HEAD
+=======
+.anon-report p { margin: 0.25rem 0; }
+.anon-report .anon-file { margin-bottom: 0.5rem; }
+.anon-report .anon-summary { margin-bottom: 0.75rem; }
+.anon-report .anon-type {
+    margin: 0.5rem 0 0.75rem;
+    padding: 0.6rem 0.8rem;
+    background: var(--surface-hover);
+    border-radius: 0.5rem;
+}
+.anon-report .anon-type h4 {
+    margin: 0 0 0.35rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text);
+}
+.anon-report .anon-type .anon-type-count {
+    color: var(--accent);
+    font-weight: 700;
+}
+.anon-report .anon-type ul { list-style: none; margin: 0; padding: 0; }
+.anon-report .anon-type li {
+    font-size: 0.9rem;
+    padding: 0.15rem 0;
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+    word-break: break-word;
+}
+.anon-report .anon-type code {
+    color: var(--accent);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.anon-scope {
+    margin-top: 1rem;
+    padding: 0.75rem 0.9rem;
+    background: var(--surface-hover);
+    border-radius: 0.5rem;
+}
+.anon-scope h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text);
+}
+.anon-scope ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.anon-scope li {
+    font-size: 0.9rem;
+    padding: 0.15rem 0;
+}
+.anon-scope .anon-scope-type {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+>>>>>>> fcd02a2 (1)
 .result-heading {
     display: flex;
     align-items: flex-start;
@@ -1032,9 +1233,13 @@ body.app-file-processing .upload-zone.is-processing * {
     max-width: none;
     display: flex;
     flex-direction: column;
+<<<<<<< HEAD
     flex: 0 0 auto;
     height: calc(100vh - 131px);
     height: calc(100dvh - 131px);
+=======
+    flex: 1 1 0;
+>>>>>>> fcd02a2 (1)
     min-height: 0;
     overflow: hidden;
 }
@@ -1260,6 +1465,10 @@ body.app-file-processing .upload-zone.is-processing * {
 @media (max-width: 900px) {
     .main--economist {
         display: block;
+<<<<<<< HEAD
+=======
+        flex: 0 0 auto;
+>>>>>>> fcd02a2 (1)
         height: auto;
         min-height: 0;
         overflow: visible;
@@ -1282,9 +1491,13 @@ body.app-file-processing .upload-zone.is-processing * {
     max-width: none;
     display: flex;
     flex-direction: column;
+<<<<<<< HEAD
     flex: 0 0 auto;
     height: calc(100vh - 131px);
     height: calc(100dvh - 131px);
+=======
+    flex: 1 1 0;
+>>>>>>> fcd02a2 (1)
     min-height: 0;
     overflow: hidden;
 }
@@ -1316,8 +1529,19 @@ body.app-file-processing .upload-zone.is-processing * {
     overflow: hidden;
 }
 
+<<<<<<< HEAD
 .module-chat .chat-messages,
 .module-chat .protocol-output {
+=======
+.module-chat > h3,
+.result-heading {
+    margin-bottom: 0.5rem;
+}
+
+.module-chat .chat-messages,
+.module-chat .protocol-output,
+.module-chat .result-output {
+>>>>>>> fcd02a2 (1)
     height: 0;
     flex: 1 1 auto;
     min-height: 0;
@@ -1328,7 +1552,12 @@ body.app-file-processing .upload-zone.is-processing * {
 
 @media (max-width: 700px) {
     .module-chat .chat-messages,
+<<<<<<< HEAD
     .module-chat .protocol-output {
+=======
+    .module-chat .protocol-output,
+    .module-chat .result-output {
+>>>>>>> fcd02a2 (1)
         height: 420px;
         min-height: 420px;
         max-height: 420px;
@@ -1339,6 +1568,10 @@ body.app-file-processing .upload-zone.is-processing * {
 @media (max-width: 900px) {
     .main--module-full {
         display: block;
+<<<<<<< HEAD
+=======
+        flex: 0 0 auto;
+>>>>>>> fcd02a2 (1)
         height: auto;
         min-height: 0;
         overflow: visible;
@@ -1356,9 +1589,79 @@ body.app-file-processing .upload-zone.is-processing * {
 
     .module-chat {
         height: auto;
+<<<<<<< HEAD
         margin-bottom: 1rem;
         overflow: visible;
     }
+=======
+        min-height: 414px;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+
+    .economist-chat {
+        height: auto;
+        min-height: 414px;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+
+    /* В потоке страницы область ответов не сжимается и растёт вместе с текстом. */
+    .module-chat .chat-messages,
+    .module-chat .protocol-output,
+    .module-chat .result-output {
+        height: auto;
+        min-height: 180px;
+        flex: 0 0 auto;
+        overflow-y: visible;
+    }
+}
+
+/* На невысоких экранах контент определяет высоту страницы: подвал не перекрывает
+   рабочую область, а окно ответов растёт вместе с содержимым. */
+@media (max-height: 860px) {
+    .main--module-full,
+    .main--economist {
+        display: block;
+        flex: 0 0 auto;
+        height: auto;
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .module-layout {
+        min-height: 0;
+        overflow: visible;
+    }
+
+    .module-layout .sidebar {
+        max-height: none;
+        overflow-y: visible;
+    }
+
+    .module-chat {
+        height: auto;
+        min-height: 414px;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+
+    .economist-chat {
+        height: auto;
+        min-height: 414px;
+        margin-bottom: 1rem;
+        overflow: visible;
+    }
+
+    .module-chat .chat-messages,
+    .module-chat .protocol-output,
+    .module-chat .result-output {
+        height: auto;
+        min-height: 180px;
+        flex: 0 0 auto;
+        overflow-y: visible;
+    }
+>>>>>>> fcd02a2 (1)
 }
 
 code {
@@ -1369,7 +1672,12 @@ code {
     color: var(--accent-hover);
 }
 
+<<<<<<< HEAD
 .protocol-output {
+=======
+.protocol-output,
+.result-output {
+>>>>>>> fcd02a2 (1)
     min-height: 400px;
     padding: 1rem;
     background: var(--surface-hover);
@@ -1603,6 +1911,17 @@ body.confirm-open { overflow: hidden; }
     .lawyer-mode-switch {
         grid-template-columns: 1fr;
         max-width: none;
+<<<<<<< HEAD
+=======
+        width: 100%;
+        min-width: 0;
+    }
+
+    .module-header-row > .procurement-mode-switch,
+    .module-header-row > .lawyer-mode-switch {
+        flex: 1 1 auto;
+        min-width: 0;
+>>>>>>> fcd02a2 (1)
     }
 }
 
@@ -1695,3 +2014,222 @@ body.confirm-open { overflow: hidden; }
     background: var(--surface-hover);
     border-radius: var(--radius);
 }
+<<<<<<< HEAD
+=======
+
+/* Настройки: кнопка-шестерёнка и модальное окно */
+.settings-gear-icon {
+    display: block;
+    width: 1.15rem;
+    height: 1.15rem;
+    background-color: currentColor;
+    -webkit-mask: url("../img/cogwheel.png") center / contain no-repeat;
+    mask: url("../img/cogwheel.png") center / contain no-repeat;
+}
+.settings-gear {
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.1rem;
+    height: 2.1rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.settings-gear:hover {
+    background: var(--accent-soft);
+    border-color: var(--accent-muted);
+    color: var(--accent);
+}
+.settings-gear:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+.settings-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(var(--ink-rgb), 0.45);
+}
+.settings-overlay[hidden] { display: none; }
+
+.settings-dialog {
+    display: flex;
+    flex-direction: column;
+    width: min(880px, 100%);
+    max-height: min(88vh, 860px);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 12px 40px rgba(var(--ink-rgb), 0.28);
+}
+
+.settings-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-light);
+}
+.settings-head h2 { font-size: 1.1rem; font-weight: 600; }
+
+.settings-close {
+    border: none;
+    background: none;
+    font-size: 1.6rem;
+    line-height: 1;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 0.25rem;
+}
+.settings-close:hover { color: var(--danger); }
+
+.settings-body {
+    padding: 1.1rem 1.25rem;
+    overflow-y: auto;
+}
+.settings-section + .settings-section {
+    margin-top: 1.5rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-light);
+}
+.settings-section h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+.settings-hint {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 0.65rem;
+}
+
+.settings-table-wrap {
+    overflow-x: auto;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+}
+.settings-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+.settings-table th,
+.settings-table td {
+    padding: 0.55rem 0.7rem;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--border-light);
+}
+.settings-table thead th {
+    background: var(--surface-hover);
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.settings-table tbody tr:last-child td { border-bottom: none; }
+.settings-table tbody tr.is-selected { background: var(--accent-soft); }
+.settings-table tbody tr.is-unavailable { color: var(--text-muted); }
+.settings-col-pick { width: 2.2rem; }
+.settings-table td.settings-pick { text-align: center; }
+.settings-table input[type="radio"] {
+    width: 1.05rem;
+    height: 1.05rem;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+.settings-table input[type="radio"]:disabled { cursor: not-allowed; }
+
+.settings-model-name { font-weight: 600; display: block; }
+.settings-model-id {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+.settings-model-note {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+.settings-model-price { font-weight: 600; white-space: nowrap; }
+.settings-model-unavailable {
+    display: inline-block;
+    margin-top: 0.3rem;
+    padding: 0.1rem 0.45rem;
+    font-size: 0.72rem;
+    border-radius: 999px;
+    background: var(--warning-soft);
+    color: var(--warning);
+}
+.settings-model-link {
+    display: inline-block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: var(--accent);
+}
+.settings-model-link:hover { color: var(--accent-hover); text-decoration: underline; }
+
+.settings-input {
+    width: 100%;
+    padding: 0.55rem 0.7rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.settings-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--accent);
+}
+
+.settings-error {
+    margin-top: 0.7rem;
+    padding: 0.5rem 0.7rem;
+    font-size: 0.85rem;
+    color: var(--danger);
+    background: var(--danger-soft);
+    border-radius: var(--radius);
+}
+.settings-error[hidden] { display: none; }
+
+.settings-foot {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1.25rem;
+    border-top: 1px solid var(--border-light);
+    background: var(--surface);
+    border-radius: 0 0 var(--radius) var(--radius);
+}
+.settings-current {
+    flex: 1;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+@media (max-width: 720px) {
+    .settings-overlay { padding: 0; align-items: flex-end; }
+    .settings-dialog { max-height: 92vh; border-radius: var(--radius) var(--radius) 0 0; }
+    .settings-foot { flex-wrap: wrap; }
+    .settings-current { flex: 1 0 100%; order: -1; }
+}
+>>>>>>> fcd02a2 (1)
