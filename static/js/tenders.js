@@ -5,7 +5,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const chatSubmit = document.getElementById("chat-submit");
     const chatMessages = document.getElementById("chat-messages");
     const chatTitle = document.getElementById("chat-title");
-    const verificationBanner = document.getElementById("verification-banner");
     const actionHint = document.getElementById("chat-action-hint");
     const guidance = document.getElementById("module-guidance");
     const progressSummary = document.getElementById("tenders-progress");
@@ -115,9 +114,6 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.classList.toggle("active", isActive);
             btn.setAttribute("aria-selected", isActive ? "true" : "false");
         });
-        if (mode === "expert") {
-            showVerificationBanner(null);
-        }
         updateChatAvailability();
         const guidanceText = guidance?.querySelector(".guidance-text");
         if (guidanceText) guidanceText.textContent = mode === "check"
@@ -231,22 +227,6 @@ document.addEventListener("DOMContentLoaded", () => {
         App.setupDropZone(zone.dropId, zone.fileId, (file) => uploadZone(zone, file));
     }
 
-    function showVerificationBanner(verification) {
-        if (!verificationBanner) return;
-        if (!verification) {
-            verificationBanner.classList.add("hidden");
-            verificationBanner.textContent = "";
-            return;
-        }
-        const score = verification.score != null ? verification.score : "—";
-        const status = verification.status || "unknown";
-        const labels = { passed: "Пройдено", warnings: "Есть предупреждения", failed: "Есть ошибки" };
-        verificationBanner.className = `tenders-verification-banner tenders-verification-${status}`;
-        verificationBanner.textContent =
-            `Автопроверка: ${labels[status] || status} · оценка ${score}/100 · ` +
-            `ошибок: ${verification.errors_count || 0}, предупреждений: ${verification.warnings_count || 0}`;
-    }
-
     function formatAnswer(text, replyMode) {
         const useMode = replyMode || mode;
         return useMode === "check"
@@ -254,14 +234,9 @@ document.addEventListener("DOMContentLoaded", () => {
             : App.formatChatMarkdown(text);
     }
 
-    function showBotReply(answer, citations, verification, replyMode) {
-        const text = safeText(answer) || "Ответ пуст. Попробуйте переформулировать вопрос.";
+    function showBotReply(answer, citations, replyMode) {
+        const text = safeText(answer) || "Ответ пуст. Попробуйте переформулировать запрос.";
         const useMode = replyMode || mode;
-        if (useMode === "check") {
-            showVerificationBanner(verification);
-        } else {
-            showVerificationBanner(null);
-        }
 
         const msgDiv = document.createElement("div");
         msgDiv.className = "message bot";
@@ -329,11 +304,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (!resp.ok) {
                 throw new Error(data.detail || resp.statusText || "Ошибка запроса");
             }
-            showBotReply(data.answer, data.citations || [], data.verification, mode);
+            showBotReply(data.answer, data.citations || [], mode);
             await refreshHistory();
             await loadChatHistory();
         } catch (err) {
-            showBotReply(safeText(err.message) || "Ошибка запроса", [], null, mode);
+            showBotReply(safeText(err.message) || "Ошибка запроса", [], mode);
         } finally {
             chatForm.classList.remove("loading");
             requestPending = false;
@@ -383,7 +358,6 @@ document.addEventListener("DOMContentLoaded", () => {
                 showBotReply(
                     h.response,
                     h.citations || [],
-                    h.verification || null,
                     h.mode || "check",
                 );
                 const bot = chatMessages.lastElementChild;

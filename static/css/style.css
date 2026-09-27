@@ -761,33 +761,6 @@ body.app-file-processing .upload-zone.is-processing * {
     font-size: 0.9rem;
 }
 
-.tenders-verification-banner {
-    margin-bottom: 0.75rem;
-    padding: 0.65rem 0.85rem;
-    border-radius: var(--radius);
-    font-size: 0.9rem;
-    border: 1px solid var(--border-light);
-    background: var(--surface-hover);
-}
-
-.tenders-verification-passed {
-    background: var(--success-soft);
-    border-color: var(--success);
-    color: var(--success);
-}
-
-.tenders-verification-warnings {
-    background: var(--warning-soft);
-    border-color: var(--warning);
-    color: var(--warning);
-}
-
-.tenders-verification-failed {
-    background: var(--danger-soft);
-    border-color: var(--danger);
-    color: var(--danger);
-}
-
 /* Компактные блоки загрузки («Торги», «Закупки») */
 .compact-upload-sidebar .card:not(.history-card) {
     padding: 0.75rem;

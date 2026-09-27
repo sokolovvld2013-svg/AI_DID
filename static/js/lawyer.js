@@ -16,7 +16,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const CHECK_QUESTION =
         'Проверь договор и сформируй отчёт о проверке с замечаниями.';
-    const CHECK_USER_LABEL = 'Проверка договора';
+    const CHECK_USER_LABEL = "Проверка документации... ⚠️ Ответ носит информационный характер и не заменяет специалиста.";
 
     let mode = 'contract';
     let contractLoaded = false;
