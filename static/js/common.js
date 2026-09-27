@@ -17,6 +17,11 @@ function stripSiteUrls(text) {
 let _confirmUi = null;
 let _processingBanner = null;
 
+// Ведущий эмодзи-маркер строки отчёта (🔴/🟡/📄/📋 и т.п.). Сравнение по
+// кодовым точкам: в классе символов без флага u пара сурогат делится на две
+// половины, и эмодзи распознаётся или срезается только наполовину.
+const AUDIT_EMOJI_RE = /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{20E3}]/u;
+
 function _ensureProcessingBanner() {
     if (_processingBanner) return _processingBanner;
 
@@ -363,6 +368,25 @@ const App = {
         );
     },
 
+    // Заголовок отдельного замечания, которому модель вместо номера поставила
+    // эмодзи («🔴 Значимое расхождение…»). Отличается от заголовка секции
+    // («🔴 Критические замечания») тем, что сразу за ним идут поля Где/Суть/
+    // Обоснование. Такой пункт продолжает нумерацию списка.
+    // Эмодзи сравниваем по кодовым точкам (флаг u): в классе символов без u
+    // пара сурогат�� ��ляется на две, и эмодзи режется пополам.
+    _isAuditFindingTitle(lines, index, trimmed) {
+        const t = String(trimmed || '').trim();
+        if (!AUDIT_EMOJI_RE.test(t)) return false;
+        if (/^(?:\*\*)?(?:Критические|Важные)/i.test(t.replace(AUDIT_EMOJI_RE, ''))) return false;
+        const next = this._peekNextNonemptyLine(lines, index + 1);
+        if (!next) return false;
+        return /^(?:\*\*)?(?:Где|Суть|Обоснование)\s*:/.test(next.replace(/^\*\*/, '').trim());
+    },
+
+    _stripAuditEmoji(trimmed) {
+        return String(trimmed).replace(AUDIT_EMOJI_RE, '').trim();
+    },
+
     // Настоящая граница секции, а не перенос строки внутри пункта списка.
     // Декоративные разделители (🔴/🟡/#/📄/📋, заголовки HTML) всегда начинают секцию.
     // Текстовый заголовок («Вывод:», «Источники:») считается границей, если это
@@ -372,6 +396,7 @@ const App = {
     _isRealSectionBreak(lines, index, trimmed) {
         trimmed = trimmed || String(lines[index] || '').trim();
         if (this._isListSectionBreak(trimmed) === false) return false;
+        if (this._isAuditFindingTitle(lines, index, trimmed)) return false;
         if (/^(?:#{1,6}\s|<h[1-4][\s>]|[🔴🟡]|(?:📄|📋)\s)/i.test(trimmed)) return true;
         if (this._isHeadingOnlyLine(trimmed)) return true;
         for (let j = index - 1; j >= 0; j--) {
@@ -403,7 +428,7 @@ const App = {
             const trimmed = line.trim();
             if (!trimmed) {
                 const next = this._peekNextNonemptyLine(lines, i + 1);
-                if (inList && next && this._isNumberedListLine(next)) continue;
+                if (inList && next && (this._isNumberedListLine(next) || this._isAuditFindingTitle(lines, i + 1, next))) continue;
                 inList = false;
                 counter = 0;
                 continue;
@@ -461,13 +486,16 @@ const App = {
             const trimmed = lines[lineIndex].trim();
             if (!trimmed) {
                 const next = this._peekNextNonemptyLine(lines, lineIndex + 1);
-                if (listType === 'ol' && next && this._isNumberedListLine(next)) continue;
+                const nextIsAuditTitle = next
+                    ? this._isAuditFindingTitle(lines, lineIndex + 1, next)
+                    : false;
+                if (listType === 'ol' && next && (this._isNumberedListLine(next) || nextIsAuditTitle)) continue;
                 if (listType === 'ul' && next && this._isBulletListLine(next)) continue;
                 if (listType && next && this._isRealSectionBreak(lines, lineIndex + 1, next)) {
                     flushList();
                     continue;
                 }
-                if (listType && next && !this._isNumberedListLine(next) && !this._isBulletListLine(next)) {
+                if (listType && next && !this._isNumberedListLine(next) && !this._isBulletListLine(next) && !nextIsAuditTitle) {
                     flushList();
                 }
                 continue;
@@ -489,6 +517,14 @@ const App = {
                 olIndex += 1;
                 const body = inline(this._stripLeadingListNumber(numbered.body));
                 listItems.push(`<li>${body}</li>`);
+            } else if (this._isAuditFindingTitle(lines, lineIndex, trimmed)) {
+                // Пункт, которому модель поставила эмодзи вместо номера, —
+                // продолжает нумерацию, а не разрывает список.
+                flushPara();
+                if (listType === 'ul') flushList();
+                listType = 'ol';
+                olIndex += 1;
+                listItems.push(`<li>${inline(this._stripAuditEmoji(trimmed))}</li>`);
             } else if (listType && listItems.length && !this._isRealSectionBreak(lines, lineIndex, trimmed)) {
                 appendToLastItem(inline(trimmed));
             } else {

@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const CHECK_QUESTION =
         "Проверь закупочную документацию и сформируй отчёт о проверке с замечаниями.";
-    const CHECK_USER_LABEL = "Проверка документации";
+    const CHECK_USER_LABEL = "Проверка документации... ⚠️ Ответ носит информационный характер и не заменяет специалиста.";
 
     let mode = "check";
     let docLoaded = false;

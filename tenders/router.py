@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
@@ -103,6 +103,21 @@ def _error_reply(
 ) -> dict:
     tenders_history.add(session_id, question, message, mode=mode)
     return {"answer": message, "citations": [], "verification": None}
+
+
+def _verification_summary(validation: dict[str, Any]) -> dict[str, Any]:
+    """Сводка автопроверки для баннера — одна и та же форма в ответе и в истории.
+
+    В истории лежит полный результат проверки со списками errors/warnings,
+    а баннер ждёт errors_count/warnings_count: без счётчиков он показывал
+    «Есть ошибки · ошибок: 0» после перезагрузки страницы.
+    """
+    return {
+        "status": validation.get("status"),
+        "score": validation.get("score"),
+        "errors_count": len(validation.get("errors") or []),
+        "warnings_count": len(validation.get("warnings") or []),
+    }
 
 
 @router.get("", response_class=HTMLResponse)
@@ -265,23 +280,19 @@ async def _query_check(session_id: str, question: str) -> dict:
         )
         answer = clean_llm_display_text(raw_answer)
         citations = select_citations_for_display(answer, citations)
+        verification = _verification_summary(validation)
         tenders_history.add(
             sid,
             question,
             answer,
             mode="check",
             citations=citations,
-            verification=validation,
+            verification=verification,
         )
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
-            "verification": {
-                "status": validation.get("status"),
-                "score": validation.get("score"),
-                "errors_count": len(validation.get("errors") or []),
-                "warnings_count": len(validation.get("warnings") or []),
-            },
+            "verification": verification,
         }
     except LLMUserFacingError as e:
         logger.warning("Tenders check LLM error: %s", e.original or e)
