@@ -8,8 +8,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentResult = '';
     let currentFilename = '';
 
-    const STORAGE_KEY = 'secretary_last_protocol';
-    const STORAGE_FILE_KEY = 'secretary_last_filename';
+    const STORAGE_KEY = 'secretary_last_protocol_v2';
+    const STORAGE_FILE_KEY = 'secretary_last_filename_v2';
+    const LEGACY_STORAGE_KEYS = ['secretary_last_protocol', 'secretary_last_filename'];
 
     let mode = 'transcription';
     let requestPending = false;
@@ -83,10 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
         resultActions?.classList.remove('hidden');
         output.scrollTop = 0;
 
-        try {
-            sessionStorage.setItem(STORAGE_KEY, result);
-            if (filename) sessionStorage.setItem(STORAGE_FILE_KEY, filename);
-        } catch (_) {}
+        if (isTranscription) {
+            try {
+                sessionStorage.setItem(STORAGE_KEY, result);
+                if (filename) sessionStorage.setItem(STORAGE_FILE_KEY, filename);
+            } catch (_) {}
+        }
     }
 
     async function loadLatestProtocol() {
@@ -241,10 +244,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentFilename = fname;
                 resultActions?.classList.remove('hidden');
                 output.scrollTop = 0;
-                try {
-                    sessionStorage.setItem(STORAGE_KEY, currentResult);
-                    if (fname) sessionStorage.setItem(STORAGE_FILE_KEY, fname);
-                } catch (_) {}
                 return;
             }
         } catch (_) {}
@@ -398,6 +397,12 @@ document.addEventListener('DOMContentLoaded', () => {
         App.setStatus('upload-status', '', '');
         App.setStatus('anonymize-status', '', '');
         if (mode === 'transcription') {
+            try {
+                sessionStorage.removeItem(STORAGE_KEY);
+                sessionStorage.removeItem(STORAGE_FILE_KEY);
+            } catch (_) {}
+        }
+        if (mode === 'transcription') {
             document.getElementById('audio-file')?.click();
         } else {
             document.getElementById('doc-file')?.click();
@@ -416,6 +421,10 @@ document.addEventListener('DOMContentLoaded', () => {
             ).join('')
             : '<li class="muted">Нет записей</li>';
     }
+
+    try {
+        LEGACY_STORAGE_KEYS.forEach(key => sessionStorage.removeItem(key));
+    } catch (_) {}
 
     refreshHistory().then(loadLatestProtocol);
     setMode('transcription');
