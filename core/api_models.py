@@ -1,18 +1,18 @@
-"""Проверка моделей, которые реально доступны в API провайдеров.
+"""Каталог моделей для настроек: список проекта и сверка с API провайдера.
 
-В настройках показываются только модели, которые можно выбрать в кабинете
-проекта. Это пересечение двух источников:
+Перечень моделей, доступных стенду, задаётся в ``.env``:
+``GIGACHAT_AVAILABLE_MODELS`` и ``DEEPSEEK_AVAILABLE_MODELS`` (пустой список —
+ограничений нет). Он же определяет, что видит пользователь в настройках.
+Список нужен потому, что рабочее пространство отдаёт и закрытые freemium-модели
+(GigaChat 3 Pro, GigaChat 3 Lightning), которых нет в списке моделей проекта.
 
-* список моделей рабочего пространства (``GET /models``: у GigaChat — с учётом
-  ``GIGACHAT_SCOPE``, у DeepSeek — ``GET /models`` аккаунта);
-* разрешённые для стенда ID из ``GIGACHAT_AVAILABLE_MODELS`` /
-  ``DEEPSEEK_AVAILABLE_MODELS``.
-
-Второй список нужен потому, что рабочее пространство отдаёт и закрытые
-freemium-модели (GigaChat 3 Pro, GigaChat 3 Lightning), которых нет в списке
-моделей проекта. Если проверка API не удалась (нет сети, ключ не задан,
-таймаут), список считается неизвестным, и интерфейс показывает разрешённый
-каталог с пометкой в подсказке.
+Ответ ``GET /models`` используется только как сверка. Он зависит от версии
+SDK и адреса, с которого идёт запрос: gigachat 0.2.1 ходит в
+gigachat.devices.sberbank.ru и отдаёт старые ID (GigaChat, GigaChat-Pro,
+GigaChat-Max), а 0.2.3 — в api.giga.chat со списком нового поколения
+(GigaChat-2, GigaChat-2-Pro, GigaChat-2-Max, GigaChat-3-Ultra). Поэтому
+модель, которой нет в ответе API, из каталога не убирается — в настройках
+она остаётся видимой, а при обрыве проверки добавляется пометка.
 
 Результат кэшируется на API_MODELS_TTL секунд, чтобы открытие настроек не
 обращалось к сети при каждом клике.
@@ -146,39 +146,28 @@ def api_models(force: bool = False) -> dict[str, Any]:
 
 
 def offered_models(force: bool = False) -> list[dict[str, Any]]:
-    """Каталог моделей, отфильтрованный по реальному списку API."""
+    """Каталог моделей стенда с отметкой о сверке с API."""
     from core.settings import list_models
 
     status = api_models(force=force)
     result = []
     for model in list_models():
         provider = str(model.get("provider") or "")
+        allowed = ALLOWED_MODELS.get(provider) or []
+        if allowed and model["id"] not in allowed:
+            continue
         info = status.get(provider) or {}
         ids = info.get("ids")
-        if ids is None:
-            # Проверка не удалась — показываем только разрешённые для стенда.
-            allowed = ALLOWED_MODELS.get(provider) or []
-            if allowed and model["id"] not in allowed:
-                continue
-        elif model["id"] not in ids:
-            logger.info("Модель %s скрыта: её нет в списке API %s", model["id"], provider)
-            continue
         item = dict(model)
         item["api_checked"] = bool(info.get("checked"))
+        item["api_available"] = None if ids is None else model["id"] in ids
         result.append(item)
     return result
 
 
-def is_offered(model_id: str) -> bool | None:
-    """Доступна ли модель в API (None — проверить не удалось)."""
+def is_offered(model_id: str) -> bool:
+    """Разрешена ли модель стендом (сверка с API выбор не блокирует)."""
     from core.settings import model_provider
 
-    provider = model_provider(model_id)
-    allowed = ALLOWED_MODELS.get(provider) or []
-    if allowed and model_id not in allowed:
-        return False
-    info = api_models().get(provider) or {}
-    ids = info.get("ids")
-    if ids is None:
-        return None
-    return model_id in ids
+    allowed = ALLOWED_MODELS.get(model_provider(model_id)) or []
+    return not allowed or model_id in allowed

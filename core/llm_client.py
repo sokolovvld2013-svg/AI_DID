@@ -53,11 +53,10 @@ class GigaChatLLM(BaseLLM):
         parts.append(f"Запрос:\n{prompt}")
         user_content = "\n\n".join(parts)
 
+        # gigachat 0.2+ (в requirements.txt) ждёт модель внутри Chat.
         response = self._client.chat(
             Chat(
-                messages=[
-                    Messages(role=MessagesRole.USER, content=user_content),
-                ],
+                messages=[Messages(role=MessagesRole.USER, content=user_content)],
                 model=self._model,
             )
         )

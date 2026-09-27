@@ -64,14 +64,14 @@ async def read_models(refresh: bool = False):
 async def write_settings(payload: SettingsUpdate):
     if payload.model:
         # Псевдонимы (GigaChat-Pro и т. п.) приводим к каноническому ID,
-        # иначе проверка доступности искала бы их в списке API как новые модели.
+        # иначе проверка искала бы их в списке стенда как отдельные модели.
         canonical = canonical_model_id(payload.model) or payload.model
-        if is_offered(canonical) is False:
+        if not is_offered(canonical):
             model = find_model(canonical)
             title = model["title"] if model else canonical
             raise HTTPException(
                 status_code=400,
-                detail=f"Модель {title} недоступна в API провайдера",
+                detail=f"Модель {title} недоступна: её нет в списке моделей проекта",
             )
     try:
         update_settings(company_name=payload.company_name, model=payload.model)
