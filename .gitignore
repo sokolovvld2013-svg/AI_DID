@@ -45,12 +45,11 @@ logs/*
 !logs/.gitkeep
 procurement/cache/
 tenders/cache/
+app_settings.json
+static/img/logo_custom.*
+static/img/logo_custom.*.tmp
 Защита проекта/
-<<<<<<< HEAD
-.playwright-mcp
-=======
 .playwright-mcp/
->>>>>>> fcd02a2 (1)
 
 # Загружаемые пользователем файлы
 *.xlsx

@@ -1,4 +1,4 @@
-/** Настройки приложения: выбор модели LLM и наименование компании. */
+/** Настройки приложения: модель LLM, наименование компании, логотип. */
 (function () {
     'use strict';
 
@@ -14,8 +14,14 @@
     const errorBox = document.getElementById('settingsError');
     const currentLabel = document.getElementById('settingsCurrent');
     const pricesAt = document.getElementById('settingsPricesAt');
+    const logoPreview = document.getElementById('settingsLogoPreview');
+    const logoName = document.getElementById('settingsLogoName');
+    const logoMeta = document.getElementById('settingsLogoMeta');
+    const logoFile = document.getElementById('settingsLogoFile');
+    const logoReset = document.getElementById('settingsLogoReset');
+    const logoStatus = document.getElementById('settingsLogoStatus');
 
-    const state = { models: [], selected: '', loaded: false };
+    const state = { models: [], selected: '', loaded: false, logo: null };
     let lastFocused = null;
 
     function escapeHtml(text) {
@@ -32,6 +38,43 @@
         errorBox.hidden = !message;
     }
 
+    function formatSize(bytes) {
+        const value = Number(bytes) || 0;
+        if (value < 1024) return `${value} Б`;
+        if (value < 1024 * 1024) return `${(value / 1024).toFixed(1).replace('.', ',')} КБ`;
+        return `${(value / (1024 * 1024)).toFixed(1).replace('.', ',')} МБ`;
+    }
+
+    function showLogoStatus(message, isError) {
+        if (!logoStatus) return;
+        logoStatus.textContent = message || '';
+        logoStatus.hidden = !message;
+        logoStatus.classList.toggle('is-error', Boolean(isError));
+    }
+
+    function renderLogo(logo) {
+        state.logo = logo || null;
+        const info = state.logo || {};
+        if (logoPreview) {
+            logoPreview.src = info.url || '';
+            logoPreview.hidden = !info.url;
+        }
+        if (logoName) logoName.textContent = info.name || '';
+        if (logoMeta) {
+            const parts = [];
+            if (info.size) parts.push(formatSize(info.size));
+            if (info.updated_at) parts.push(info.updated_at);
+            if (info.is_default) parts.push('исходный файл');
+            logoMeta.textContent = parts.join(' · ');
+        }
+        if (logoReset) logoReset.hidden = Boolean(info.is_default);
+    }
+
+    function applyLogoToPage(url) {
+        if (!url) return;
+        document.querySelectorAll('.logo-img').forEach(img => { img.src = url; });
+    }
+
     function selectedRadio() {
         return modelsBody.querySelector('input[name="settingsModel"]:checked');
     }
@@ -41,8 +84,18 @@
     }
 
     function renderModels() {
+        let lastFamily = '';
         modelsBody.innerHTML = state.models
             .map(model => {
+                const family = model.provider_label || model.provider || '';
+                let groupRow = '';
+                if (family !== lastFamily) {
+                    lastFamily = family;
+                    groupRow =
+                        `<tr class="settings-group">` +
+                        `<th colspan="5" scope="colgroup">Модели ${escapeHtml(family)}</th>` +
+                        `</tr>`;
+                }
                 const checked = model.id === state.selected ? ' checked' : '';
                 const disabled = model.available ? '' : ' disabled';
                 const rowClass = [
@@ -57,12 +110,16 @@
                 const maxOut = model.max_output && !/^(—|-|не указано)$/.test(model.max_output)
                     ? `<span class="settings-model-note">вывод до ${escapeHtml(model.max_output)}</span>`
                     : '';
+                const contextNote = model.context_note
+                    ? `<span class="settings-model-note">${escapeHtml(model.context_note)}</span>`
+                    : '';
                 const paramsNote = model.params_note
                     ? `<span class="settings-model-note">${escapeHtml(model.params_note)}</span>`
                     : '';
-                const paramsLink = model.params_source
-                    ? `<a class="settings-model-link" href="${escapeHtml(model.params_source)}" target="_blank" rel="noopener">параметры</a>`
-                    : '';
+                const paramsLinks = (Array.isArray(model.params_sources) ? model.params_sources : [])
+                    .concat(model.params_source ? [{ label: 'параметры', url: model.params_source }] : [])
+                    .map(s => `<a class="settings-model-link" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.label)}</a>`)
+                    .join('');
                 const priceNote = model.price_note
                     ? `<span class="settings-model-note">${escapeHtml(model.price_note)}</span>`
                     : '';
@@ -70,6 +127,7 @@
                     ? `<span class="settings-model-note">${escapeHtml(model.price_usd_text)}</span>`
                     : '';
                 return (
+                    groupRow +
                     `<tr class="${rowClass}">` +
                     `<td class="settings-pick">` +
                     `<input type="radio" name="settingsModel" value="${escapeHtml(model.id)}"${checked}${disabled} ` +
@@ -85,8 +143,8 @@
                     `${badge}` +
                     `</td>` +
                     `<td class="settings-model-price">${escapeHtml(model.price_text)}${usdNote}</td>` +
-                    `<td>${escapeHtml(model.params)}${paramsNote}${paramsLink}</td>` +
-                    `<td>${escapeHtml(model.context)}${maxOut}</td>` +
+                    `<td>${escapeHtml(model.params)}${paramsNote}${paramsLinks}</td>` +
+                    `<td>${escapeHtml(model.context)}${contextNote}${maxOut}</td>` +
                     `</tr>`
                 );
             })
@@ -111,6 +169,7 @@
         state.models = Array.isArray(data.models) ? data.models : [];
         state.selected = data.model || '';
         companyInput.value = data.company_name || '';
+        renderLogo(data.logo);
         if (pricesAt) {
             const parts = [];
             if (data.prices_updated_at) parts.push(`Данные на ${data.prices_updated_at}`);
@@ -121,6 +180,13 @@
                     `Курс: ${rate} ₽/$ (${fx.source}${fx.as_of ? ', ' + fx.as_of : ''})`
                     + (fx.stale ? ' — не удалось обновить' : ''),
                 );
+            }
+            const api = data.api || {};
+            const failed = Object.keys(api)
+                .filter(key => api[key] && api[key].error)
+                .map(key => api[key].error);
+            if (failed.length) {
+                parts.push('список моделей в API проверить не удалось — показаны все');
             }
             pricesAt.textContent = parts.length ? parts.join('. ') + '.' : '';
         }
@@ -171,6 +237,10 @@
                 );
             }
             applyCompanyToPage(data.company_name || company);
+            if (data.logo) {
+                renderLogo(data.logo);
+                applyLogoToPage(data.logo.url);
+            }
             close();
         } catch (e) {
             showError(e.message || 'Не удалось сохранить настройки');
@@ -179,10 +249,51 @@
         }
     }
 
+    async function uploadLogo(file) {
+        showError('');
+        showLogoStatus('Загрузка…', false);
+        const form = new FormData();
+        form.append('file', file, file.name);
+        try {
+            const resp = await fetch('/api/settings/logo', { method: 'POST', body: form });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                const detail = data.detail;
+                throw new Error(
+                    Array.isArray(detail)
+                        ? detail.map(d => d.msg || String(d)).join('; ')
+                        : (detail || `HTTP ${resp.status}`),
+                );
+            }
+            renderLogo(data.logo);
+            applyLogoToPage(data.logo.url);
+            showLogoStatus('Логотип обновлён', false);
+        } catch (e) {
+            showLogoStatus(`Не удалось заменить логотип: ${e.message}`, true);
+        }
+    }
+
+    async function resetLogo() {
+        showError('');
+        showLogoStatus('Возврат исходного…', false);
+        try {
+            const resp = await fetch('/api/settings/logo', { method: 'DELETE' });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+            renderLogo(data.logo);
+            applyLogoToPage(data.logo.url);
+            showLogoStatus('Возвращён исходный логотип', false);
+        } catch (e) {
+            showLogoStatus(`Не удалось вернуть исходный логотип: ${e.message}`, true);
+        }
+    }
+
     function open() {
         lastFocused = document.activeElement;
         overlay.hidden = false;
         showError('');
+        showLogoStatus('', false);
+        if (logoFile) logoFile.value = '';
         updateCurrentLabel();
         if (!state.loaded) {
             loadSettings().catch(e => showError(`Не удалось загрузить настройки: ${e.message}`));
@@ -216,6 +327,13 @@
             save();
         }
     });
+    if (logoFile) {
+        logoFile.addEventListener('change', () => {
+            const file = logoFile.files && logoFile.files[0];
+            if (file) uploadLogo(file);
+        });
+    }
+    if (logoReset) logoReset.addEventListener('click', resetLogo);
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && !overlay.hidden) close();
     });

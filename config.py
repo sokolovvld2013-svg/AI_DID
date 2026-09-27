@@ -9,8 +9,11 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 
 # Логотип и фавиконка (положите файлы в static/img/ или укажите LOGO_SOURCE / FAVICON_SOURCE в .env)
-STATIC_LOGO = BASE_DIR / "static" / "img" / "logo.png"
-STATIC_FAVICON = BASE_DIR / "static" / "img" / "favicon.png"
+STATIC_IMG_DIR = BASE_DIR / "static" / "img"
+STATIC_LOGO = STATIC_IMG_DIR / "logo.png"
+STATIC_FAVICON = STATIC_IMG_DIR / "favicon.png"
+# Ограничение размера логотипа, загружаемого в настройках (байт)
+LOGO_MAX_BYTES = int(os.getenv("LOGO_MAX_BYTES", str(2 * 1024 * 1024)))
 
 
 def _asset_path_from_env(var_name: str, default: Path) -> Path:
@@ -35,6 +38,27 @@ GIGACHAT_EMBEDDING_MODEL = os.getenv("GIGACHAT_EMBEDDING_MODEL", "Embeddings")
 # GigaChat Embeddings: API отклоняет >514 токенов на текст; кириллица ≈0.75 токена/символ
 GIGACHAT_MAX_EMBED_TOKENS = int(os.getenv("GIGACHAT_MAX_EMBED_TOKENS", "500"))
 GIGACHAT_MAX_EMBED_CHARS = int(os.getenv("GIGACHAT_MAX_EMBED_CHARS", "480"))
+
+
+def _model_ids_from_env(var_name: str, default: str) -> list[str]:
+    """Список ID моделей через запятую (пустое значение — не ограничивать)."""
+    raw = os.getenv(var_name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+# Модели, разрешённые для этого стенда: именно они перечислены в кабинете
+# (проект GigaChat API) и в документации. Список моделей рабочего пространства
+# шире — он содержит и закрытые/fremium-модели (GigaChat 3 Pro, 3 Lightning),
+# которые в кабинете проекта не доступны, поэтому в настройках их нет.
+# Пустое значение в .env снимает ограничение.
+GIGACHAT_AVAILABLE_MODELS = _model_ids_from_env(
+    "GIGACHAT_AVAILABLE_MODELS",
+    "GigaChat-2,GigaChat-2-Pro,GigaChat-2-Max,GigaChat-3-Ultra",
+)
+DEEPSEEK_AVAILABLE_MODELS = _model_ids_from_env(
+    "DEEPSEEK_AVAILABLE_MODELS",
+    "deepseek-flash,deepseek-v4-pro",
+)
 
 # Эмбеддинги: local | openai | gigachat
 EMBEDDING_PROVIDER = os.getenv("EMBEDDING_PROVIDER", "local").lower()

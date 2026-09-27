@@ -1,20 +1,9 @@
 {% extends "base.html" %}
-<<<<<<< HEAD
-{% block title %}Юрист — ИИ-помощник ФГУП "ДИД"{% endblock %}
-=======
 {% block title %}Юрист — ИИ-помощник {{ company_name() }}{% endblock %}
->>>>>>> fcd02a2 (1)
 {% block main_class %}main--module-full{% endblock %}
 
 {% block content %}
 <section class="module-header">
-<<<<<<< HEAD
-    <h2>Юрист</h2>
-    <p>Проверю договор на риски и проконсультирую по внутренним нормативным документам.</p>
-    <div class="lawyer-mode-switch" role="tablist" aria-label="Режим работы">
-        <button type="button" class="btn lawyer-mode-btn active" data-tab="contract" role="tab" aria-selected="true">Проверка договора</button>
-        <button type="button" class="btn lawyer-mode-btn" data-tab="kb" role="tab" aria-selected="false">Внутренние нормативные документы</button>
-=======
     <h2>Юрист <span class="module-title-note">(Проверю договор на риски и проконсультирую по внутренним нормативным документам.)</span></h2>
     <div class="module-header-row">
         <div class="lawyer-mode-switch" role="tablist" aria-label="Режим работы">
@@ -22,18 +11,13 @@
             <button type="button" class="btn lawyer-mode-btn" data-tab="kb" role="tab" aria-selected="false">Внутренние нормативные документы</button>
         </div>
         <div class="module-guidance" id="module-guidance" role="status"><span class="guidance-inner"><span class="guidance-text">1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.</span> <span class="privacy-note">Убедитесь, что персональная и иная чувствительная информация не уходит в интернет! Для обезличивания документов воспользуйтесь разделом Секретарь.</span></span></div>
->>>>>>> fcd02a2 (1)
     </div>
 </section>
 
 <div class="grid-2 module-layout">
     <aside class="sidebar">
         <div class="card" id="contract-card">
-<<<<<<< HEAD
-            <h3>Договор</h3>
-=======
             <h3>Файл договора</h3>
->>>>>>> fcd02a2 (1)
             <div class="upload-zone" id="contract-drop">
                 <p>DOCX, TXT, PDF (до 50 МБ)</p>
                 <input type="file" id="contract-file" accept=".pdf,.docx,.txt" hidden>
@@ -51,15 +35,9 @@
         </div>
 
         <div class="card hidden" id="kb-card">
-<<<<<<< HEAD
-            <h3>Внутренние нормативные документы</h3>
-            <div class="upload-zone" id="doc-drop">
-                <p>DOCX, TXT, поиск по PDF не эффективен (до 50 МБ)</p>
-=======
             <h3>Документы базы</h3>
             <div class="upload-zone" id="doc-drop">
                 <p>DOCX, TXT и PDF до 50 МБ. В отсканированных PDF текст может распознаваться неточно.</p>
->>>>>>> fcd02a2 (1)
                 <input type="file" id="doc-file" accept=".pdf,.docx,.txt" hidden>
                 <button type="button" class="btn btn-secondary" onclick="document.getElementById('doc-file').click()">Загрузить документ</button>
             </div>
@@ -71,17 +49,11 @@
                     <span>{{ f.filename }}</span>
                     <button type="button" class="btn-icon delete-file" title="Удалить">×</button>
                 </li>
-<<<<<<< HEAD
-                {% endfor %}
-            </ul>
-            <button type="button" class="btn btn-danger btn-sm" id="clear-index">Очистить базу</button>
-=======
                 {% else %}
                 <li class="muted">Нет загруженных документов</li>
                 {% endfor %}
             </ul>
             <button type="button" class="btn btn-danger btn-sm" id="clear-index" {% if not files %}disabled{% endif %}>Удалить все документы</button>
->>>>>>> fcd02a2 (1)
         </div>
 
         <div class="card history-card">
@@ -100,12 +72,7 @@
     </aside>
 
     <section class="chat-section card module-chat">
-<<<<<<< HEAD
-        <h3 id="chat-title">Проверка договора</h3>
-        <div class="module-guidance" id="module-guidance" role="status">1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.</div>
-=======
         <h3 id="chat-title">Результат проверки</h3>
->>>>>>> fcd02a2 (1)
         <div class="chat-messages" id="chat-messages">
             <div class="module-empty-state" id="chat-empty-state"><strong>Результат появится здесь</strong><span>Загрузите договор, чтобы начать проверку.</span></div>
         </div>
@@ -119,9 +86,5 @@
 {% endblock %}
 
 {% block scripts %}
-<<<<<<< HEAD
-<script src="/static/js/lawyer.js?v=3"></script>
-=======
 <script src="/static/js/lawyer.js?v=5"></script>
->>>>>>> fcd02a2 (1)
 {% endblock %}

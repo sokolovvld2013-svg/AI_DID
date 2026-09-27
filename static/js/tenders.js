@@ -119,12 +119,8 @@ document.addEventListener("DOMContentLoaded", () => {
             showVerificationBanner(null);
         }
         updateChatAvailability();
-<<<<<<< HEAD
-        if (guidance) guidance.textContent = mode === "check"
-=======
         const guidanceText = guidance?.querySelector(".guidance-text");
         if (guidanceText) guidanceText.textContent = mode === "check"
->>>>>>> fcd02a2 (1)
             ? "Загрузите торговую документацию — единственный обязательный документ. Выписку ЕГРН и согласование сделки можно добавить по желанию."
             : "Задайте вопрос по законодательству об аренде государственного имущества.";
     }

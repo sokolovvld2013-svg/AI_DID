@@ -7,19 +7,11 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
-<<<<<<< HEAD
-from fastapi.templating import Jinja2Templates
-=======
->>>>>>> fcd02a2 (1)
 from pydantic import BaseModel
 
 from config import (
     ALLOWED_AUCTION_EXT,
     ALLOWED_TENDERS_PDF_EXT,
-<<<<<<< HEAD
-    BASE_DIR,
-=======
->>>>>>> fcd02a2 (1)
     TENDERS_ACCESS_TOKEN,
     TENDERS_UPLOAD_DIR,
 )
@@ -27,10 +19,7 @@ from core.history import tenders_history
 from core.llm_client import get_llm
 from core.llm_errors import LLMUserFacingError
 from core.session import get_session_id
-<<<<<<< HEAD
-=======
 from core.templates import templates
->>>>>>> fcd02a2 (1)
 from lawyer.citations import select_citations_for_display
 from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
 from core.prompt_guards import (
@@ -60,10 +49,6 @@ from tenders.session_state import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tenders", tags=["tenders"])
-<<<<<<< HEAD
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-=======
->>>>>>> fcd02a2 (1)
 
 CHECK_QUESTION = (
     "Проверь торговую документацию на соответствии требованиям торгов "

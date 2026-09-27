@@ -83,12 +83,8 @@ document.addEventListener("DOMContentLoaded", () => {
             btn.setAttribute("aria-selected", isActive ? "true" : "false");
         });
         updateChatAvailability();
-<<<<<<< HEAD
-        if (guidance) guidance.textContent = mode === "check"
-=======
         const guidanceText = guidance?.querySelector(".guidance-text");
         if (guidanceText) guidanceText.textContent = mode === "check"
->>>>>>> fcd02a2 (1)
             ? "1. Загрузите закупочную документацию. 2. Дождитесь обработки. 3. Запустите проверку."
             : "Задайте вопрос по законодательству и загруженному Положению о закупке.";
     }

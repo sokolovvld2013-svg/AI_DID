@@ -13,9 +13,10 @@
 |------|------------|
 | Backend | Python 3.11+, FastAPI, Uvicorn |
 | Frontend | HTML, CSS, JavaScript |
-| LLM | GigaChat или DeepSeek (`.env`) |
+| LLM | GigaChat или DeepSeek (ключ в `.env`, выбор модели — в настройках приложения) |
 | Поиск по документам | ChromaDB + эмбеддинги GigaChat / OpenAI / локально |
 | Речь (Секретарь) | faster-whisper |
+| Обезличивание (Секретарь) | Natasha (NER, ru) + pymorphy2 + регулярные выражения |
 | Экономист | n8n (webhook) + Google Таблица |
 
 ---
@@ -43,11 +44,12 @@
 ├── lawyer/                 # модуль Юрист
 ├── procurement/            # модуль Закупка 223-ФЗ
 ├── tenders/                # модуль Торги
-├── core/                   # LLM, эмбеддинги, история, сессии
-├── static/                 # CSS, JS, img
+├── core/                   # LLM, эмбеддинги, история, сессии, настройки, курс ЦБ
+├── static/                 # CSS, JS, img (логотип, фавикон, иконка настроек)
 ├── templates/              # HTML
 ├── docs/                   # инструкции (n8n, GitHub)
 ├── scripts/                # утилиты
+├── app_settings.json       # наименование компании и выбранная модель (создаётся при первом сохранении)
 ├── main.py
 ├── config.py
 └── requirements.txt
@@ -142,6 +144,7 @@
 
 - Форматы: `.mp3`, `.wav`, `.m4a`, `.ogg`, `.flac` (до 100 МБ).
 - Распознавание **Whisper** (русский), протокол через LLM.
+- Вкладка **«Обезличивание документов»** — текст, DOCX, PDF; находит и маскирует организации, ИНН, ФИО, телефоны, e-mail, адреса и банковские реквизиты. Наименование компании берётся из настроек приложения (кнопка-шестерёнка) и распознаётся сразу после сохранения, перезапуск не нужен.
 
 На сервере нужен **ffmpeg**: `sudo apt install -y ffmpeg`.
 
@@ -158,6 +161,72 @@
 | Экономист, Юрист, Секретарь | `HISTORY_SIZE` | 5 |
 | Закупка | `PROCUREMENT_HISTORY_SIZE` | 3 |
 | Торги | `TENDERS_HISTORY_SIZE` | 3 |
+
+---
+
+## Настройки приложения
+
+Кнопка-шестерёнка в подвале любой страницы открывает окно настроек:
+
+- **наименование компании** — подставляется в подвал и заголовок страниц, используется в обезличивании документов (Секретарь);
+- **модель LLM** — применяется ко всем модулям, которые работают через LLM приложения (Юрист, Закупка, Торги, Секретарь). Список разбит по семействам: «Модели DeepSeek» и «Модели GigaChat»; показываются только модели, которые реально доступны в API (см. ниже);
+- **логотип** — замена картинки в левом верхнем углу; применяется сразу, без перезапуска.
+
+Значения хранятся в `app_settings.json` рядом с приложением и применяются **без перезапуска сервера**. Секретов в файле нет: доступность моделей определяется по ключам в `.env`, сами ключи через API не выдаются. Скопируйте `app_settings.json` на сервер, если хотите задать настройки вручную.
+
+```json
+{
+  "company_name": "ФГУП \"ДИД\"",
+  "model": "deepseek-flash",
+  "logo": "logo.png"
+}
+```
+
+| Запрос | Назначение |
+|--------|------------|
+| `GET /api/settings` | текущие настройки, каталог моделей, курс ЦБ |
+| `POST /api/settings` | сохранить `company_name` и `model` |
+| `GET /api/settings/models` | только каталог моделей; `?refresh=true` — не брать из кэша |
+| `POST /api/settings/logo` | заменить логотип (multipart, поле `file`) |
+| `DELETE /api/settings/logo` | вернуть исходный `static/img/logo.png` |
+
+Модель по умолчанию берётся из `.env` (`LLM_PROVIDER`, `DEEPSEEK_MODEL`, `GIGACHAT_MODEL`); значения, которых нет в каталоге, берутся как есть.
+
+### Логотип
+
+- Файл кладётся в `static/img/logo_custom.<ext>`, исходный `static/img/logo.png` не удаляется; в настройках хранится только имя файла.
+- Допустимы PNG, JPEG, GIF, WEBP (проверяется сигнатура файла и целостность через Pillow), размер — до 2 МБ, меняется переменной `LOGO_MAX_BYTES`. SVG и прочие форматы не принимаются.
+- «Вернуть исходный» удаляет загруженный файл и возвращает `logo.png`. Ссылка на картинку содержит метку времени, поэтому браузер не показывает старую версию.
+
+### Каталог моделей
+
+Модели в окне настроек — только те, что можно выбрать в кабинете проекта. Это пересечение двух источников: список моделей API (`GET /models` рабочего пространства GigaChat, `GET /models` аккаунта DeepSeek) и список ID, разрешённых для стенда — `GIGACHAT_AVAILABLE_MODELS` и `DEEPSEEK_AVAILABLE_MODELS` в `.env`. Второй список нужен потому, что рабочее пространство отдаёт и закрытые freemium-модели (GigaChat 3 Pro, GigaChat 3 Lightning), которых нет в списке моделей проекта. Пустое значение переменной снимает ограничение.
+
+Проверка кэшируется на 10 минут; если она не удалась (нет сети, не задан ключ), показывается разрешённый каталог с пометкой «список моделей в API проверить не удалось», а выбрать модель, которой нет в API, нельзя.
+
+**Модели DeepSeek**
+
+| ID | Название | Параметры | Контекст | Цена |
+|----|----------|-----------|----------|------|
+| `deepseek-flash` | DeepSeek-V4.1-Flash | 284B всего / 13B активных (MoE) | 1 000 000 | 50,60 / 101,21 ₽ |
+| `deepseek-v4-pro` | DeepSeek-V4-Pro-0813 | 1,6T всего / 49B активных (MoE) | 1 000 000 | 167,00 / 333,99 ₽ |
+
+**Модели GigaChat**
+
+| ID | Название | Параметры | Контекст | Цена |
+|----|----------|-----------|----------|------|
+| `GigaChat-3-Ultra` | GigaChat 3 Ultra | 702B всего / 36B активных (MoE) | 128 000 | не опубликована |
+| `GigaChat-2` | GigaChat 2 Lite | 20B всего / 3B активных (MoE) | 128 000 | 65 ₽ |
+| `GigaChat-2-Pro` | GigaChat 2 Pro | не опубликовано | 128 000 | 500 ₽ |
+| `GigaChat-2-Max` | GigaChat 2 Max | не опубликовано | 128 000 | 650 ₽ |
+
+- Модели в списке документации Сбера: [GigaChat 3 Ultra, GigaChat 2 Max, GigaChat 2 Pro, GigaChat 2 Lite](https://developers.sber.ru/docs/ru/gigachat/models). GigaChat 3 Pro и GigaChat 3 Lightning рабочее пространство отдаёт в `GET /models`, но в списке моделей проекта их нет, поэтому в настройках они скрыты (их параметры: [GigaChat 3.1 Lightning](https://huggingface.co/ai-sage/GigaChat3.1-10B-A1.8B) — 10B/1,8B; у Pro открытых весов нет).
+- Цены GigaChat — за 1 млн выходных токенов, [тарифы Сбера для юрлиц](https://developers.sber.ru/docs/ru/gigachat/tariffs/legal-tariffs?mode=sync). Для GigaChat 3 Ultra тариф для юрлиц Сбер не публикует — цена показана как «не опубликована».
+- Цены DeepSeek — [тарифы DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/) за $; в таблице они **пересчитаны в рубли по курсу ЦБ** (доллары — в подписи мелким шрифтом). Курс берётся из официального XML ЦБ, кэш 6 часов, при недоступности сайта показывается последний известный курс.
+- **Параметры закрытых API-моделей Сбер не раскрывает** — числа подтверждаются открытыми весами в аккаунте `ai-sage` на HuggingFace (лицензия MIT): [GigaChat-20B-A3B](https://huggingface.co/ai-sage/GigaChat-20B-A3B-base) для Lite, [GigaChat 3.1 Ultra](https://huggingface.co/ai-sage/GigaChat3.1-702B-A36B) (702B/36B) для Ultra, плюс [доклад команды](https://arxiv.org/abs/2506.09440). У GigaChat 2 Pro/Max открытых весов нет — в таблице «не опубликовано», и ссылка «параметры» не показывается. [GigaChat 3.5 Ultra](https://huggingface.co/ai-sage/GigaChat3.5-432B-A28B) (432B/28B) в API этого аккаунта не отдаётся.
+- Контекст GigaChat 2 Lite/Pro/Max и 3 Ultra — 128 тыс. токенов по [истории обновления моделей](https://developers.sber.ru/docs/ru/gigachat/models/updates).
+- Старые ID поддерживаются как псевдонимы: `GigaChat` → `GigaChat-2`, `GigaChat-Pro` → `GigaChat-2-Pro`, `GigaChat-Max` → `GigaChat-2-Max`. При `GIGACHAT_SCOPE=GIGACHAT_API_PERS` старые ID API не принимает — каталог приводит их к актуальным.
+- Все временные интервалы в интерфейсе (пиковые часы DeepSeek, история) — **по московскому времени**, `APP_TIMEZONE=Europe/Moscow`.
 
 ---
 
@@ -264,8 +333,14 @@ pip install -r requirements.txt
 
 | Переменная | Назначение |
 |------------|------------|
-| `LLM_PROVIDER` | `deepseek` или `gigachat` |
+| `LLM_PROVIDER` | `deepseek` или `gigachat` — провайдер по умолчанию |
 | `DEEPSEEK_API_KEY` / `GIGACHAT_CREDENTIALS` | Ключи API |
+| `DEEPSEEK_MODEL` / `GIGACHAT_MODEL` | Модель по умолчанию, если в настройках ещё ничего не выбрано (`deepseek-chat`, `GigaChat`) |
+| `DEEPSEEK_BASE_URL` | Адрес API DeepSeek |
+| `GIGACHAT_SCOPE` | `GIGACHAT_API_PERS` — только актуальные ID моделей (`GigaChat-2`, `GigaChat-2-Pro`, `GigaChat-2-Max`, `GigaChat-3-Ultra`) |
+| `GIGACHAT_AVAILABLE_MODELS` / `DEEPSEEK_AVAILABLE_MODELS` | ID моделей, доступных для выбора в настройках, через запятую. По умолчанию 4 модели GigaChat и 2 DeepSeek; пустое значение — не ограничивать |
+| `COMPANY_NAME` | Наименование компании по умолчанию, пока не задано в настройках |
+| `SETTINGS_FILE` | Путь к файлу настроек (по умолчанию `app_settings.json` в корне проекта) |
 | `EMBEDDING_PROVIDER` | `gigachat`, `openai` или `local` |
 | `GIGACHAT_MAX_EMBED_CHARS` | Лимит текста на эмбеддинг GigaChat (480; API ~514 токенов) |
 | `LAWYER_CHUNK_SIZE` / `LAWYER_CHUNK_OVERLAP` | Размер чанков в индексе (1000 / 150 в типовой настройке) |
@@ -306,6 +381,11 @@ pip install -r requirements.txt
 | OCR PDF: `Killed` | `LAWYER_OCR_SCALE=1.0`, `LAWYER_OCR_MAX_SIDE=1200`, DOCX |
 | OCR: `libGL.so.1` | `pip uninstall -y opencv-python && pip install opencv-python-headless` |
 | Экономист молчит | Проверить `N8N_ECONOMIST_WEBHOOK_URL`, workflow Active в n8n |
+| Экономист: «Не удалось получить ответ» | В workflow n8n узел **Respond to Webhook** должен возвращать поле `answer` (или `output`/`text`/`response`); в логах видно фактический ответ, например `{'output': []}` |
+| GigaChat: `No such model` | Старые ID (`GigaChat`, `GigaChat-Pro`, `GigaChat-Max`) не работают при `GIGACHAT_SCOPE=GIGACHAT_API_PERS` — выберите `GigaChat-2` / `-2-Pro` / `-2-Max` в настройках |
+| Модель в настройках недоступна | Не задан ключ провайдера или не установлен пакет `gigachat` — причина указана в строке таблицы |
+| Не меняется наименование компании | Проверьте `app_settings.json`; страницу обновить не нужно, значения применяются сразу после сохранения |
+| В ценах DeepSeek старый курс | Курс ЦБ кэшируется на 6 часов; если ЦБ недоступен, в подписи будет «не удалось обновить» |
 | Торги: 404 на `/tenders` | Перезапустить uvicorn после `git pull` |
 | Торги: «загрузите три документа» в экспертном режиме | Обновить код и перезапустить сервер; эксперт — `POST /tenders/expert/query` |
 
@@ -314,6 +394,7 @@ pip install -r requirements.txt
 ## GitHub
 
 Не коммитьте `~/AI_DID/.env` с ключами. Шаблон: `.env.example`.  
+`app_settings.json` (компания и выбранная модель) — тоже локальное состояние, он в `.gitignore`; задавайте его на сервере копией файла или через интерфейс.  
 Инструкция: [docs/GITHUB.md](docs/GITHUB.md).
 
 ---
@@ -321,7 +402,10 @@ pip install -r requirements.txt
 ## Примечания
 
 - **История** — в памяти процесса uvicorn, по cookie `did_sid`; сбрасывается при перезапуске; **не влияет** на новые ответы LLM.
+- **Настройки** — `app_settings.json` в корне проекта: компания и модель. Применяются без перезапуска; ключи API там не хранятся и через `/api/settings` не отдаются.
+- **Обезличивание** использует текущее наименование компании; после его смены достаточно сохранить настройки заново — перезапуск не требуется.
 - **`chroma_data/`** — общий каталог; коллекции `lawyer_kb` (Юрист) и `procurement_kb` (Положение о закупке).
 - **Закупочная и торговая документация** в сессии — личные (по cookie); кэш разбора — на диске в `procurement/cache/` и `tenders/cache/`.
 - **Секретарь, Юрист, Закупка, Торги** — LLM на сервере приложения; **Экономист** в чате — через n8n.
-- Логотип: `static/img/logo.png`, фавикон: `static/img/favicon.png` (или `LOGO_SOURCE` / `FAVICON_SOURCE`).
+- **GigaChat 3 (Ultra, Pro, Lightning)** работают через API, но тарифов для юрлиц Сбер не публикует: в настройках цена показана как «не опубликована». Число параметров Ultra (702B/36B) и Lightning (10B/1,8B) подтверждено открытыми весами `ai-sage` на HuggingFace; у Pro открытых весов нет.
+- Логотип: `static/img/logo.png`, фавикон: `static/img/favicon.png` (или `LOGO_SOURCE` / `FAVICON_SOURCE`). Иконка настроек в подвале: `static/img/cogwheel.png` (шестерёнка с Vecteezy, применяется как CSS-маска и наследует цвет темы).

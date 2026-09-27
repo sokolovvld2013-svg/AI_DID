@@ -3,40 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<<<<<<< HEAD
-    <title>{% block title %}ИИ-помощник ФГУП "ДИД"{% endblock %}</title>
-    <link rel="icon" href="/static/img/favicon.png" type="image/png">
-    <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=19">
-=======
     <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=31">
->>>>>>> fcd02a2 (1)
+    <link rel="stylesheet" href="/static/css/style.css?v=33">
     {% block head %}{% endblock %}
 </head>
 <body>
     <header class="header">
         <div class="header-brand">
-<<<<<<< HEAD
-            <img src="/static/img/logo.png" alt="Логотип ФГУП «Дирекция по инвестиционной деятельности»" class="logo-img">
-            <h1 class="logo-text">ИИ-помощник ФГУП "ДИД"</h1>
-=======
-            <img src="/static/img/logo.png" alt="Логотип {{ company_name() }}" class="logo-img">
+            <img src="{{ logo_url() }}" alt="Логотип {{ company_name() }}" class="logo-img" id="logoImg">
             <h1 class="logo-text">ИИ-помощник <span data-company-name>{{ company_name() }}</span></h1>
->>>>>>> fcd02a2 (1)
         </div>
         <nav class="nav">
             <a href="/economist" class="nav-link {% if active == 'economist' %}active{% endif %}">Экономист</a>
             <a href="/lawyer" class="nav-link {% if active == 'lawyer' %}active{% endif %}">Юрист</a>
-<<<<<<< HEAD
-            <a href="/procurement" class="nav-link {% if active == 'procurement' %}active{% endif %}">Закупка</a>
-            <a href="/tenders" class="nav-link {% if active == 'tenders' %}active{% endif %}">Торги</a>
-=======
             <a href="/procurement" class="nav-link {% if active == 'procurement' %}active{% endif %}">Специалист по закупкам</a>
             <a href="/tenders" class="nav-link {% if active == 'tenders' %}active{% endif %}">Специалист по торгам</a>
->>>>>>> fcd02a2 (1)
             <a href="/secretary" class="nav-link {% if active == 'secretary' %}active{% endif %}">Секретарь</a>
         </nav>
     </header>
@@ -46,12 +29,6 @@
     </main>
 
     <footer class="footer">
-<<<<<<< HEAD
-        <span>ФГУП "ДИД"</span>
-    </footer>
-
-    <script src="/static/js/common.js?v=20"></script>
-=======
         <span data-company-name>{{ company_name() }}</span>
         <button type="button" class="settings-gear" id="settingsOpen" title="Настройки" aria-label="Настройки">
             <span class="settings-gear-icon" aria-hidden="true"></span>
@@ -67,7 +44,7 @@
 
             <div class="settings-body">
                 <section class="settings-section">
-                    <h3>Модель ИИ</h3>
+                    <h3>Выберите модель ИИ</h3>
                     <p class="settings-hint">
                         Цена указана за 1&nbsp;млн выходных токенов.
                         <span id="settingsPricesAt"></span>
@@ -95,6 +72,33 @@
                     <input type="text" id="settingsCompany" class="settings-input" maxlength="120"
                            autocomplete="off">
                 </section>
+
+                <section class="settings-section">
+                    <h3>Логотип</h3>
+                    <p class="settings-hint">
+                        Картинка вверху слева. Форматы: PNG, JPEG, GIF, WEBP, до 2&nbsp;МБ.
+                        Файл применяется сразу.
+                    </p>
+                    <div class="settings-logo">
+                        <div class="settings-logo-preview">
+                            <img id="settingsLogoPreview" class="settings-logo-img" alt="Текущий логотип">
+                        </div>
+                        <div class="settings-logo-controls">
+                            <span class="settings-logo-name" id="settingsLogoName"></span>
+                            <span class="settings-model-note" id="settingsLogoMeta"></span>
+                            <div class="settings-logo-actions">
+                                <label class="btn btn-secondary settings-logo-pick">
+                                    Выбрать файл
+                                    <input type="file" id="settingsLogoFile" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+                                </label>
+                                <button type="button" class="btn btn-secondary" id="settingsLogoReset" hidden>
+                                    Вернуть исходный
+                                </button>
+                            </div>
+                            <span class="settings-logo-status" id="settingsLogoStatus" hidden></span>
+                        </div>
+                    </div>
+                </section>
             </div>
 
             <div class="settings-foot">
@@ -106,8 +110,7 @@
     </div>
 
     <script src="/static/js/common.js?v=20"></script>
-    <script src="/static/js/settings.js?v=5"></script>
->>>>>>> fcd02a2 (1)
+    <script src="/static/js/settings.js?v=7"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

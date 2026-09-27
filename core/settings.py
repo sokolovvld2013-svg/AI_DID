@@ -1,4 +1,4 @@
-"""Настройки приложения: наименование компании и выбор модели LLM.
+"""Настройки приложения: наименование компании, выбор модели LLM и логотип.
 
 Значения хранятся в JSON-файле рядом с приложением и применяются без
 перезапуска сервера. Файл настроек не содержит секретов: доступность моделей
@@ -8,11 +8,13 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import logging
 import os
 import re
 import threading
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,9 @@ from config import (
     GIGACHAT_CREDENTIALS,
     GIGACHAT_MODEL,
     LLM_PROVIDER,
+    LOGO_MAX_BYTES,
+    STATIC_IMG_DIR,
+    STATIC_LOGO,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,12 +42,18 @@ MAX_COMPANY_NAME_LEN = 120
 PRICES_UPDATED_AT = "2026-09-27"
 DEEPSEEK_SOURCE_URL = "https://api-docs.deepseek.com/quick_start/pricing/"
 GIGACHAT_SOURCE_URL = "https://developers.sber.ru/docs/ru/gigachat/tariffs/legal-tariffs?mode=sync"
-# Доклад команды GigaChat (ACL-2025, arXiv:2506.09440) — единственный
-# источник с числами параметров: открытая линейка Lite (A3B).
+# Доклад команды GigaChat (ACL-2025, arXiv:2506.09440) — описание открытой
+# линейки Lite.
 GIGACHAT_PARAMS_SOURCE_URL = "https://arxiv.org/abs/2506.09440"
-# Оценка состава GigaChat 3 Ultra по открытым весам GigaChat3-702B: обзор на
-# Хабре. Сбер состав версии, доступной через API, не раскрывает.
-GIGACHAT_ULTRA_PARAMS_SOURCE_URL = "https://habr.com/ru/articles/971864/"
+# Открытые веса на HuggingFace (организация ai-sage, MIT) — источник точных
+# чисел параметров. Соответствие версий в API Сбер не раскрывает, поэтому
+# значения подтверждаются открытой линейкой.
+GIGACHAT_LITE_WEIGHTS_URL = "https://huggingface.co/ai-sage/GigaChat-20B-A3B-base"
+GIGACHAT_ULTRA_WEIGHTS_URL = "https://huggingface.co/ai-sage/GigaChat3.1-702B-A36B"
+GIGACHAT_LIGHTNING_WEIGHTS_URL = "https://huggingface.co/ai-sage/GigaChat3.1-10B-A1.8B"
+# Тарифы на модели третьего поколения (Ultra, Pro, Lightning) для юрлиц Сбер
+# не публикует.
+GIGACHAT3_PRICE_NOTE = "тариф для юрлиц не опубликован: у Сбера линейка заявлена как фримиум для физлиц"
 
 PROVIDER_LABELS = {"deepseek": "DeepSeek", "gigachat": "GigaChat"}
 
@@ -52,9 +63,10 @@ DEEPSEEK_PEAK_NOTE = "вне пика / пик. Пик по Москве: 04:00�
 
 # Каталог моделей. Цены — за 1 млн выходных токенов; для долларовых цен
 # дополнительно считается рублевый эквивалент по курсу ЦБ (core/fx.py).
-# Число параметров GigaChat Сбер не раскрывает: для Lite известны только
-# открытые модели линейки (GigaChat-A3B — 20B, ~3,3B активных), для Ultra —
-# открытая GigaChat3-702B (702B, ~36B активных).
+# Число параметров закрытых моделей Сбер не раскрывает: значения подтверждаются
+# открытыми весами на HuggingFace — GigaChat-20B-A3B (20B, 3B активных) для
+# Lite, GigaChat3.1-702B-A36B (702B, 36B) для Ultra, GigaChat3.1-10B-A1.8B
+# (10B, 1,8B) для Lightning.
 MODEL_CATALOG: list[dict[str, Any]] = [
     {
         "id": "deepseek-flash",
@@ -90,16 +102,53 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "id": "GigaChat-3-Ultra",
         "provider": "gigachat",
         "title": "GigaChat 3 Ultra",
-        "aliases": ["GigaChat Ultra"],
-        "params": "≈702B всего / 36B активных (MoE)",
-        "params_note": "оценка по открытым весам GigaChat3-702B; состав версии в API Сбер не раскрывает",
-        "params_source": GIGACHAT_ULTRA_PARAMS_SOURCE_URL,
+        "aliases": ["GigaChat Ultra", "GigaChat-3.1-Ultra"],
+        "params": "702B всего / 36B активных (MoE)",
+        "params_note": "числа — по открытым весам GigaChat3.1-702B-A36B; состав версии в API Сбер не раскрывает",
+        "params_sources": [
+            {"label": "веса", "url": GIGACHAT_ULTRA_WEIGHTS_URL},
+        ],
+        "context": "128 000 токенов",
+        "context_note": "128 тыс. по документации Сбера",
+        "max_output": "—",
+        "price_currency": "₽",
+        "price_value": 0.0,
+        "price_text": "не опубликована",
+        "price_note": GIGACHAT3_PRICE_NOTE,
+        "source": GIGACHAT_SOURCE_URL,
+    },
+    {
+        "id": "GigaChat-3-Pro",
+        "provider": "gigachat",
+        "title": "GigaChat 3 Pro",
+        "aliases": [],
+        "params": "не опубликовано",
+        "params_note": "закрытая модель: Сбер не публикует ни параметры, ни контекст; открытой линейки Pro на HuggingFace нет",
         "context": "не указано",
         "max_output": "—",
         "price_currency": "₽",
         "price_value": 0.0,
         "price_text": "не опубликована",
-        "price_note": "тариф для юрлиц не опубликован: у Сбера модель заявлена как фримиум для физлиц",
+        "price_note": GIGACHAT3_PRICE_NOTE,
+        "source": GIGACHAT_SOURCE_URL,
+    },
+    {
+        "id": "GigaChat-3-Lightning",
+        "provider": "gigachat",
+        "title": "GigaChat 3 Lightning",
+        "aliases": ["GigaChat-3.1-Lightning"],
+        "params": "10B всего / 1,8B активных (MoE)",
+        "params_note": "числа — по открытым весам GigaChat 3.1 Lightning (GigaChat3.1-10B-A1.8B); состав версии в API Сбер не раскрывает",
+        "params_sources": [
+            {"label": "веса", "url": GIGACHAT_LIGHTNING_WEIGHTS_URL},
+        ],
+        "context": "не указано",
+        "context_note": "открытые веса заявляют 262 144 токена, для версии в API Сбер не публикует",
+        "max_output": "—",
+        "price_currency": "₽",
+        "price_value": 0.0,
+        "price_text": "не опубликована",
+        "price_note": GIGACHAT3_PRICE_NOTE,
         "source": GIGACHAT_SOURCE_URL,
     },
     {
@@ -107,9 +156,12 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "provider": "gigachat",
         "title": "GigaChat 2 Lite",
         "aliases": ["GigaChat", "GigaChat Lite"],
-        "params": "≈20B всего / 3,3B активных (MoE)",
-        "params_note": "число параметров версии в API Сбер не раскрывает; значение — по открытой линейке Lite (GigaChat-A3B)",
-        "params_source": GIGACHAT_PARAMS_SOURCE_URL,
+        "params": "20B всего / 3B активных (MoE)",
+        "params_note": "число параметров версии в API Сбер не раскрывает; значение — по открытым весам GigaChat-20B-A3B",
+        "params_sources": [
+            {"label": "веса", "url": GIGACHAT_LITE_WEIGHTS_URL},
+            {"label": "доклад", "url": GIGACHAT_PARAMS_SOURCE_URL},
+        ],
         "context": "128 000 токенов",
         "max_output": "—",
         "price_currency": "₽",
@@ -124,8 +176,7 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "title": "GigaChat 2 Pro",
         "aliases": ["GigaChat-Pro"],
         "params": "не опубликовано",
-        "params_note": "закрытая модель; Сбер указывает только параметры открытой линейки Lite",
-        "params_source": GIGACHAT_PARAMS_SOURCE_URL,
+        "params_note": "закрытая модель; открытой линейки Pro/Max на HuggingFace нет",
         "context": "128 000 токенов",
         "max_output": "—",
         "price_currency": "₽",
@@ -140,8 +191,7 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "title": "GigaChat 2 Max",
         "aliases": ["GigaChat-Max"],
         "params": "не опубликовано",
-        "params_note": "закрытая модель; Сбер указывает только параметры открытой линейки Lite",
-        "params_source": GIGACHAT_PARAMS_SOURCE_URL,
+        "params_note": "закрытая модель; открытой линейки Pro/Max на HuggingFace нет",
         "context": "128 000 токенов",
         "max_output": "—",
         "price_currency": "₽",
@@ -153,6 +203,20 @@ MODEL_CATALOG: list[dict[str, Any]] = [
 ]
 
 _lock = threading.RLock()
+
+# Логотип в шапке: по умолчанию показываем текущий файл static/img/logo.png,
+# загруженный пользователем — logo_custom.<ext>.
+LOGO_DEFAULT_NAME = STATIC_LOGO.name
+LOGO_CUSTOM_STEM = "logo_custom"
+LOGO_FORMATS = "PNG, JPEG, GIF, WEBP"
+_LOGO_MIME = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
 
 
 class SettingsError(ValueError):
@@ -263,7 +327,31 @@ def list_models() -> list[dict[str, Any]]:
 
 
 def _default_settings() -> dict[str, str]:
-    return {"company_name": DEFAULT_COMPANY_NAME, "model": default_model_id()}
+    return {
+        "company_name": DEFAULT_COMPANY_NAME,
+        "model": default_model_id(),
+        "logo": LOGO_DEFAULT_NAME,
+    }
+
+
+def _normalize_logo_name(value: Any) -> str:
+    """Имя файла логотипа: только базовое имя картинки из static/img.
+
+    Значение по умолчанию — текущий файл static/img/logo.png, поэтому в
+    настройках всегда видна та картинка, что отображается в шапке.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return LOGO_DEFAULT_NAME
+    name = os.path.basename(value.strip().replace("\\", "/"))
+    if not name or name != value.strip().replace("\\", "/") or name.startswith("."):
+        return LOGO_DEFAULT_NAME
+    if not (name == LOGO_DEFAULT_NAME or name.startswith(f"{LOGO_CUSTOM_STEM}.")):
+        return LOGO_DEFAULT_NAME
+    if Path(name).suffix.lower() not in _LOGO_MIME:
+        return LOGO_DEFAULT_NAME
+    if not (STATIC_IMG_DIR / name).is_file():
+        return LOGO_DEFAULT_NAME
+    return name
 
 
 def _read_settings() -> dict[str, str]:
@@ -288,6 +376,7 @@ def _read_settings() -> dict[str, str]:
     model = data.get("model")
     if isinstance(model, str) and model.strip():
         settings["model"] = canonical_model_id(model) or model.strip()
+    settings["logo"] = _normalize_logo_name(data.get("logo"))
     return settings
 
 
@@ -312,6 +401,125 @@ def get_company_name() -> str:
 
 def get_selected_model() -> str:
     return get_settings()["model"]
+
+
+def get_logo_name() -> str:
+    """Имя файла логотипа в static/img (по умолчанию — текущий logo.png)."""
+    return get_settings()["logo"]
+
+
+def logo_path() -> Path:
+    return STATIC_IMG_DIR / get_logo_name()
+
+
+def logo_url() -> str:
+    """URL логотипа для шапки; метка времени сбивает кэш браузера."""
+    path = logo_path()
+    try:
+        version = int(path.stat().st_mtime)
+    except OSError:
+        version = 0
+    return f"/static/img/{path.name}?v={version}"
+
+
+def logo_info() -> dict[str, Any]:
+    """Данные о логотипе для интерфейса настроек."""
+    from core.app_time import app_timezone
+
+    name = get_logo_name()
+    path = STATIC_IMG_DIR / name
+    info: dict[str, Any] = {
+        "name": name,
+        "url": logo_url(),
+        "is_default": name == LOGO_DEFAULT_NAME,
+        "exists": path.is_file(),
+        "formats": LOGO_FORMATS,
+        "max_bytes": LOGO_MAX_BYTES,
+    }
+    try:
+        stat = path.stat()
+    except OSError:
+        return info
+    info["size"] = stat.st_size
+    info["updated_at"] = datetime.fromtimestamp(
+        stat.st_mtime, app_timezone()
+    ).strftime("%d.%m.%Y %H:%M")
+    return info
+
+
+def _sniff_image_ext(data: bytes) -> str | None:
+    """Расширение по сигнатуре файла (SVG сознательно не принимается)."""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    return None
+
+
+def _verify_image(data: bytes) -> None:
+    """Дополнительная проверка целостности через Pillow, если он установлен."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            image.verify()
+    except Exception as e:
+        raise SettingsError(f"Файл не читается как изображение: {e}") from e
+
+
+def _remove_other_custom_logos(keep: Path | None) -> None:
+    for path in STATIC_IMG_DIR.glob(f"{LOGO_CUSTOM_STEM}.*"):
+        if keep is not None and path.name == keep.name:
+            continue
+        try:
+            path.unlink()
+            logger.info("Удалён прежний логотип: %s", path.name)
+        except OSError as e:
+            logger.warning("Не удалось удалить %s: %s", path.name, e)
+
+
+def save_logo_bytes(data: bytes, source_name: str = "") -> dict[str, Any]:
+    """Сохранить загруженный логотип и сделать его текущим в настройках."""
+    if not data:
+        raise SettingsError("Файл логотипа пуст")
+    if len(data) > LOGO_MAX_BYTES:
+        raise SettingsError(
+            f"Логотип больше {LOGO_MAX_BYTES // (1024 * 1024)} МБ — "
+            "уменьшите файл или поднимите LOGO_MAX_BYTES"
+        )
+    ext = _sniff_image_ext(data)
+    if ext is None:
+        raise SettingsError(f"Поддерживаются только изображения: {LOGO_FORMATS}")
+    _verify_image(data)
+    with _lock:
+        STATIC_IMG_DIR.mkdir(parents=True, exist_ok=True)
+        target = STATIC_IMG_DIR / f"{LOGO_CUSTOM_STEM}{ext}"
+        tmp_path = target.with_name(target.name + ".tmp")
+        tmp_path.write_bytes(data)
+        os.replace(tmp_path, target)
+        _remove_other_custom_logos(target)
+        settings = _read_settings()
+        settings["logo"] = target.name
+        _write_settings(settings)
+    logger.info("Логотип обновлён: %s -> %s", source_name or "файл", target.name)
+    return logo_info()
+
+
+def reset_logo() -> dict[str, Any]:
+    """Вернуть исходный логотип static/img/logo.png."""
+    with _lock:
+        _remove_other_custom_logos(None)
+        settings = _read_settings()
+        settings["logo"] = LOGO_DEFAULT_NAME
+        _write_settings(settings)
+    logger.info("Логотип возвращён к исходному: %s", LOGO_DEFAULT_NAME)
+    return logo_info()
 
 
 def normalize_company_name(value: Any) -> str:
@@ -352,3 +560,4 @@ def update_settings(company_name: Any = None, model: Any = None) -> dict[str, st
             settings["model"],
         )
         return settings
+

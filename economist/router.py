@@ -8,22 +8,12 @@ from fastapi import APIRouter, HTTPException, Request
 
 from fastapi.responses import HTMLResponse
 
-<<<<<<< HEAD
-from fastapi.templating import Jinja2Templates
-
-=======
->>>>>>> fcd02a2 (1)
 from pydantic import BaseModel
 
 
 
 from config import (
 
-<<<<<<< HEAD
-    BASE_DIR,
-
-=======
->>>>>>> fcd02a2 (1)
     ECONOMIST_FACT_SHEET_EDIT_URL,
 
     N8N_ECONOMIST_WEBHOOK_METHOD,
@@ -33,10 +23,7 @@ from config import (
 
 from core.history import economist_history
 from core.session import get_session_id
-<<<<<<< HEAD
-=======
 from core.templates import templates
->>>>>>> fcd02a2 (1)
 
 from economist.n8n_client import (
     _is_meaningless_text,
@@ -61,11 +48,6 @@ ECONOMIST_NO_DATA = (
 
 router = APIRouter(prefix="/economist", tags=["economist"])
 
-<<<<<<< HEAD
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-
-=======
->>>>>>> fcd02a2 (1)
 
 
 

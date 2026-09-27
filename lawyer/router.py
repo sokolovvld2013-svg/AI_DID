@@ -7,18 +7,10 @@ from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
-<<<<<<< HEAD
-from fastapi.templating import Jinja2Templates
-=======
->>>>>>> fcd02a2 (1)
 from pydantic import BaseModel
 
 from config import (
     ALLOWED_DOC_EXT,
-<<<<<<< HEAD
-    BASE_DIR,
-=======
->>>>>>> fcd02a2 (1)
     LAWYER_BALANCE_FILES,
     LAWYER_SEMANTIC_MIN_SCORE,
     LAWYER_UPLOAD_DIR,
@@ -28,10 +20,7 @@ from config import (
 )
 from core.history import lawyer_history
 from core.session import get_session_id
-<<<<<<< HEAD
-=======
 from core.templates import templates
->>>>>>> fcd02a2 (1)
 from core.llm_errors import LLMUserFacingError
 from core.llm_client import get_llm
 from lawyer.contract_check import (
@@ -55,10 +44,6 @@ from procurement.services.file_upload import read_upload_file, write_temp_file
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/lawyer", tags=["lawyer"])
-<<<<<<< HEAD
-templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
-=======
->>>>>>> fcd02a2 (1)
 
 
 def _rag() -> LawyerRAG:

@@ -12,10 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileList = document.getElementById('file-list');
     const actionHint = document.getElementById('chat-action-hint');
     const guidance = document.getElementById('module-guidance');
-<<<<<<< HEAD
-=======
     const clearIndexButton = document.getElementById('clear-index');
->>>>>>> fcd02a2 (1)
 
     const CHECK_QUESTION =
         'Проверь договор и сформируй отчёт о проверке с замечаниями.';
@@ -79,13 +76,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (chatTitle) {
             chatTitle.textContent =
                 mode === 'contract'
-<<<<<<< HEAD
-                    ? 'Проверка договора'
-                    : 'Внутренние нормативные документы';
-=======
                     ? 'Результат проверки'
                     : 'Вопрос по документам';
->>>>>>> fcd02a2 (1)
         }
         if (contractCard) contractCard.classList.toggle('hidden', mode !== 'contract');
         if (kbCard) kbCard.classList.toggle('hidden', mode !== 'kb');
@@ -95,11 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
         });
         updateChatAvailability();
-<<<<<<< HEAD
-        if (guidance) guidance.textContent = mode === 'contract'
-            ? '1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.'
-            : 'Задайте вопрос по загруженным внутренним нормативным документам.';
-=======
         const guidanceText = guidance?.querySelector('.guidance-text');
         if (guidanceText) guidanceText.textContent = mode === 'contract'
             ? '1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.'
@@ -115,7 +102,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ? 'Загрузите договор и запустите проверку.'
                 : 'Загрузите внутренние нормативные документы, затем задайте вопрос.';
         }
->>>>>>> fcd02a2 (1)
     }
 
     document.querySelectorAll('.lawyer-mode-btn').forEach(btn => {
@@ -280,20 +266,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-<<<<<<< HEAD
-    document.getElementById('clear-index')?.addEventListener('click', async () => {
-        if (!(await App.confirm('Очистить всю базу знаний?', { danger: true }))) return;
-        try {
-            const resp = await fetch('/lawyer/index', { method: 'DELETE' });
-            if (!resp.ok) {
-                App.setStatus('upload-status', 'Не удалось очистить базу', 'error');
-                return;
-            }
-            App.setStatus('upload-status', '✓ База знаний очищена', 'ok');
-            await refreshFiles();
-        } catch (e) {
-            App.setStatus('upload-status', 'Ошибка при очистке', 'error');
-=======
     clearIndexButton?.addEventListener('click', async () => {
         if (!(await App.confirm(
             'Удалить все загруженные внутренние нормативные документы? Отменить это действие нельзя.',
@@ -309,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await refreshFiles();
         } catch (e) {
             App.setStatus('upload-status', 'Ошибка при удалении документов', 'error');
->>>>>>> fcd02a2 (1)
         }
     });
 
@@ -405,13 +376,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const resp = await fetch('/lawyer/files');
             const data = await resp.json();
             if (!fileList) return;
-<<<<<<< HEAD
-            if (!data.files || !data.files.length) {
-=======
             const hasFiles = Boolean(data.files?.length);
             if (clearIndexButton) clearIndexButton.disabled = !hasFiles;
             if (!hasFiles) {
->>>>>>> fcd02a2 (1)
                 fileList.innerHTML = '<li class="muted">Нет загруженных документов</li>';
                 return;
             }
