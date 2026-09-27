@@ -35,6 +35,7 @@ from tenders.services.check_context import (
     EXPERT_SYSTEM_PROMPT,
     build_check_context,
 )
+from tenders.services.check_label import build_history_label
 from tenders.services.file_upload import read_upload_file, write_temp_file
 from tenders.services.parser import PARSE_VERSION, parse_document, summary_for_client
 from tenders.session_state import (
@@ -95,13 +96,22 @@ def _citation_ref(citation: dict) -> dict:
     }
 
 
+CHECK_HISTORY_LABEL = "Проверка документации"
+
+
 def _error_reply(
     session_id: str,
     question: str,
     message: str,
     mode: str = "check",
 ) -> dict:
-    tenders_history.add(session_id, question, message, mode=mode)
+    tenders_history.add(
+        session_id,
+        question,
+        message,
+        mode=mode,
+        label=CHECK_HISTORY_LABEL if mode == "check" else None,
+    )
     return {"answer": message, "citations": [], "verification": None}
 
 
@@ -286,6 +296,7 @@ async def _query_check(session_id: str, question: str) -> dict:
             question,
             answer,
             mode="check",
+            label=build_history_label(parsed_auction, parsed_egrn, parsed_approval) or CHECK_HISTORY_LABEL,
             citations=citations,
             verification=verification,
         )

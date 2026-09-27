@@ -29,6 +29,7 @@ from lawyer.contract_check import (
     contract_summary,
     split_contract_fragments,
 )
+from lawyer.contract_label import build_history_label
 from lawyer.contract_state import clear_contract, get_contract, set_contract
 from lawyer.doc_processor import load_document, process_upload
 from lawyer.rag import LawyerRAG, MIN_CITATION_SCORE_RATIO, get_lawyer_rag
@@ -89,10 +90,27 @@ def _citation_ref(citation: dict) -> dict:
     }
 
 
+CHECK_HISTORY_LABEL = "Проверка договора"
+_CONTRACT_CHECK_QUERY_RE = re.compile(
+    r"^\s*проверь\s+договор.*отч[её]т.*проверке",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
 def _lawyer_error_reply(
     session_id: str, question: str, message: str, mode: str = "kb"
 ) -> dict:
-    lawyer_history.add(session_id, question, message, mode=mode)
+    lawyer_history.add(
+        session_id,
+        question,
+        message,
+        mode=mode,
+        label=(
+            build_history_label(get_contract(session_id)) or CHECK_HISTORY_LABEL
+            if mode == "contract"
+            else None
+        ),
+    )
     return {"answer": message, "citations": []}
 
 
@@ -429,6 +447,7 @@ async def _query_contract(session_id: str, question: str) -> dict:
             question,
             answer,
             mode="contract",
+            label=build_history_label(contract) or CHECK_HISTORY_LABEL,
             citations=citations,
         )
         return {
@@ -531,11 +550,19 @@ def _query_kb(session_id: str, question: str) -> dict:
 @router.get("/history")
 async def history(request: Request):
     sid = get_session_id(request)
+    contract_label = build_history_label(get_contract(sid))
     repaired = []
     for item in lawyer_history.list(sid):
         entry = dict(item)
         entry["query"] = entry.get("query") or ""
         entry["response"] = strip_urls(entry.get("response") or "")
+        is_contract_check = (
+            entry.get("mode") == "contract"
+            or bool(_CONTRACT_CHECK_QUERY_RE.search(entry["query"]))
+        )
+        if is_contract_check:
+            entry["mode"] = "contract"
+            entry["label"] = contract_label or CHECK_HISTORY_LABEL
         if entry.get("citations"):
             entry["citations"] = [
                 _citation_ref(c) for c in entry["citations"]

@@ -1607,12 +1607,19 @@ code {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
     padding: 0.5rem;
     background: var(--surface-hover);
     border: 1px solid var(--border-light);
     border-radius: 6px;
     margin-bottom: 0.35rem;
     font-size: 0.9rem;
+}
+.file-list li > span:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 mark, .citation-highlight {

@@ -38,6 +38,7 @@ from core.prompt_guards import (
 from procurement.kb_rag import get_policy_rag
 from procurement.services.cache_store import get_by_audit_id, get_by_hash, save_parsed
 from procurement.services.check_context import CHECK_SYSTEM_PROMPT, build_check_context
+from procurement.services.check_label import build_history_label
 from procurement.services.policy_search import enrich_policy_query, prioritize_policy_hits
 from procurement.services.file_upload import read_upload_file, safe_stored_name, write_temp_file
 from procurement.services.parser import PARSE_VERSION, parse_documentation, summary_for_client
@@ -110,8 +111,17 @@ def _truncate_fragment(text: str, max_len: int) -> str:
     return text[: max_len - 1].rstrip() + "…"
 
 
+CHECK_HISTORY_LABEL = "Проверка документации"
+
+
 def _error_reply(session_id: str, question: str, message: str, mode: str) -> dict:
-    procurement_history.add(session_id, question, message, mode=mode)
+    procurement_history.add(
+        session_id,
+        question,
+        message,
+        mode=mode,
+        label=CHECK_HISTORY_LABEL if mode == "check" else None,
+    )
     return {"answer": message, "citations": []}
 
 
@@ -340,7 +350,9 @@ async def _query_check(session_id: str, question: str) -> dict:
             "Не удалось извлечь разделы документации для проверки. "
             "Убедитесь, что файл содержит стандартные разделы (информационная карта, ТЗ, договор и т.д.)."
         )
-        procurement_history.add(session_id, question, msg, mode="check")
+        procurement_history.add(
+            session_id, question, msg, mode="check", label=CHECK_HISTORY_LABEL
+        )
         return {"answer": msg, "citations": []}
 
     policy_budget = max(CHECK_LLM_CONTEXT_CHARS - len(doc_context) - 400, 8000)
@@ -386,6 +398,7 @@ async def _query_check(session_id: str, question: str) -> dict:
             question,
             answer,
             mode="check",
+            label=build_history_label(parsed) or CHECK_HISTORY_LABEL,
             citations=citations,
         )
         return {

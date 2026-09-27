@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const CHECK_QUESTION =
         'Проверь договор и сформируй отчёт о проверке с замечаниями.';
     const CHECK_USER_LABEL = "Проверка документации... ⚠️ Ответ носит информационный характер и не заменяет специалиста.";
+    const CHECK_HISTORY_LABEL = 'Проверка договора';
 
     let mode = 'contract';
     let contractLoaded = false;
@@ -401,9 +402,13 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!list) return;
             list.innerHTML = data.history.length
                 ? data.history.map((h, index) => {
-                    const isCheck = (h.mode || 'contract') === 'contract';
-                    const q = isCheck ? CHECK_USER_LABEL : safeText(h.query);
-                    return `<li><time>${h.timestamp}</time><button type="button" class="history-query module-history-link" data-history-index="${index}">${escapeHtml(q.length > 60 ? q.slice(0, 60) + '…' : q)}</button></li>`;
+                    const isCheck = (h.mode || 'contract') === 'contract'
+                        || safeText(h.query) === CHECK_QUESTION;
+                    const savedLabel = safeText(h.label);
+                    const q = isCheck
+                        ? (savedLabel && savedLabel !== CHECK_QUESTION ? savedLabel : CHECK_HISTORY_LABEL)
+                        : safeText(h.query);
+                    return `<li><time>${h.timestamp}</time><button type="button" class="history-query module-history-link" data-history-index="${index}">${escapeHtml(App.shortSummary(q))}</button></li>`;
                 }).join('')
                 : '<li class="muted">Нет вопросов</li>';
             bindHistoryLinks();
@@ -420,7 +425,8 @@ document.addEventListener('DOMContentLoaded', () => {
             chatMessages.innerHTML = '';
             const items = [...data.history].reverse();
             for (const [index, h] of items.entries()) {
-                const isCheck = (h.mode || 'contract') === 'contract';
+                const isCheck = (h.mode || 'contract') === 'contract'
+                    || safeText(h.query) === CHECK_QUESTION;
                 const label = isCheck ? CHECK_USER_LABEL : safeText(h.query);
                 const group = document.createElement('div');
                 group.className = 'module-message-group';

@@ -640,6 +640,17 @@ const App = {
         );
     },
 
+    // Очень краткая суть запроса для списка «История вопросов»: обрезаем по
+    // границе слова и ставим многоточие, а не отрезаем предложение пополам.
+    shortSummary(text, limit = 60) {
+        const s = String(text || "").replace(/\s+/g, " ").trim();
+        if (s.length <= limit) return s;
+        const cut = s.slice(0, limit);
+        const space = cut.lastIndexOf(" ");
+        const base = space > limit * 0.5 ? cut.slice(0, space) : cut;
+        return `${base.replace(/[\s,.;:!?—–-]+$/, "")}…`;
+    },
+
     formatChatMarkdown(text) {
         if (!text || !String(text).trim()) return '';
         return this._applyChatMarkdown(text);

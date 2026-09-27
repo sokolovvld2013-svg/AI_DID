@@ -12,6 +12,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const CHECK_QUESTION =
         "Проверь торговую документацию на соответствие требованиям торгов (135-ФЗ, Приказ ФАС №147/23) и сформируй отчёт о проверке с замечаниями.";
     const CHECK_USER_LABEL = "Проверка документации... ⚠️ Ответ носит информационный характер и не заменяет специалиста.";
+    const CHECK_HISTORY_LABEL = "Проверка документации";
 
     const ZONES = [
         {
@@ -326,8 +327,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 ? data.history
                       .map((h, index) => {
                           const isCheck = (h.mode || "check") === "check";
-                          const q = isCheck ? CHECK_USER_LABEL : safeText(h.query);
-                           return `<li><time>${h.timestamp}</time><button type="button" class="history-query module-history-link" data-history-index="${index}">${escapeHtml(q.length > 60 ? q.slice(0, 60) + "…" : q)}</button></li>`;
+                          const q = h.label || (isCheck ? CHECK_HISTORY_LABEL : safeText(h.query));
+                          return `<li><time>${h.timestamp}</time><button type="button" class="history-query module-history-link" data-history-index="${index}">${escapeHtml(App.shortSummary(q))}</button></li>`;
                       })
                       .join("")
                 : '<li class="muted">Нет вопросов</li>';
