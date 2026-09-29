@@ -169,9 +169,29 @@ document.addEventListener('DOMContentLoaded', () => {
         PERSON: 'ФИО',
         ORG: 'Организация',
         INN: 'ИНН',
+        KPP: 'КПП',
+        OGRN: 'ОГРН / ОГРНИП',
+        OKPO: 'ОКПО',
+        SNILS: 'СНИЛС',
+        BIK: 'БИК',
+        ACCOUNT: 'Расчётный счёт',
+        PASSPORT: 'Паспорт',
+        PERSNUM: 'Персональный номер',
+        BIRTHDATE: 'Дата рождения',
+        ADDRESS: 'Адрес',
         EMAIL: 'Email',
         PHONE: 'Телефон',
     };
+
+    const TYPE_ORDER = [
+        'PERSON', 'ORG', 'INN', 'KPP', 'OGRN', 'OKPO', 'SNILS', 'BIK',
+        'ACCOUNT', 'PASSPORT', 'PERSNUM', 'BIRTHDATE', 'ADDRESS', 'EMAIL', 'PHONE',
+    ];
+
+    // Режим обезличивания: 'local' — файл не покидает браузер,
+    // 'server' — старая отправка на /api/anonymize.
+    let anonymizeMode = 'local';
+    const ANON_MODE_KEY = 'secretary_anonymize_mode';
 
     function currentCompanyName() {
         const el = document.querySelector('.header [data-company-name]');
@@ -180,17 +200,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function anonymizePlaceholderHtml() {
         const company = currentCompanyName() || 'наименование организации';
-        return '<p class="muted">Загрузите документ для обезличивания. Замена чувствительной информации осуществляется локально. Данные в интернет не уходят!</p>'
+        const where = anonymizeMode === 'local'
+            ? 'Файл обрабатывается прямо в браузере и не отправляется на сервер.'
+            : 'Файл отправляется на сервер и обрабатывается локально на VPS.';
+        return `<p class="muted">Загрузите документ для обезличивания. ${where}</p>`
             + '<div class="anon-scope">'
             + '<h4>Какие сущности обезличиваются</h4>'
             + '<ul>'
             + '<li><span class="anon-scope-type">ФИО</span> — заменяются на [PERSON_1] и т.д.</li>'
-            + `<li><span class="anon-scope-type">Организации</span> — заменяются на [ORG_1] и т.д. (юрлица: ООО/АО/ПАО «...», ${escapeHtml(company)}, Росимущество, контрагент по договору)</li>`
-            + '<li><span class="anon-scope-type">ИНН</span> — заменяются на [INN_1] и т.д.</li>'
-            + '<li><span class="anon-scope-type">Email</span> — заменяются на [EMAIL_1] и т.д.</li>'
-            + '<li><span class="anon-scope-type">Телефон</span> — заменяются на [PHONE_1] и т.д.</li>'
+            + `<li><span class="anon-scope-type">Организации</span> — заменяются на [ORG_1] и т.д. (юрлица: ООО/АО/ПАО/ФГБУ — как в кавычках, так и без них, а также полные формы ОПФ; ${escapeHtml(company)}, Росимущество, контрагент по договору)</li>`
+            + '<li><span class="anon-scope-type">Реквизиты</span> — ИНН, КПП, ОГРН, ОКПО, СНИЛС, БИК, расчётный счёт</li>'
+            + '<li><span class="anon-scope-type">Прочее</span> — email, телефон, паспорт, персональный номер, дата рождения, адрес</li>'
             + '</ul>'
             + '</div>';
+    }
+
+    function applyAnonymizeMode(mode) {
+        anonymizeMode = mode === 'server' ? 'server' : 'local';
+        try { localStorage.setItem(ANON_MODE_KEY, anonymizeMode); } catch (_) {}
+
+        document.querySelectorAll('[data-anon-mode]').forEach(btn => {
+            const active = btn.dataset.anonMode === anonymizeMode;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', String(active));
+        });
+
+        const input = document.getElementById('doc-file');
+        if (input) {
+            input.accept = anonymizeMode === 'local' ? '.docx,.txt,.md' : '.docx,.doc';
+        }
+        const hint = document.getElementById('doc-formats-hint');
+        if (hint) {
+            hint.textContent = anonymizeMode === 'local'
+                ? '.docx, .txt, .md (до 50 МБ)'
+                : '.docx, .doc (до 50 МБ)';
+        }
+        const note = document.getElementById('doc-mode-note');
+        if (note) {
+            note.textContent = anonymizeMode === 'local'
+                ? 'Файл не покидает ваш компьютер: обработка идёт в браузере.'
+                : 'Файл отправляется на сервер. Используйте, если браузер не поддерживает разбор DOCX.';
+        }
+        if (mode === 'anonymize' && output) output.innerHTML = anonymizePlaceholderHtml();
     }
 
     function setAnonymizeDocLabel(fileName) {
@@ -210,8 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const byType = report.entities_by_type || {};
         const mapping = report.mapping || {};
-        const order = ['PERSON', 'ORG', 'INN', 'EMAIL', 'PHONE'];
-        const types = order.filter(t => (byType[t] || 0) > 0);
+        const types = TYPE_ORDER.filter(t => (byType[t] || 0) > 0);
 
         if (!types.length) {
             html += '<p class="muted">Личные данные не найдены.</p>';
@@ -250,67 +300,92 @@ document.addEventListener('DOMContentLoaded', () => {
         showResult(`Файл сохранён: ${fname}\nНайдено сущностей: ${count}\nПо типам: ${JSON.stringify(byType)}`, fname);
     }
 
+    function downloadBlob(blob, fname) {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = fname;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+
+    function maskedName(name) {
+        return name.replace(/(\.[^.\\/]+)$/, '_obezlichennyi$1');
+    }
+
+    async function anonymizeTextFile(file) {
+        const text = new TextDecoder('utf-8').decode(await file.arrayBuffer());
+        const engine = window.AnonymizeCore.createEngine({
+            companyName: currentCompanyName(),
+            serverParity: true,
+        });
+        const masked = engine.applySpans(text, engine.assign(engine.analyze(text)));
+        return {
+            blob: new Blob([masked], { type: 'text/plain;charset=utf-8' }),
+            report: engine.report(),
+        };
+    }
+
+    async function anonymizeDocxFile(file) {
+        const buffer = await file.arrayBuffer();
+        const engine = window.AnonymizeCore.createEngine({
+            companyName: currentCompanyName(),
+            serverParity: true,
+        });
+        return window.AnonymizeDocx.anonymizeDocx(buffer, engine);
+    }
+
+    async function processDocumentLocal(file) {
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.txt') || name.endsWith('.md')) {
+            return anonymizeTextFile(file);
+        }
+        if (name.endsWith('.docx')) {
+            return anonymizeDocxFile(file);
+        }
+        if (name.endsWith('.doc')) {
+            throw new Error('Формат .doc (старый Word) поддерживается только серверным режимом. '
+                + 'Сохраните документ как .docx или переключитесь на серверный режим.');
+        }
+        throw new Error('Поддерживаются файлы .docx, .txt и .md.');
+    }
+
     async function processDocument(file) {
         setAnonymizeDocLabel(file.name);
 
+        const local = anonymizeMode === 'local';
         requestPending = true;
         App.setFileProcessing({
             statusId: 'anonymize-status',
             progressId: 'anonymize-progress',
             zoneId: 'doc-drop',
             active: true,
-            message: 'Обезличивание документа…',
+            message: local ? 'Обезличивание в браузере…' : 'Обезличивание документа…',
         });
 
         if (output) output.innerHTML = '<p class="muted">Обработка...</p>';
 
         try {
-            // POST /api/anonymize (multipart file)
-            const form = new FormData();
-            form.append('file', file);
-            const resp = await fetch('/api/anonymize', { method: 'POST', body: form });
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                const detail = err.detail;
-                const msg = Array.isArray(detail)
-                    ? detail.map(d => d.msg || String(d)).join('; ')
-                    : (detail || resp.statusText);
-                throw new Error(stripSiteUrls(msg));
-            }
-
-            const blob = await resp.blob();
-            const text = await blob.text(); // на случай JSON-ошибки
-            // Если ответ — файл (docx), blob.type будет application/vnd.openxmlformats...
-            if (resp.headers.get('content-type')?.includes('application/vnd.openxmlformats')) {
-                // Сохраняем файл
-                let fname = 'obezlichennyi.docx';
-                const cd = resp.headers.get('Content-Disposition') || '';
-                const m = cd.match(/filename\*=UTF-8''([^;]+)/);
-                if (m) fname = decodeURIComponent(m[1]);
-
-                const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
-                link.download = fname;
-                link.click();
-                URL.revokeObjectURL(link.href);
-
-                showAnonymizeResult(fname, resp);
+            if (local) {
+                const { blob, report } = await processDocumentLocal(file);
+                const fname = maskedName(file.name);
+                downloadBlob(blob, fname);
+                if (output) output.innerHTML = renderAnonymizeReport(report, fname);
+                const lines = Object.entries(report.mapping || {})
+                    .map(([ph, orig]) => `${ph} ← ${orig}`);
+                currentResult = `Файл: ${fname}\nОбезличено сущностей: ${report.entities_found ?? 0}\n`
+                    + lines.join('\n');
+                currentFilename = fname;
+                resultActions?.classList.remove('hidden');
+                output.scrollTop = 0;
             } else {
-                // JSON ответ (ошибка или report=json)
-                try {
-                    const json = JSON.parse(text);
-                    if (json.detail) throw new Error(json.detail);
-                    showResult(JSON.stringify(json, null, 2), file.name);
-                } catch {
-                    showResult(text, file.name);
-                }
+                await processDocumentOnServer(file);
             }
 
             App.setStatus('anonymize-status', 'Готово', 'ok', { zoneId: 'doc-drop' });
         } catch (e) {
             const msg = e.name === 'AbortError'
                 ? 'Запрос прерван.'
-                : e.message;
+                : (e.message || String(e));
             if (output) {
                 output.innerHTML = '';
                 const error = document.createElement('p');
@@ -331,8 +406,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function processDocumentOnServer(file) {
+        // POST /api/anonymize (multipart file)
+        const form = new FormData();
+        form.append('file', file);
+        const resp = await fetch('/api/anonymize', { method: 'POST', body: form });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            const detail = err.detail;
+            const msg = Array.isArray(detail)
+                ? detail.map(d => d.msg || String(d)).join('; ')
+                : (detail || resp.statusText);
+            throw new Error(stripSiteUrls(msg));
+        }
+
+        const blob = await resp.blob();
+        const text = await blob.text(); // на случай JSON-ошибки
+        // Если ответ — файл (docx), blob.type будет application/vnd.openxmlformats...
+        if (resp.headers.get('content-type')?.includes('application/vnd.openxmlformats')) {
+            // Сохраняем файл
+            let fname = 'obezlichennyi.docx';
+            const cd = resp.headers.get('Content-Disposition') || '';
+            const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+            if (m) fname = decodeURIComponent(m[1]);
+
+            downloadBlob(blob, fname);
+
+            showAnonymizeResult(fname, resp);
+        } else {
+            // JSON ответ (ошибка или report=json)
+            try {
+                const json = JSON.parse(text);
+                if (json.detail) throw new Error(json.detail);
+                showResult(JSON.stringify(json, null, 2), file.name);
+            } catch {
+                showResult(text, file.name);
+            }
+        }
+    }
+
     App.setupDropZone('audio-drop', 'audio-file', processAudio);
     App.setupDropZone('doc-drop', 'doc-file', processDocument);
+
+    let savedAnonymizeMode = 'local';
+    try { savedAnonymizeMode = localStorage.getItem(ANON_MODE_KEY) || 'local'; } catch (_) {}
+    applyAnonymizeMode(savedAnonymizeMode);
+    document.querySelectorAll('[data-anon-mode]').forEach(btn => {
+        btn.addEventListener('click', () => applyAnonymizeMode(btn.dataset.anonMode));
+    });
 
     document.getElementById('history-list')?.addEventListener('click', async e => {
         const link = e.target.closest('.history-link');

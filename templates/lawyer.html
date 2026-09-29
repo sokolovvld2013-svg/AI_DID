@@ -62,7 +62,8 @@
                 {% for item in history %}
                 <li>
                     <time>{{ item.timestamp }}</time>
-                    <button type="button" class="history-query module-history-link" data-history-index="{{ loop.index0 }}">{{ item.query[:60] }}{% if item.query|length > 60 %}…{% endif %}</button>
+                    {% set hist_text = item.label or item.query %}
+                    <button type="button" class="history-query module-history-link" data-history-index="{{ loop.index0 }}">{{ hist_text[:60] }}{% if hist_text|length > 60 %}…{% endif %}</button>
                 </li>
                 {% else %}
                 <li class="muted">Нет вопросов</li>

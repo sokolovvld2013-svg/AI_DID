@@ -28,6 +28,14 @@ def clear_documents(session_id: str) -> None:
     _docs_by_session.pop(session_id, None)
 
 
+def clear_document(session_id: str, zone: str) -> None:
+    if zone not in ZONES:
+        raise ValueError(f"Неизвестная зона: {zone}")
+    bucket = _docs_by_session.get(session_id)
+    if bucket:
+        bucket.pop(zone, None)
+
+
 def all_loaded(session_id: str) -> bool:
     """Готовность к проверке: обязательна только торговая документация."""
     docs = _docs_by_session.get(session_id) or {}

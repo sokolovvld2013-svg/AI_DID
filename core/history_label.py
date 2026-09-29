@@ -108,14 +108,8 @@ def _norm_part(part: str) -> str:
     return out
 
 
-def normalize_address(raw: str | None) -> str:
-    """«Российская Федерация, город Москва, вн.тер.г. м.о. Басманный, улица Нижняя Красносельская, дом 35, строение 2» → «г. Москва, ул. Нижняя Красносельская, д. 35»."""
-    text = clean_text(raw).split(";")[0].split("|")[0]
-    if not text:
-        return ""
-    match = _ADDRESS_LEAD_RE.search(text)
-    if match:
-        text = match.group(1)
+def _normalize_tokens(text: str) -> str:
+    """Строит адрес из частей через запятую, обрывая на номере дома."""
     kept: list[str] = []
     has_house = False
     for raw_part in text.split(","):
@@ -123,9 +117,7 @@ def normalize_address(raw: str | None) -> str:
         if not part or _NOISE_PART_RE.search(part):
             continue
         normalized = _norm_part(part)
-        if not normalized:
-            continue
-        if _NOISE_PART_RE.search(normalized):
+        if not normalized or _NOISE_PART_RE.search(normalized):
             continue
         if has_house:
             break
@@ -135,12 +127,28 @@ def normalize_address(raw: str | None) -> str:
     return ", ".join(kept)
 
 
+def normalize_address(raw: str | None) -> str:
+    """«Российская Федерация, город Москва, вн.тер.г. м.о. Басманный, улица Нижняя Красносельская, дом 35, строение 2» → «г. Москва, ул. Нижняя Красносельская, д. 35»."""
+    text = clean_text(raw).split(";")[0].split("|")[0]
+    if not text:
+        return ""
+    match = _ADDRESS_LEAD_RE.search(text)
+    if match:
+        text = match.group(1)
+    return _normalize_tokens(text)
+
+
 def first_address(text: str | None) -> str:
     return normalize_address(text)
 
 
 def find_object_address(text: str | None) -> str:
-    """Ищет адрес объекта по маркеру «расположенн... по адресу»."""
+    """Ищет адрес объекта по маркеру «расположенн... по адресу».
+
+    Если ведущий маркер города отсутствует (например «Санкт-Петербург, ул. Садовая,
+    д. 72/16»), первый проход может обрезать адрес до номера дома — тогда
+    адрес пересчитывается по захваченной части целиком.
+    """
     source = text or ""
     match = re.search(
         r"расположенн\w*\s+(?:по\s+)?адресу\s*[:\s]\s*([^|\n;]{5,220})",
@@ -148,7 +156,11 @@ def find_object_address(text: str | None) -> str:
         re.IGNORECASE,
     )
     if match:
-        address = normalize_address(match.group(1))
+        raw_address = match.group(1)
+        address = normalize_address(raw_address)
+        if address and not _HOUSE_RE.match(address):
+            return address
+        address = _normalize_tokens(raw_address)
         if address:
             return address
     return normalize_address(source)

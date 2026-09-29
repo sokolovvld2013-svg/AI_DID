@@ -1114,6 +1114,21 @@ body.app-file-processing .upload-zone.is-processing * {
     color: var(--accent);
 }
 
+.anon-mode-switch {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+}
+.anon-mode-switch .btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+#doc-mode-note {
+    margin: 0 0 0.75rem;
+}
+
 .result-heading {
     display: flex;
     align-items: flex-start;

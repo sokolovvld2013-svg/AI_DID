@@ -57,12 +57,41 @@ class DocxProcessor:
         
         return {e.placeholder: e for e in self.registry.get_all_entities()}
 
+    def _iter_paragraphs(self, doc: Document):
+        """Все абзацы, где может быть персональная информация.
+
+        Колонтитулы и сноски тоже содержат ФИО и реквизиты, поэтому
+        обходятся вместе с основным текстом.
+        """
+        for paragraph in doc.paragraphs:
+            yield paragraph
+
+        seen = set()
+        for section in doc.sections:
+            parts = (
+                section.header, section.footer,
+                section.first_page_header, section.first_page_footer,
+                section.even_page_header, section.even_page_footer,
+            )
+            for part in parts:
+                part_id = id(part._element)
+                if part_id in seen:
+                    continue
+                seen.add(part_id)
+                for paragraph in part.paragraphs:
+                    yield paragraph
+                for table in part.tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            for paragraph in cell.paragraphs:
+                                yield paragraph
+
     def _extract_text_with_segments(self, doc: Document) -> Tuple[str, List[TextSegment]]:
         segments = []
         full_text_parts = []
         current_offset = 0
         
-        for paragraph in doc.paragraphs:
+        for paragraph in self._iter_paragraphs(doc):
             seg = self._process_paragraph(paragraph, current_offset)
             if seg:
                 segments.append(seg)

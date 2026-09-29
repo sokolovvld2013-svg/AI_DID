@@ -41,6 +41,15 @@ def phone_canon(text: str) -> str:
     return digits
 
 
+def passport_canon(text: str) -> str:
+    """Канонический ключ паспорта: только цифры серии и номера.
+
+    «50 20 123456», «5020 123456» и «50 20123456» дают ключ «5020123456» —
+    один плейсхолдер на один паспорт, независимо от написания.
+    """
+    return re.sub(r'\D', '', text)
+
+
 def org_canon(name: str) -> str:
     """Канонический ключ юрлица: разные написания → один плейсхолдер.
 
@@ -125,31 +134,77 @@ _LEGAL_QUOTE_OPEN = '[«"“„]'
 _LEGAL_QUOTE_CLOSE = '[»"”]'
 _LEGAL_QUOTE_INNER = '[^«»"“”„\n]'
 
-# Полная организационно-правовая форма + наименование в кавычках (с флексиями).
-# «Общество с ограниченной ответственностью «ДЕЗ»», «Акционерное общество «...»» и т.п.
-_LEGAL_ENTITY_PATTERN = re.compile(
-    r'(?:'
-    r'общество[а-яё]*\s+с\s+ограниченн[а-яё]*\s+ответственност[а-яё]*'
-    r'|(?:открыт[а-яё]*|закрыт[а-яё]*|публичн[а-яё]*|непубличн[а-яё]*)?\s*'
-    r'акционерн[а-яё]*\s+общество[а-яё]*'
-    r'|(?:федеральн[а-яё]*\s+)?государственн[а-яё]*\s+унитарн[а-яё]*\s+предприяти[а-яё]*'
-    r'|муниципальн[а-яё]*\s+унитарн[а-яё]*\s+предприяти[а-яё]*'
-    r')\s*'
-    r'(' + _LEGAL_QUOTE_OPEN + r')(' + _LEGAL_QUOTE_INNER + r'{2,60}?)(' + _LEGAL_QUOTE_CLOSE + r')',
+# Сокращённые организационно-правовые формы:
+# «ООО «ДЕЗ»», «АО "Ромашка"», «ФГУП «...»» (ДИД покрывается отдельным паттерном).
+_LEGAL_ABBREV = (
+    r'(?:ООО|ОАО|ЗАО|ПАО|АООН|АО|ГУП|МУП|ФГУП|ФГБУ|ФГАУ|ФГКЦ|АНО|НКО|ОДО|НП|'
+    r'ГБУ|ГАУ|ТСЖ|СНТ|ДНП|ЖСК)'
+)
+
+# Полные формы ОПФ, которые пишут словами и без сокращения:
+# «Федеральное государственное бюджетное учреждение», «Акционерное общество».
+# Паттерн собирается без IGNORECASE, поэтому первая буква задана явно: фраза
+# может начинаться с «Федеральное», а в середине текста её пишут со строчной.
+_LEGAL_FORM_FULL = [
+    r'[Фф]едеральн[а-яё]*\s+государственн[а-яё]*\s+бюджетн[а-яё]*\s+учреждени[а-яё]*',
+    r'[Фф]едеральн[а-яё]*\s+государственн[а-яё]*\s+автономн[а-яё]*\s+учреждени[а-яё]*',
+    r'(?:[Фф]едеральн[а-яё]*\s+)?[Гг]осударственн[а-яё]*\s+учреждени[а-яё]*',
+    r'[Мм]униципальн[а-яё]*\s+учреждени[а-яё]*',
+    r'[Оо]бществ[а-яё]*\s+с\s+ограниченн[а-яё]*\s+ответственност[а-яё]*',
+    r'(?:(?:[Пп]убличн[а-яё]*|[Нн]епубличн[а-яё]*|[Оо]ткрыт[а-яё]*|[Зз]акрыт[а-яё]*)\s+)?'
+    r'[Аа]кционерн[а-яё]*\s+[Оо]бществ[а-яё]*',
+    r'(?:[Фф]едеральн[а-яё]*\s+)?[Гг]осударственн[а-яё]*\s+унитарн[а-яё]*\s+предприяти[а-яё]*',
+    r'[Мм]униципальн[а-яё]*\s+унитарн[а-яё]*\s+предприяти[а-яё]*',
+]
+_LEGAL_FORM_ANY = r'(?:' + _LEGAL_ABBREV + r'|' + r'|'.join(_LEGAL_FORM_FULL) + r')'
+
+# ОПФ + наименование в кавычках, регистр не важен.
+# Именованные группы нужны _extract_legal_entities, чтобы одинаково разбирать
+# оба варианта записи.
+_LEGAL_FORM_QUOTED_PATTERN = re.compile(
+    r'(?<![0-9A-Za-zА-Яа-яЁё_])' + _LEGAL_FORM_ANY
+    + r'(?![0-9A-Za-zА-Яа-яЁё_])'
+    r'\s*(?P<open>' + _LEGAL_QUOTE_OPEN + r')(?P<name>' + _LEGAL_QUOTE_INNER
+    + r'{2,60}?)(?P<close>' + _LEGAL_QUOTE_CLOSE + r')',
     re.IGNORECASE
 )
 
-# Сокращённые организационно-правовые формы + наименование в кавычках:
-# «ООО «ДЕЗ»», «АО "Ромашка"», «ФГУП «...»» (ДИД покрывается отдельным паттерном).
-_LEGAL_ABBREV = (
-    r'(?:ООО|ОАО|ЗАО|ПАО|АО|ГУП|МУП|ФГУП|ФГБУ|АНО|НКО|ОДО|НП|'
-    r'ТСЖ|СНТ|ДНП|ЖСК)'
+# ОПФ + наименование без кавычек: «ФГБУ ДОД», «ООО Ромашка-Авто».
+# Без IGNORECASE намеренно: тот сделал бы [А-ЯЁ] регистронезависимым, и правило
+# стало бы съедать «АО вправе требовать исполнения».
+# Не больше двух слов с заглавной буквы, иначе захватывается начало
+# следующего предложения.
+_BARE_ORG_NAME = (
+    r'[А-ЯЁ][а-яёА-ЯЁ\d]*(?:[-–—][а-яёА-ЯЁ\d]+|\.[а-яёА-ЯЁ\d]+)*'
+    r'(?:\s+[А-ЯЁ][а-яёА-ЯЁ\d]*(?:[-–—][а-яёА-ЯЁ\d]+|\.[а-яёА-ЯЁ\d]+)*)?'
 )
-_LEGAL_ABBREV_PATTERN = re.compile(
-    r'(?<![А-ЯЁа-яё])' + _LEGAL_ABBREV + r'(?![А-ЯЁа-яё])'
-    r'\s*(' + _LEGAL_QUOTE_OPEN + r')(' + _LEGAL_QUOTE_INNER + r'{2,60}?)(' + _LEGAL_QUOTE_CLOSE + r')',
+_LEGAL_FORM_BARE_PATTERN = re.compile(
+    r'(?<![0-9A-Za-zА-Яа-яЁё_])' + _LEGAL_FORM_ANY
+    + r'(?![0-9A-Za-zА-Яа-яЁё_])'
+    r'\s+(?![«"„“])(?P<name>' + _BARE_ORG_NAME + r')'
+)
+
+# Реквизиты и повторная ОПФ не являются частью наименования:
+# «АО Сбербанк ИНН 7707083893» → «АО Сбербанк».
+_ORG_NAME_TAIL_REJECT = re.compile(
+    r'^(?:инн|кпп|огрн|огрнип|окпо|октмо|снилс|бик|уин|кбк|рс|кс|оао|ооо|зао|пао|'
+    r'ао|аон|гуп|муп|фгуп|фгбу|ано|нко|ип|флп|в|лице)$',
     re.IGNORECASE
 )
+
+
+def _trim_bare_org_name(raw: str) -> str:
+    """Убирает из наименования без кавычек хвост из реквизитов и ФИО."""
+    words = [w for w in raw.split() if w]
+    while len(words) > 1:
+        last = words[-1]
+        if _ORG_NAME_TAIL_REJECT.match(last) or last.lower() in _PERSON_STOPWORDS:
+            words.pop()
+        else:
+            break
+    if not words or _ORG_NAME_TAIL_REJECT.match(words[0]):
+        return ''
+    return ' '.join(words)
 
 # Название ДИД: между словами допускается перенос строки (в DOCX длинное
 # наименование часто разбито), после ФГУП — кавычка или пробел.
@@ -333,6 +388,10 @@ class MorphNormalizer:
     @staticmethod
     def _extract_initial_letters(word: str) -> list[str]:
         """Ищет инициалы вида Е.В. / Е. / Е.В — возвращает буквы."""
+        # Цепочка одиночных заглавных букв через точку «Е.В.», «Е.В», «Е.» —
+        # все буквы являются инициалами, в том числе последняя без точки.
+        if re.fullmatch(r'[А-ЯЁ](?:\.\s?[А-ЯЁ])*\.?', word):
+            return [ch.lower() for ch in word if ch in 'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ']
         letters = re.findall(r'[А-ЯЁ](?=\.)', word)
         return [ch.lower() for ch in letters]
 
@@ -377,8 +436,12 @@ class NERExtractor:
         self.morph = MorphAnalyzer()
         
         self._regex_patterns = {
+            'PASSPORT': RegexPatterns.PASSPORT,
+            'PERSNUM': RegexPatterns.PERSONAL_NUM,
             'EMAIL': RegexPatterns.EMAIL,
             'PHONE': RegexPatterns.PHONE,
+            # INN после PASSPORT: паспорт, написанный без пробелов
+            # («паспорт 5020123456»), не должен аннулироваться INN-правилом.
             'INN': RegexPatterns.INN,
         }
         
@@ -608,18 +671,23 @@ class NERExtractor:
         entities = []
         
         for entity_type, pattern in self._regex_patterns.items():
+            # Группа захвата: PASSPORT и PERSNUM распознают цифры по подписи
+            # поля, но маскировать нужно только сами цифры, а не подпись.
+            group = 1 if entity_type in ("PASSPORT", "PERSNUM") else 0
             for match in pattern.finditer(text):
-                raw = match.group()
+                raw = match.group(group)
                 if entity_type == "PHONE":
                     normalized = phone_canon(raw)
+                elif entity_type in ("PASSPORT", "PERSNUM"):
+                    normalized = passport_canon(raw)
                 else:
                     normalized = raw.lower()
                 entities.append(ExtractedEntity(
                     text=raw,
                     normalized=normalized,
                     entity_type=entity_type,
-                    start=match.start(),
-                    end=match.end()
+                    start=match.start(group),
+                    end=match.end(group)
                 ))
         
         return entities
@@ -681,7 +749,7 @@ class NERExtractor:
         это ФИО. Заголовок договора («Договора аренды … (Далее – Договор
         аренды)») не проходит ни одного условия и контрагентом не считается.
         """
-        if _LEGAL_ENTITY_PATTERN.search(name) or _LEGAL_ABBREV_PATTERN.search(name):
+        if _LEGAL_FORM_QUOTED_PATTERN.search(name) or _LEGAL_FORM_BARE_PATTERN.search(name):
             return True
         if _QUOTED_NAME.search(name):
             return True
@@ -697,7 +765,7 @@ class NERExtractor:
         a = alias.strip()
         if len(a) < 4:
             return False
-        if _LEGAL_ENTITY_PATTERN.search(a) or _LEGAL_ABBREV_PATTERN.search(a):
+        if _LEGAL_FORM_QUOTED_PATTERN.search(a) or _LEGAL_FORM_BARE_PATTERN.search(a):
             return True
         words = re.findall(r'[А-ЯЁа-яё]+', a)
         if len(words) < 2:
@@ -768,56 +836,84 @@ class NERExtractor:
 
     def _extract_legal_entities(self, text: str,
                                 existing: List[ExtractedEntity]) -> List[ExtractedEntity]:
-        """Наименования юрлиц: полная организационно-правовая форма + «Имя» и
-        аббревиатура + «Имя». Полная и сокращённая формы одного лица получают
-        общий плейсхолдер (дедупликация по имени в кавычках). Дальнейшие ссылки
-        на «Имя» в кавычках маскируются тем же значением.
+        """Наименования юрлиц: ОПФ + «Имя», ОПФ + Имя без кавычек и полные формы
+        ОПФ. Все написания одного лица получают общий плейсхолдер (дедупликация
+        по наименованию), включая сокращённое «ФГБУ ДОД» и развёрнутое
+        «Федеральное государственное бюджетное учреждение «ДОД»».
 
         ФГУП «ДИД», Росимущество и контрагент по договору уже извлечены выше и
         перекрывающиеся совпадения пропускаются, чтобы не плодить плейсхолдеры.
         """
         results: List[ExtractedEntity] = []
-        seen_aliases: Set[Tuple[int, int]] = set()
-
-        def add_alias(alias: str, key: str) -> None:
-            """Все вхождения Quoted-имени получают тот же плейсхолдер."""
-            for om in re.finditer(re.escape(alias), text):
-                if (om.start(), om.end()) in seen_aliases:
-                    continue
-                seen_aliases.add((om.start(), om.end()))
-                results.append(ExtractedEntity(
-                    text=alias,
-                    normalized=key,
-                    entity_type=self.ORG_TYPE,
-                    start=om.start(),
-                    end=om.end(),
-                ))
+        primary: List[ExtractedEntity] = []
+        # (псевдоним, ключ, позиция самого упоминания или -1)
+        aliases: List[Tuple[str, str, int]] = []
 
         matches = []
-        for pattern in (_LEGAL_ENTITY_PATTERN, _LEGAL_ABBREV_PATTERN):
+        for pattern in (_LEGAL_FORM_QUOTED_PATTERN, _LEGAL_FORM_BARE_PATTERN):
             matches.extend(pattern.finditer(text))
+        matches.sort(key=lambda m: m.start())
 
         for m in matches:
-            name = m.group(2).strip()
+            bare = m.groupdict().get('open') is None
+            raw = m.group('name')
+            name = _trim_bare_org_name(raw) if bare else raw.strip()
             if len(name) < 2:
                 continue
-            s, e = m.start(), m.end()
-            if self._overlaps_any(existing, s, e):
+            s = m.start()
+            # В кавычках совпадение заканчивается закрывающей кавычкой, без
+            # кавычек — обрезанным наименованием.
+            e = m.end()
+            if bare:
+                e = m.start('name') + len(name)
+            if self._overlaps_any(existing, s, e) or self._overlaps_any(results, s, e):
+                continue
+            if self._overlaps_any(primary, s, e):
                 continue
             normalized = org_canon(name)
-            results.append(ExtractedEntity(
+            span = ExtractedEntity(
                 text=text[s:e],
                 normalized=normalized,
                 entity_type=self.ORG_TYPE,
                 start=s,
                 end=e,
-            ))
-            add_alias(text[m.start(1):m.end(3)], normalized)
+            )
+            results.append(span)
+            primary.append(span)
+            # Псевдоним собираем, но расставим ниже: иначе «ДОД» внутри
+            # «Федеральное … учреждение «ДОД»» занял бы это место, и
+            # развёрнутое упоминание осталось бы с ОПФ и кавычками.
+            if bare:
+                aliases.append((name, normalized, m.start('name')))
+            else:
+                aliases.append((text[m.start('open'):m.end('close')], normalized, m.start('open')))
             # Сокращение сразу в скобках: «АО «Полное» («Сбербанк-АСТ»)» —
             # та же организация, поэтому получает тот же плейсхолдер.
             tail = _PAREN_ALIAS_PATTERN.match(text, e)
             if tail and org_canon(tail.group(1)) != normalized:
-                add_alias(tail.group(1), normalized)
+                aliases.append((tail.group(1), normalized, -1))
+
+        taken: Set[Tuple[int, str]] = set()
+        for alias, key, at in aliases:
+            if not alias or len(alias) < 3:
+                continue
+            for om in re.finditer(r'(?<![0-9A-Za-zА-Яа-яЁё_])' + re.escape(alias)
+                                  + r'(?![0-9A-Za-zА-Яа-яЁё_])', text):
+                s, e = om.start(), om.end()
+                if s == at:
+                    continue
+                if self._overlaps_any(primary, s, e) or self._overlaps_any(existing, s, e):
+                    continue
+                if (s, key) in taken:
+                    continue
+                taken.add((s, key))
+                results.append(ExtractedEntity(
+                    text=alias,
+                    normalized=key,
+                    entity_type=self.ORG_TYPE,
+                    start=s,
+                    end=e,
+                ))
 
         return results
 

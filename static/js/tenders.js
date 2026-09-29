@@ -147,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
-    function renderFileInfo(infoId, name, cadastral) {
+    function renderFileInfo(infoId, zoneKey, name, cadastral) {
         const el = document.getElementById(infoId);
         if (!el) return;
         if (!name) {
@@ -155,7 +155,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
         const cad = cadastral ? `<small class="muted">КН: ${escapeHtml(cadastral)}</small>` : "";
-        el.innerHTML = `<li><span>${escapeHtml(name)}</span>${cad ? `<br>${cad}` : ""}</li>`;
+        el.innerHTML = `<li><span>${escapeHtml(name)}${cad ? `<br>${cad}` : ""}</span><button type="button" class="btn-icon delete-zone-file" data-zone="${escapeHtml(zoneKey)}" title="Удалить">×</button></li>`;
     }
 
     async function refreshStatus() {
@@ -168,7 +168,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 const zone = (data.zones || {})[z.key] || {};
                 if (zone.loaded) {
                     loadedCount += 1;
-                    renderFileInfo(z.infoId, safeText(zone.filename) || "Документ", zone.cadastral);
+                    renderFileInfo(z.infoId, z.key, safeText(zone.filename) || "Документ", zone.cadastral);
                 } else {
                     renderFileInfo(z.infoId, null);
                 }
@@ -226,6 +226,31 @@ document.addEventListener("DOMContentLoaded", () => {
 
     for (const zone of ZONES) {
         App.setupDropZone(zone.dropId, zone.fileId, (file) => uploadZone(zone, file));
+    }
+
+    async function deleteZoneFile(e) {
+        const btn = e.target.closest(".delete-zone-file");
+        if (!btn) return;
+        const zoneKey = btn.dataset.zone;
+        const zone = ZONES.find((z) => z.key === zoneKey);
+        if (!zone) return;
+        if (!(await App.confirm("Удалить загруженный документ из комплекта?", { danger: true }))) return;
+        try {
+            const resp = await fetch(`/tenders/${zoneKey}`, { method: "DELETE" });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                App.setStatus(zone.statusId, safeText(err.detail) || "Не удалось удалить", "error");
+                return;
+            }
+            App.setStatus(zone.statusId, "✓ Документ удалён", "ok");
+            await refreshStatus();
+        } catch (err) {
+            App.setStatus(zone.statusId, "Ошибка при удалении", "error");
+        }
+    }
+
+    for (const zone of ZONES) {
+        document.getElementById(zone.infoId)?.addEventListener("click", deleteZoneFile);
     }
 
     function formatAnswer(text, replyMode) {

@@ -41,6 +41,7 @@ from tenders.services.parser import PARSE_VERSION, parse_document, summary_for_c
 from tenders.session_state import (
     ZONES,
     all_loaded,
+    clear_document,
     clear_documents,
     get_document,
     get_documents,
@@ -214,6 +215,17 @@ async def upload_egrn(request: Request, file: UploadFile = File(...)):
 @router.post("/approval/upload")
 async def upload_approval(request: Request, file: UploadFile = File(...)):
     return await _upload_zone(request, "approval", file)
+
+
+@router.delete("/{zone}")
+async def delete_zone_document(request: Request, zone: str):
+    """Удаление загруженного документа зоны из комплекта текущей сессии."""
+    _check_access(request)
+    sid = get_session_id(request)
+    if zone not in ZONES:
+        raise HTTPException(400, "Неизвестный тип документа")
+    clear_document(sid, zone)
+    return {"status": "ok", "zone": zone, "all_loaded": all_loaded(sid)}
 
 
 @router.post("/query")
