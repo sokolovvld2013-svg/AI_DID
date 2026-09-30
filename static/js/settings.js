@@ -21,6 +21,18 @@
     const logoReset = document.getElementById('settingsLogoReset');
     const logoStatus = document.getElementById('settingsLogoStatus');
 
+    // Логи пользователей
+    const logsBody = document.getElementById('userLogsBody');
+    const logsModule = document.getElementById('userLogsModule');
+    const logsStatus = document.getElementById('userLogsStatus');
+    const logsLimit = document.getElementById('userLogsLimit');
+    const logsRefresh = document.getElementById('userLogsRefresh');
+    const logsDownload = document.getElementById('userLogsDownload');
+    const logsError = document.getElementById('userLogsError');
+    const logsRetention = document.getElementById('userLogsRetention');
+    const logsPath = document.getElementById('userLogsPath');
+    const logsState = { loaded: false, errorCodes: {} };
+
     const state = { models: [], selected: '', loaded: false, logo: null };
     let lastFocused = null;
 
@@ -288,8 +300,109 @@
         }
     }
 
-    function open() {
-        lastFocused = document.activeElement;
+    const MODULE_LABELS = {
+        economist: 'Экономист',
+        lawyer: 'Юрист',
+        procurement: 'Закупки',
+        secretary: 'Секретарь',
+        tenders: 'Торги',
+    };
+
+    function moduleLabel(key) {
+        return MODULE_LABELS[key] || key || '—';
+    }
+
+    function showLogsError(message) {
+        if (!logsError) return;
+        logsError.hidden = !message;
+        logsError.textContent = message || '';
+    }
+
+    function renderLogs(rows) {
+        if (!logsBody) return;
+        if (!rows.length) {
+            logsBody.innerHTML = '<tr><td colspan="7" class="muted">Записей пока нет</td></tr>';
+            return;
+        }
+        logsBody.innerHTML = rows.map((row) => {
+            const ts = String(row.ts || '').replace('T', ' ').slice(0, 19);
+            const login = row.login ? escapeHtml(row.login) : '<span class="muted">—</span>';
+            const question = escapeHtml(row.question || '');
+            const status = row.status === 'error'
+                ? '<span class="user-logs-status is-error">Ошибка</span>'
+                : '<span class="user-logs-status is-ok">Получен</span>';
+            // В логе лежит код, а не текст для пользователя: расшифровка — в подсказке.
+            // Записи до перехода на коды содержат поле error — показываем как есть.
+            const code = row.error_code || '';
+            const legacy = !code && row.error ? row.error : '';
+            const codeCell = code
+                ? `<span class="user-logs-code" title="${escapeHtml(logsState.errorCodes[code] || code)}">${escapeHtml(code)}</span>`
+                : legacy
+                    ? `<small class="user-logs-legacy">${escapeHtml(legacy)}</small>`
+                    : '';
+            const tokens = row.tokens == null ? '—' : escapeHtml(String(row.tokens));
+            return `<tr>
+                <td class="user-logs-ts">${escapeHtml(ts)}</td>
+                <td>${login}</td>
+                <td>${escapeHtml(row.ip || '—')}</td>
+                <td>${escapeHtml(moduleLabel(row.module))}</td>
+                <td class="user-logs-question">${question}</td>
+                <td class="user-logs-tokens">${tokens}</td>
+                <td>${status}${codeCell}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    function fillModuleFilter(modules) {
+        if (!logsModule || logsModule.dataset.filled === '1') return;
+        (modules || []).forEach((m) => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = moduleLabel(m);
+            logsModule.appendChild(opt);
+        });
+        logsModule.dataset.filled = '1';
+    }
+
+    async function loadUserLogs() {
+        if (!logsBody) return;
+        showLogsError('');
+        const params = new URLSearchParams();
+        if (logsModule && logsModule.value) params.set('module', logsModule.value);
+        if (logsStatus && logsStatus.value) params.set('status', logsStatus.value);
+        // «Все» — не отправляем limit: сервер отдаёт всё окно хранения.
+        const wantLimit = logsLimit ? logsLimit.value : '10';
+        if (wantLimit && wantLimit !== 'all') params.set('limit', wantLimit);
+        const qs = params.toString();
+        try {
+            const resp = await fetch(`/api/settings/logs?${qs}`, {
+                headers: { Accept: 'application/json' },
+            });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            if (data.error_codes) logsState.errorCodes = data.error_codes;
+            renderLogs(data.logs || []);
+            if (logsRetention && data.retention_days != null) {
+                logsRetention.textContent = String(data.retention_days);
+            }
+            // Путь хранилища приходит с бэкенда, чтобы не расходиться с config.py.
+            // Показываем только когда знаем значение — иначе в заголовке висят пустые скобки.
+            if (logsPath && data.storage_dir) {
+                logsPath.textContent = ` (${data.storage_dir})`;
+                logsPath.title = data.storage_dir;
+                logsPath.hidden = false;
+            }
+            fillModuleFilter(data.modules || []);
+            if (logsDownload) logsDownload.href = `/api/settings/logs.csv`;
+        } catch (e) {
+            logsBody.innerHTML = '<tr><td colspan="7" class="muted">Не удалось загрузить логи</td></tr>';
+            showLogsError(`Не удалось загрузить логи: ${e.message}`);
+        } finally {
+            logsState.loaded = true;
+        }
+    }
+
+    function open() {        lastFocused = document.activeElement;
         overlay.hidden = false;
         showError('');
         showLogoStatus('', false);
@@ -298,8 +411,9 @@
         if (!state.loaded) {
             loadSettings().catch(e => showError(`Не удалось загрузить настройки: ${e.message}`));
         }
+        loadUserLogs().catch(() => { /* ошибка уже показана в блоке логов */ });
         const first = overlay.querySelector('input[name="settingsModel"]:checked')
-            || overlay.querySelector('input[name="settingsModel"]:not(:disabled)');
+            || overlay.querySelector('input[name="settingsModel"]:not([disabled])');
         (first || closeBtn).focus();
     }
 
@@ -334,6 +448,10 @@
         });
     }
     if (logoReset) logoReset.addEventListener('click', resetLogo);
+    if (logsRefresh) logsRefresh.addEventListener('click', () => loadUserLogs());
+    if (logsModule) logsModule.addEventListener('change', () => loadUserLogs());
+    if (logsStatus) logsStatus.addEventListener('change', () => loadUserLogs());
+    if (logsLimit) logsLimit.addEventListener('change', () => loadUserLogs());
     document.addEventListener('keydown', e => {
         if (e.key === 'Escape' && !overlay.hidden) close();
     });

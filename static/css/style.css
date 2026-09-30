@@ -2092,6 +2092,68 @@ body.confirm-open { overflow: hidden; }
 }
 .settings-table input[type="radio"]:disabled { cursor: not-allowed; }
 
+/* Логи пользователей (секция в настройках) */
+.user-logs-path {
+    font-weight: 400;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    word-break: break-all;
+    cursor: text;
+    user-select: all;
+}
+.user-logs-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.6rem 0;
+}
+.user-logs-field { display: inline-flex; }
+.user-logs-field .settings-input { min-width: 10rem; }
+.user-logs-table td { font-size: 0.8rem; }
+.user-logs-ts { white-space: nowrap; }
+.user-logs-tokens { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.user-logs-question { max-width: 22rem; overflow-wrap: anywhere; }
+.user-logs-error {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--danger);
+    font-size: 0.75rem;
+}
+.user-logs-code {
+    display: inline-block;
+    margin-top: 0.25rem;
+    padding: 0.1rem 0.35rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-sm, 4px);
+    background: var(--surface-hover);
+    color: var(--text-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.7rem;
+    cursor: help;
+}
+.user-logs-legacy {
+    display: block;
+    margin-top: 0.25rem;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+}
+.user-logs-status {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+.user-logs-status.is-ok {
+    background: rgba(var(--accent-rgb), 0.12);
+    color: var(--accent-hover);
+}
+.user-logs-status.is-error {
+    background: rgba(220, 38, 38, 0.12);
+    color: var(--danger);
+}
+
 .settings-model-name { font-weight: 600; display: block; }
 .settings-model-id {
     display: block;

@@ -21,8 +21,9 @@ from config import (
 from core.history import lawyer_history
 from core.session import get_session_id
 from core.templates import templates
-from core.llm_errors import LLMUserFacingError
-from core.llm_client import get_llm
+from core.llm_errors import LLMUserFacingError, llm_error_code
+from core.llm_client import current_usage, get_llm
+from core.user_logs import log_query
 from lawyer.contract_check import (
     CONTRACT_SYSTEM_PROMPT,
     build_contract_context,
@@ -395,6 +396,13 @@ async def query(req: LawyerQuery, request: Request):
     question = req.question.strip()
     sid = get_session_id(request)
     if not question:
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="EMPTY_QUESTION",
+        )
         raise HTTPException(400, "Пустой вопрос")
     if req.mode == "contract":
         return await _query_contract(sid, question)
@@ -404,6 +412,13 @@ async def query(req: LawyerQuery, request: Request):
 async def _query_contract(session_id: str, question: str) -> dict:
     contract = get_contract(session_id)
     if not contract:
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="NO_DOCUMENT",
+        )
         raise HTTPException(
             400,
             "Сначала загрузите договор в блоке «Проверка договора».",
@@ -411,6 +426,13 @@ async def _query_contract(session_id: str, question: str) -> dict:
 
     fragments = contract.get("fragments") or []
     if not fragments:
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="DOC_PARSE_FAILED",
+        )
         raise HTTPException(400, "Договор не удалось разобрать. Загрузите файл заново.")
 
     context, citations = build_contract_context(
@@ -419,6 +441,13 @@ async def _query_contract(session_id: str, question: str) -> dict:
     )
     if not context:
         msg = "Не удалось извлечь текст договора для проверки. Загрузите файл заново."
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="DOC_PARSE_FAILED",
+        )
         _lawyer_error_reply(session_id, question, msg, mode="contract")
         return {"answer": msg, "citations": []}
 
@@ -450,21 +479,42 @@ async def _query_contract(session_id: str, question: str) -> dict:
             label=build_history_label(contract) or CHECK_HISTORY_LABEL,
             citations=citations,
         )
+        log_query(
+            module="lawyer",
+            question=question,
+            status="ok",
+            tokens=current_usage(),
+        )
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
         }
     except LLMUserFacingError as e:
         logger.warning("Lawyer contract check LLM error: %s", e.original or e)
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code=llm_error_code(e.original or e),
+        )
         return _lawyer_error_reply(
             session_id, question, e.user_message, mode="contract"
         )
     except Exception as e:
         logger.exception("Lawyer contract check failed: %s", e)
+        _msg = "Произошла ошибка при проверке договора. Попробуйте ещё раз."
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="INTERNAL_ERROR",
+        )
         return _lawyer_error_reply(
             session_id,
             question,
-            "Произошла ошибка при проверке договора. Попробуйте ещё раз.",
+            _msg,
             mode="contract",
         )
 
@@ -474,6 +524,13 @@ def _query_kb(session_id: str, question: str) -> dict:
     if not all_hits:
         answer = "База знаний пуста. Загрузите документы для ответа на вопросы."
         lawyer_history.add(session_id, question, answer, mode="kb")
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="KB_EMPTY",
+        )
         return {"answer": answer, "citations": []}
 
     try:
@@ -484,6 +541,13 @@ def _query_kb(session_id: str, question: str) -> dict:
                 "Переформулируйте вопрос или загрузите другой документ."
             )
             lawyer_history.add(session_id, question, answer, mode="kb")
+            log_query(
+                module="lawyer",
+                question=question,
+                status="error",
+                tokens=current_usage(),
+                error_code="NO_RELEVANT_HITS",
+            )
             return {"answer": answer, "citations": []}
 
         llm = get_llm()
@@ -530,19 +594,40 @@ def _query_kb(session_id: str, question: str) -> dict:
         if not citations and hits:
             logger.info("В ответе нет ссылок [N] — источники не показаны")
         lawyer_history.add(session_id, question, answer, mode="kb", citations=citations)
+        log_query(
+            module="lawyer",
+            question=question,
+            status="ok",
+            tokens=current_usage(),
+        )
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
         }
     except LLMUserFacingError as e:
         logger.warning("Lawyer query LLM error: %s", e.original or e)
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code=llm_error_code(e.original or e),
+        )
         return _lawyer_error_reply(session_id, question, e.user_message, mode="kb")
     except Exception as e:
         logger.exception("Lawyer query failed: %s", e)
+        _msg = "Произошла ошибка при обработке запроса. Попробуйте переформулировать вопрос."
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="INTERNAL_ERROR",
+        )
         return _lawyer_error_reply(
             session_id,
             question,
-            "Произошла ошибка при обработке запроса. Попробуйте переформулировать вопрос.",
+            _msg,
             mode="kb",
         )
 

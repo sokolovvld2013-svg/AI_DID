@@ -24,11 +24,13 @@ from config import (
 from core.history import economist_history
 from core.session import get_session_id
 from core.templates import templates
+from core.user_logs import log_query
 
 from economist.n8n_client import (
     _is_meaningless_text,
     ask_economist_n8n,
     is_test_webhook_url,
+    n8n_error_code,
     records_are_empty,
 )
 
@@ -57,7 +59,7 @@ class QueryRequest(BaseModel):
     message: str
 
 
-def _economist_error_reply(query: str, session_id: str) -> dict:
+def _economist_error_reply(query: str, session_id: str, code: str) -> dict:
     """Ответ в чат при ошибке n8n или пустом ответе (без HTTP 502)."""
     economist_history.add(
         session_id,
@@ -66,6 +68,14 @@ def _economist_error_reply(query: str, session_id: str) -> dict:
         intent="error",
         html="",
         render="text",
+    )
+    # n8n — внешний сервис, расход токенов приложению неизвестен: пишем 0.
+    log_query(
+        module="economist",
+        question=query,
+        status="error",
+        tokens=0,
+        error_code=code,
     )
     return {
         "answer": ECONOMIST_CHAT_ERROR,
@@ -85,6 +95,12 @@ def _economist_no_data_reply(query: str, session_id: str) -> dict:
         intent="empty",
         html="",
         render="text",
+    )
+    log_query(
+        module="economist",
+        question=query,
+        status="ok",
+        tokens=0,
     )
     return {
         "answer": ECONOMIST_NO_DATA,
@@ -157,13 +173,20 @@ async def query(req: QueryRequest, request: Request):
 
     if not message:
 
+        log_query(
+            module="economist",
+            question=message,
+            status="error",
+            tokens=0,
+            error_code="EMPTY_QUESTION",
+        )
         raise HTTPException(400, "Пустой запрос")
 
 
 
     if not N8N_ECONOMIST_WEBHOOK_URL:
         logger.warning("N8N_ECONOMIST_WEBHOOK_URL не задан")
-        return _economist_error_reply(message, sid)
+        return _economist_error_reply(message, sid, "N8N_NOT_CONFIGURED")
 
     try:
         response_text, records, table_html = await ask_economist_n8n(
@@ -203,19 +226,19 @@ async def query(req: QueryRequest, request: Request):
 
     except ValueError as e:
         logger.warning("Ошибка запроса к n8n: %s", e)
-        return _economist_error_reply(message, sid)
+        return _economist_error_reply(message, sid, "N8N_NOT_CONFIGURED")
 
     except Exception as e:
         logger.exception("Ошибка запроса к n8n: %s", e)
-        return _economist_error_reply(message, sid)
+        return _economist_error_reply(message, sid, n8n_error_code(e))
 
     if not response_text and not records and not table_html:
         logger.warning("n8n вернул пустой ответ для запроса: %s", message[:80])
-        return _economist_error_reply(message, sid)
+        return _economist_error_reply(message, sid, "N8N_EMPTY_RESPONSE")
 
     if _is_meaningless_text(response_text) and not records and not table_html:
         logger.warning("n8n вернул пустой ответ (%r) для запроса: %s", response_text, message[:80])
-        return _economist_error_reply(message, sid)
+        return _economist_error_reply(message, sid, "N8N_EMPTY_RESPONSE")
 
     if records and records_are_empty(records):
         logger.warning("n8n вернул пустые/нулевые данные для запроса: %s", message[:80])
@@ -230,6 +253,13 @@ async def query(req: QueryRequest, request: Request):
         intent="n8n",
         html=table_html,
         render="table" if table_html else "text",
+    )
+
+    log_query(
+        module="economist",
+        question=message,
+        status="ok",
+        tokens=0,
     )
 
     return {

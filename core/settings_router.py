@@ -1,10 +1,15 @@
 """API общих настроек: выбор модели LLM, наименование компании и логотип."""
 from __future__ import annotations
 
+import csv
+import io
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from core.api_models import api_models, is_offered, offered_models
+from core.app_time import now_app
 from core.settings import (
     PRICES_UPDATED_AT,
     SettingsError,
@@ -18,6 +23,10 @@ from core.settings import (
     save_logo_bytes,
     update_settings,
 )
+from core.user_logs import ERROR_CODES
+from core.user_logs import modules as user_log_modules
+from core.user_logs import read_logs
+from config import USER_LOGS_DIR, USER_LOGS_RETENTION_DAYS
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -99,3 +108,58 @@ async def delete_logo():
     except SettingsError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return _payload()
+
+
+@router.get("/logs")
+async def read_user_logs(
+    limit: int | None = None,
+    module: str = "",
+    status: str = "",
+    days: int | None = None,
+):
+    """Логи пользователей за окно хранения (по умолчанию 30 дней), свежие сверху.
+
+    ``limit`` не передан (или ``0``) — отдать все записи окна хранения; это
+    вариант «все» в интерфейсе. Само значение сверху ограничивает окно хранения.
+    """
+    if not limit:
+        limit = None
+    return {
+        "logs": read_logs(limit=limit, module=module, status=status, days=days),
+        "retention_days": USER_LOGS_RETENTION_DAYS,
+        "storage_dir": str(USER_LOGS_DIR),
+        "modules": user_log_modules(),
+        "error_codes": ERROR_CODES,
+    }
+
+
+@router.get("/logs.csv")
+async def download_user_logs(days: int | None = None):
+    """Выгрузка логов в CSV для Excel."""
+    rows = read_logs(limit=100000, days=days)
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=";")
+    writer.writerow(
+        ["Дата и время", "Логин", "IP-адрес", "Модуль", "Вопрос", "Токены", "Статус", "Код ошибки", "Ошибка"]
+    )
+    for row in rows:
+        code = row.get("error_code", "")
+        writer.writerow(
+            [
+                row.get("ts", ""),
+                row.get("login", ""),
+                row.get("ip", ""),
+                row.get("module", ""),
+                row.get("question", ""),
+                row.get("tokens", 0),
+                row.get("status", ""),
+                code,
+                ERROR_CODES.get(code, ""),
+            ]
+        )
+    filename = f"user-logs-{now_app().strftime('%Y-%m-%d')}.csv"
+    return Response(
+        content="\ufeff" + buffer.getvalue(),  # BOM — чтобы Excel понял кириллицу
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

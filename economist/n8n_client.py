@@ -19,6 +19,47 @@ def is_test_webhook_url(url: str) -> bool:
     return "/webhook-test/" in (url or "")
 
 
+# Заглушки из .env.example — такой адрес заведомо не рабочий, и n8n по нему
+# недоступен. Ловим отдельно, чтобы в лог попал N8N_NOT_CONFIGURED, а не
+# N8N_UNREACHABLE, и администратор видел причину, а не симптом.
+_PLACEHOLDER_HOSTS = (
+    "example.com",
+    "example.org",
+    "example.net",
+    "ваш-n8n",
+    "your-n8n",
+    "localhost",
+    "127.0.0.1",
+)
+
+
+def is_placeholder_webhook_url(url: str) -> bool:
+    """True, если адрес — шаблон из .env, а не реальный n8n."""
+    text = (url or "").lower()
+    if not text:
+        return False
+    if text.startswith(("http://localhost", "https://localhost")):
+        return True
+    return any(marker in text for marker in _PLACEHOLDER_HOSTS)
+
+
+def n8n_error_code(exc: BaseException) -> str:
+    """Короткий код ошибки n8n для логов."""
+    name = type(exc).__name__.lower()
+    blob = f"{name} {exc}".lower()
+    if "valueerror" in name or "не задан" in blob or is_placeholder_webhook_url(
+        N8N_ECONOMIST_WEBHOOK_URL
+    ):
+        return "N8N_NOT_CONFIGURED"
+    if "timeout" in name or "timeout" in blob:
+        return "N8N_TIMEOUT"
+    if "connect" in name or "connect" in blob or "dns" in blob or "resolve" in blob:
+        return "N8N_UNREACHABLE"
+    if "runtimeerror" in name or "status" in blob or "http" in blob:
+        return "N8N_HTTP_ERROR"
+    return "INTERNAL_ERROR"
+
+
 def _format_n8n_error(
     status_code: int,
     body: str,
@@ -779,6 +820,12 @@ async def ask_economist_n8n(
     url = N8N_ECONOMIST_WEBHOOK_URL
     if not url:
         raise ValueError("N8N_ECONOMIST_WEBHOOK_URL не задан в .env")
+
+    if is_placeholder_webhook_url(url):
+        raise ValueError(
+            "N8N_ECONOMIST_WEBHOOK_URL в .env остался шаблоном "
+            f"({_safe_url_for_log(url)}). Укажите реальный адрес webhook n8n."
+        )
 
     method = N8N_ECONOMIST_WEBHOOK_METHOD
     if is_test_webhook_url(url):

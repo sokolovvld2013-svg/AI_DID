@@ -1,7 +1,9 @@
 """Единый клиент LLM: GigaChat и DeepSeek."""
+import contextvars
 import logging
 import threading
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 from core.llm_errors import LLMUserFacingError, friendly_llm_error_message
 from config import (
@@ -15,6 +17,57 @@ from core.settings import get_selected_model, model_provider
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class LLMResult:
+    """Ответ LLM вместе с расходом токенов по этому вызову."""
+
+    text: str
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+    @classmethod
+    def build(
+        cls,
+        text: str,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        total_tokens: int = 0,
+    ) -> "LLMResult":
+        """Собирает результат: total при отсутствии считается как сумма частей."""
+        total = int(total_tokens or 0) or (int(prompt_tokens or 0) + int(completion_tokens or 0))
+        return cls(
+            text=text,
+            prompt_tokens=int(prompt_tokens or 0),
+            completion_tokens=int(completion_tokens or 0),
+            total_tokens=total,
+        )
+
+
+# Сумма токенов по всем LLM-вызовам в рамках одного запроса пользователя.
+# Один вопрос может породить несколько вызовов (перефразирование, сборка
+# ответа), и в лог пишется суммарный расход. contextvars изолируют счётчик
+# между параллельными запросами.
+_usage_tokens: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "llm_usage_tokens", default=0
+)
+
+
+def reset_usage() -> None:
+    """Обнулить счётчик токенов в начале обработки запроса."""
+    _usage_tokens.set(0)
+
+
+def current_usage() -> int:
+    """Сколько токенов израсходовано с последнего reset_usage()."""
+    return _usage_tokens.get()
+
+
+def _account(result: LLMResult) -> LLMResult:
+    _usage_tokens.set(_usage_tokens.get() + result.total_tokens)
+    return result
+
+
 class BaseLLM(ABC):
     @abstractmethod
     def generate(
@@ -22,7 +75,7 @@ class BaseLLM(ABC):
         prompt: str,
         system_prompt: str | None = None,
         context: str | None = None,
-    ) -> str:
+    ) -> LLMResult:
         pass
 
 
@@ -42,7 +95,7 @@ class GigaChatLLM(BaseLLM):
         prompt: str,
         system_prompt: str | None = None,
         context: str | None = None,
-    ) -> str:
+    ) -> LLMResult:
         from gigachat.models import Chat, Messages, MessagesRole
 
         parts = []
@@ -60,7 +113,13 @@ class GigaChatLLM(BaseLLM):
                 model=self._model,
             )
         )
-        return response.choices[0].message.content
+        usage = getattr(response, "usage", None)
+        return LLMResult.build(
+            text=response.choices[0].message.content,
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            total_tokens=getattr(usage, "total_tokens", 0) or 0,
+        )
 
 
 class DeepSeekLLM(BaseLLM):
@@ -75,7 +134,7 @@ class DeepSeekLLM(BaseLLM):
         prompt: str,
         system_prompt: str | None = None,
         context: str | None = None,
-    ) -> str:
+    ) -> LLMResult:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -90,7 +149,13 @@ class DeepSeekLLM(BaseLLM):
             messages=messages,
             temperature=0.3,
         )
-        return response.choices[0].message.content
+        usage = getattr(response, "usage", None)
+        return LLMResult.build(
+            text=response.choices[0].message.content,
+            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
+            total_tokens=getattr(usage, "total_tokens", 0) or 0,
+        )
 
 
 class LLMClient:
@@ -112,14 +177,26 @@ class LLMClient:
         system_prompt: str | None = None,
         context: str | None = None,
     ) -> str:
+        """Возвращает текст ответа; расход токенов учитывается в счётчике.
+
+        Наружу отдаётся строка, чтобы не трогать все места вызова. Фактический
+        расход смотрится через current_usage() в конце обработки запроса.
+        """
         logger.debug("LLM generate, model=%s, prompt length=%d", self.model, len(prompt))
         try:
-            return self._backend.generate(prompt, system_prompt, context)
+            result = self._backend.generate(prompt, system_prompt, context)
         except LLMUserFacingError:
             raise
         except Exception as e:
             logger.exception("LLM generate failed")
             raise LLMUserFacingError(friendly_llm_error_message(e), e) from e
+        _account(result)
+        logger.debug(
+            "LLM usage: prompt=%d, completion=%d",
+            result.prompt_tokens,
+            result.completion_tokens,
+        )
+        return result.text
 
     @property
     def model(self) -> str:

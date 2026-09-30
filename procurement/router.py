@@ -15,10 +15,11 @@ from config import (
     PROCUREMENT_UPLOAD_DIR,
 )
 from core.history import procurement_history
-from core.llm_client import get_llm
-from core.llm_errors import LLMUserFacingError
+from core.llm_client import current_usage, get_llm
+from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.session import get_session_id
 from core.templates import templates
+from core.user_logs import log_query
 from lawyer.citations import select_citations_for_display
 from lawyer.doc_processor import process_upload
 from lawyer.router import _select_relevant_hits
@@ -264,12 +265,18 @@ async def query(req: ProcurementQuery, request: Request):
     mode = req.mode
 
     if not question:
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="EMPTY_QUESTION",
+        )
         raise HTTPException(400, "Пустой вопрос")
 
     if mode == "check":
         return await _query_check(sid, question)
     return await _query_expert(sid, question)
-
 
 def _build_policy_context(
     question: str,
@@ -326,6 +333,13 @@ def _build_policy_context(
 async def _query_check(session_id: str, question: str) -> dict:
     doc = get_documentation(session_id)
     if not doc:
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="NO_DOCUMENT",
+        )
         raise HTTPException(
             400,
             "Сначала загрузите закупочную документацию в блоке «Закупочная документация».",
@@ -334,6 +348,13 @@ async def _query_check(session_id: str, question: str) -> dict:
     parsed = get_by_audit_id(doc["audit_id"])
     if not parsed:
         clear_documentation(session_id)
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="DOC_STALE",
+        )
         raise HTTPException(
             400,
             "Документация устарела. Загрузите файл заново.",
@@ -352,6 +373,13 @@ async def _query_check(session_id: str, question: str) -> dict:
         )
         procurement_history.add(
             session_id, question, msg, mode="check", label=CHECK_HISTORY_LABEL
+        )
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="DOC_PARSE_FAILED",
         )
         return {"answer": msg, "citations": []}
 
@@ -401,21 +429,37 @@ async def _query_check(session_id: str, question: str) -> dict:
             label=build_history_label(parsed) or CHECK_HISTORY_LABEL,
             citations=citations,
         )
+        log_query(
+            module="procurement",
+            question=question,
+            status="ok",
+            tokens=current_usage(),
+        )
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
         }
     except LLMUserFacingError as e:
         logger.warning("Procurement check LLM error: %s", e.original or e)
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code=llm_error_code(e.original or e),
+        )
         return _error_reply(session_id, question, e.user_message, "check")
     except Exception as e:
         logger.exception("Procurement check failed: %s", e)
-        return _error_reply(
-            session_id,
-            question,
-            "Произошла ошибка при проверке. Попробуйте переформулировать запрос.",
-            "check",
+        _msg = "Произошла ошибка при проверке. Попробуйте переформулировать запрос."
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="INTERNAL_ERROR",
         )
+        return _error_reply(session_id, question, _msg, "check")
 
 
 async def _query_expert(session_id: str, question: str) -> dict:
@@ -463,21 +507,37 @@ async def _query_expert(session_id: str, question: str) -> dict:
             mode="expert",
             citations=citations,
         )
+        log_query(
+            module="procurement",
+            question=question,
+            status="ok",
+            tokens=current_usage(),
+        )
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
         }
     except LLMUserFacingError as e:
         logger.warning("Procurement expert LLM error: %s", e.original or e)
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code=llm_error_code(e.original or e),
+        )
         return _error_reply(session_id, question, e.user_message, "expert")
     except Exception as e:
         logger.exception("Procurement expert failed: %s", e)
-        return _error_reply(
-            session_id,
-            question,
-            "Произошла ошибка при консультации. Попробуйте переформулировать вопрос.",
-            "expert",
+        _msg = "Произошла ошибка при консультации. Попробуйте переформулировать вопрос."
+        log_query(
+            module="procurement",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="INTERNAL_ERROR",
         )
+        return _error_reply(session_id, question, _msg, "expert")
 
 
 @router.get("/history")

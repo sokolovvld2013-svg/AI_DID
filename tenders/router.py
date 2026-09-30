@@ -16,10 +16,11 @@ from config import (
     TENDERS_UPLOAD_DIR,
 )
 from core.history import tenders_history
-from core.llm_client import get_llm
-from core.llm_errors import LLMUserFacingError
+from core.llm_client import current_usage, get_llm
+from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.session import get_session_id
 from core.templates import templates
+from core.user_logs import log_query
 from lawyer.citations import select_citations_for_display
 from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
 from core.prompt_guards import (
@@ -244,6 +245,13 @@ async def query_expert(request: Request, body: TendersExpertQuery):
     sid = get_session_id(request)
     question = (body.question or "").strip()
     if not question:
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="EMPTY_QUESTION",
+        )
         raise HTTPException(400, "Пустой вопрос")
     return await _query_expert(sid, question)
 
@@ -252,6 +260,13 @@ async def _query_check(session_id: str, question: str) -> dict:
     sid = session_id
 
     if not all_loaded(sid):
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="NO_DOCUMENT",
+        )
         raise HTTPException(
             400,
             "Загрузите торговую документацию (DOCX) — это единственный "
@@ -262,10 +277,24 @@ async def _query_check(session_id: str, question: str) -> dict:
     auction_meta = docs.get("auction")
     if not auction_meta:
         clear_documents(sid)
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="DOC_STALE",
+        )
         raise HTTPException(400, "Документы устарели. Загрузите файлы заново.")
     parsed_auction = get_by_doc_id(auction_meta["doc_id"])
     if not parsed_auction:
         clear_documents(sid)
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="DOC_STALE",
+        )
         raise HTTPException(400, "Документы устарели. Загрузите файлы заново.")
 
     parsed_egrn = None
@@ -312,6 +341,12 @@ async def _query_check(session_id: str, question: str) -> dict:
             citations=citations,
             verification=verification,
         )
+        log_query(
+            module="tenders",
+            question=question,
+            status="ok",
+            tokens=current_usage(),
+        )
         return {
             "answer": answer,
             "citations": [_citation_ref(c) for c in citations],
@@ -319,15 +354,25 @@ async def _query_check(session_id: str, question: str) -> dict:
         }
     except LLMUserFacingError as e:
         logger.warning("Tenders check LLM error: %s", e.original or e)
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code=llm_error_code(e.original or e),
+        )
         return _error_reply(sid, question, e.user_message, "check")
     except Exception as e:
         logger.exception("Tenders check failed: %s", e)
-        return _error_reply(
-            sid,
-            question,
-            "Произошла ошибка при проверке. Попробуйте позже.",
-            "check",
+        _msg = "Произошла ошибка при проверке. Попробуйте позже."
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="INTERNAL_ERROR",
         )
+        return _error_reply(sid, question, _msg, "check")
 
 
 async def _query_expert(session_id: str, question: str) -> dict:
@@ -347,18 +392,34 @@ async def _query_expert(session_id: str, question: str) -> dict:
             fallback_lines=TENDERS_EXPERT_FALLBACK_SOURCES,
         )
         tenders_history.add(session_id, question, answer, mode="expert")
+        log_query(
+            module="tenders",
+            question=question,
+            status="ok",
+            tokens=current_usage(),
+        )
         return {"answer": answer, "citations": [], "verification": None}
     except LLMUserFacingError as e:
         logger.warning("Tenders expert LLM error: %s", e.original or e)
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code=llm_error_code(e.original or e),
+        )
         return _error_reply(session_id, question, e.user_message, "expert")
     except Exception as e:
         logger.exception("Tenders expert failed: %s", e)
-        return _error_reply(
-            session_id,
-            question,
-            "Произошла ошибка при консультации. Попробуйте переформулировать вопрос.",
-            "expert",
+        _msg = "Произошла ошибка при консультации. Попробуйте переформулировать вопрос."
+        log_query(
+            module="tenders",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="INTERNAL_ERROR",
         )
+        return _error_reply(session_id, question, _msg, "expert")
 
 
 @router.get("/history")

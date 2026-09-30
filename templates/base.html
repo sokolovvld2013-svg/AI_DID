@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=35">
+    <link rel="stylesheet" href="/static/css/style.css?v=38">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -99,6 +99,60 @@
                         </div>
                     </div>
                 </section>
+
+                <section class="settings-section">
+                    <h3>Логи пользователей<span class="user-logs-path" id="userLogsPath" hidden></span></h3>
+                    <p class="settings-hint">
+                        Кто спрашивал, с какого IP, сколько токенов ушло на ответ и чем
+                        закончился запрос. Хранятся последние <span id="userLogsRetention">30</span> дней.
+                    </p>
+                    <div class="user-logs-toolbar">
+                        <label class="user-logs-field">
+                            <span class="sr-only">Модуль</span>
+                            <select id="userLogsModule" class="settings-input">
+                                <option value="">Все модули</option>
+                            </select>
+                        </label>
+                        <label class="user-logs-field">
+                            <span class="sr-only">Статус</span>
+                            <select id="userLogsStatus" class="settings-input">
+                                <option value="">Любой статус</option>
+                                <option value="ok">Ответ получен</option>
+                                <option value="error">Ошибка</option>
+                            </select>
+                        </label>
+                        <label class="user-logs-field">
+                            <span class="sr-only">Показывать записей</span>
+                            <select id="userLogsLimit" class="settings-input">
+                                <option value="10" selected>Последние 10</option>
+                                <option value="20">Последние 20</option>
+                                <option value="50">Последние 50</option>
+                                <option value="all">Все</option>
+                            </select>
+                        </label>
+                        <button type="button" class="btn btn-secondary" id="userLogsRefresh">Обновить</button>
+                        <a class="btn btn-secondary" id="userLogsDownload" href="/api/settings/logs.csv" download>Скачать CSV</a>
+                    </div>
+                    <p class="settings-error" id="userLogsError" hidden></p>
+                    <div class="settings-table-wrap">
+                        <table class="settings-table user-logs-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Дата и время</th>
+                                    <th scope="col">Логин</th>
+                                    <th scope="col">IP-адрес</th>
+                                    <th scope="col">Модуль</th>
+                                    <th scope="col">Вопрос</th>
+                                    <th scope="col">Токены</th>
+                                    <th scope="col">Статус</th>
+                                </tr>
+                            </thead>
+                            <tbody id="userLogsBody">
+                                <tr><td colspan="7" class="muted">Загрузка логов…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
 
             <div class="settings-foot">
@@ -109,8 +163,8 @@
         </div>
     </div>
 
-    <script src="/static/js/common.js?v=21"></script>
-    <script src="/static/js/settings.js?v=7"></script>
+<script src="/static/js/common.js?v=21"></script>
+<script src="/static/js/settings.js?v=11"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

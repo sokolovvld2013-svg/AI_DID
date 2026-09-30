@@ -209,8 +209,8 @@ document.addEventListener('DOMContentLoaded', () => {
             + '<ul>'
             + '<li><span class="anon-scope-type">ФИО</span> — заменяются на [PERSON_1] и т.д.</li>'
             + `<li><span class="anon-scope-type">Организации</span> — заменяются на [ORG_1] и т.д. (юрлица: ООО/АО/ПАО/ФГБУ — как в кавычках, так и без них, а также полные формы ОПФ; ${escapeHtml(company)}, Росимущество, контрагент по договору)</li>`
-            + '<li><span class="anon-scope-type">Реквизиты</span> — ИНН: [INN_1] и т.д.</li>'
-            + '<li><span class="anon-scope-type">Прочее</span> — email: [EMAIL_1], телефон: [PHONE_1], паспорт: [PASSPORT_1] (только цифры, подпись поля остаётся), персональный номер: [PERSNUM_1] (только цифры)</li>'
+            + '<li><span class="anon-scope-type">Реквизиты</span> — ИНН, КПП, ОГРН, ОКПО, СНИЛС, БИК, расчётный счёт</li>'
+            + '<li><span class="anon-scope-type">Прочее</span> — email, телефон, паспорт, персональный номер, дата рождения, адрес</li>'
             + '</ul>'
             + '</div>';
     }

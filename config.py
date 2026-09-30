@@ -209,6 +209,10 @@ ALLOWED_TENDERS_PDF_EXT = {".pdf"}
 ALLOWED_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 ALLOWED_DOC_EXT = {".pdf", ".docx", ".txt"}
 
+# Логи пользователей: JSONL-файл на день, глубина хранения задаётся переменной.
+USER_LOGS_DIR = BASE_DIR / "logs" / "user_logs"
+USER_LOGS_RETENTION_DAYS = int(os.getenv("USER_LOGS_RETENTION_DAYS", "30"))
+
 # Google-таблица фактических затрат (ссылка с правом редактирования)
 ECONOMIST_FACT_SHEET_URL = os.getenv("ECONOMIST_FACT_SHEET_URL", "").strip()
 

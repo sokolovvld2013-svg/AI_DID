@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from core.session import SessionMiddleware
 from core.settings import get_company_name
 from core.settings_router import router as settings_router
+from core.user_logs import cleanup_old_logs, set_current_request
 
 from config import (
     BASE_DIR,
@@ -119,6 +120,11 @@ async def lifespan(app: FastAPI):
             )
     except Exception as e:
         logger.warning("Проверка модуля обезличивания не удалась: %s", e)
+    try:
+        _removed = cleanup_old_logs()
+        logger.info("Очистка логов пользователей: удалено старых файлов — %s", _removed)
+    except Exception as e:
+        logger.warning("Очистка логов пользователей не удалась: %s", e)
     logger.info("Приложение запущено")
     yield
     logger.info("Приложение остановлено")
@@ -129,6 +135,17 @@ app = FastAPI(
     description="Модули: Экономист, Юрист, Закупка, Торги, Секретарь",
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def user_logs_middleware(request: Request, call_next):
+    """Кладёт текущий запрос в контекст, чтобы писать логи из кода роутеров,
+    и сбрасывает счётчик токенов LLM в начале каждого запроса."""
+    from core.llm_client import reset_usage
+
+    set_current_request(request)
+    reset_usage()
+    return await call_next(request)
+
 
 app.add_middleware(SessionMiddleware)
 
