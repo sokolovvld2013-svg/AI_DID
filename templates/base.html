@@ -6,7 +6,7 @@
     <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=38">
+    <link rel="stylesheet" href="/static/css/style.css?v=40">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -14,6 +14,8 @@
         <div class="header-brand">
             <img src="{{ logo_url() }}" alt="Логотип {{ company_name() }}" class="logo-img" id="logoImg">
             <h1 class="logo-text">ИИ-помощник <span data-company-name>{{ company_name() }}</span></h1>
+            <div class="header-lottie" id="headerLottie" data-src="/static/animations/did-assistant.json"
+                 role="img" aria-label="Анимация ИИ-помощника"></div>
         </div>
         <nav class="nav">
             <a href="/economist" class="nav-link {% if active == 'economist' %}active{% endif %}">Экономист</a>
@@ -163,7 +165,9 @@
         </div>
     </div>
 
+<script src="/static/js/lottie.min.js?v=5.12.2"></script>
 <script src="/static/js/common.js?v=21"></script>
+<script src="/static/js/header-lottie.js?v=1"></script>
 <script src="/static/js/settings.js?v=11"></script>
     {% block scripts %}{% endblock %}
 </body>
