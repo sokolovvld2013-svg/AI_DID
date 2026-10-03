@@ -7,7 +7,7 @@
     <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=49">
+    <link rel="stylesheet" href="/static/css/style.css?v=53">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -28,7 +28,7 @@
                 <form method="post" action="/logout" class="nav-logout">
                     <button type="submit" class="nav-logout-btn" title="Выйти">
                         <span class="nav-user">{{ current_user.login }}</span>
-                        <span aria-hidden="true">&rarr;</span>
+                        <img src="/static/img/logout.png" alt="" class="nav-logout-icon" aria-hidden="true">
                     </button>
                 </form>
             {% endif %}

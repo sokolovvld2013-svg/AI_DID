@@ -47,13 +47,15 @@ body {
     background: var(--surface-elevated);
     border-bottom: 1px solid var(--border);
     box-shadow: var(--shadow-sm);
+    /* Длинное название вытесняет меню на следующую строку, а не наезжает на него. */
+    flex-wrap: wrap;
 }
 
 .header-brand {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    flex: 1;
+    flex: 1 1 auto;
     min-width: 0;
 }
 
@@ -74,7 +76,9 @@ body {
     font-weight: 600;
     line-height: 1.2;
     color: var(--text);
-    white-space: nowrap;
+    /* Длинное название переносится, а не наезжает на робота и пункты меню. */
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 /* Анимация lottie с роботом-помощником: в шапке и на странице входа */
@@ -105,6 +109,7 @@ body {
 .nav {
     display: flex;
     gap: 0.35rem;
+    flex: 0 1 auto;
     flex-wrap: wrap;
     justify-content: flex-end;
 }
@@ -2643,9 +2648,9 @@ body.confirm-open { overflow: hidden; }
     font: inherit;
     font-weight: 500;
     white-space: nowrap;
-    color: var(--danger);
-    background: var(--danger-soft);
-    border: 1px solid transparent;
+    color: var(--text-muted);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-light);
     border-radius: var(--radius);
     cursor: pointer;
     transition: color 0.2s, background 0.2s, border-color 0.2s;
@@ -2653,13 +2658,26 @@ body.confirm-open { overflow: hidden; }
 
 .nav-logout-btn:hover {
     color: #ffffff;
-    background: var(--danger);
-    border-color: var(--danger);
+    background: var(--accent);
+    border-color: var(--accent);
 }
 
 .nav-logout-btn:focus-visible {
-    outline: 2px solid var(--danger);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
+}
+
+.nav-logout-icon {
+    width: 1.66em;
+    height: 1.66em;
+    object-fit: contain;
+    /* Иконка чёрная, а при наведении фон становится синим — инвертируем в белый. */
+    filter: none;
+    transition: filter 0.2s;
+}
+
+.nav-logout-btn:hover .nav-logout-icon {
+    filter: brightness(0) invert(1);
 }
 
 .nav-user {
