@@ -2644,7 +2644,10 @@ body.confirm-open { overflow: hidden; }
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    padding: 0.5rem 0.9rem;
+    /* Иконка вынесена из потока (см. .nav-logout-icon), поэтому высота кнопки
+       задаётся строкой текста, как до появления картинки. Справа место под иконку. */
+    position: relative;
+    padding: 0.5rem 2.4rem 0.5rem 0.9rem;
     font: inherit;
     font-weight: 500;
     white-space: nowrap;
@@ -2668,6 +2671,10 @@ body.confirm-open { overflow: hidden; }
 }
 
 .nav-logout-icon {
+    position: absolute;
+    right: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
     width: 1.66em;
     height: 1.66em;
     object-fit: contain;
