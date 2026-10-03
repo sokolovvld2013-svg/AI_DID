@@ -13,45 +13,97 @@ dist/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
 
-# Виртуальное окружение
-venv/
-.venv/
-venv311/
-.venv311/
+# Виртуальное окружение. Именно venv311 попал в историю этого репозитория
+# (114 МБ чужих DLL), поэтому перекрываем любое имя, а не только venv/.
+venv*/
+.venv*/
+ENV/
+env/
 
 # IDE
 .idea/
 .vscode/
+.vs/
+.cursor/
 *.swp
 *.swo
-.cursor/
+*.user
+*.suo
 
 # ОС
 .DS_Store
+._*
+.Spotlight-V100
+.Trashes
 Thumbs.db
+ehthumbs.db
 desktop.ini
+*.lnk
 
-# Данные приложения (не коммитить)
+# Данные приложения (не коммитить). Список каталогов взят из config.py:
+# MODELS_DIR, CHROMA_PERSIST_DIR, *_UPLOAD_DIR, *_CACHE_DIR, USER_LOGS_DIR.
 chroma_data/
 models/
-economist/uploaded/*
-!economist/uploaded/.gitkeep
+procurement/cache/
+procurement/uploaded/
+procurement/policy/
+tenders/cache/
+tenders/uploaded/
 secretary/uploaded/*
 !secretary/uploaded/.gitkeep
 lawyer/uploaded/*
 !lawyer/uploaded/.gitkeep
+economist/uploaded/*
+!economist/uploaded/.gitkeep
 logs/*
 !logs/.gitkeep
-procurement/cache/
-tenders/cache/
+
+# Учётные записи и настройки
+users.json
+users.json.*
 app_settings.json
+app_settings.json.*
+
+# Заменённый логотип
 static/img/logo_custom.*
 static/img/logo_custom.*.tmp
+
+# Служебное
 Защита проекта/
 .playwright-mcp/
 
-# Загружаемые пользователем файлы
+# Базы, кэши и веса моделей
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+.cache/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.tox/
+.ipynb_checkpoints/
+*.pt
+*.onnx
+
+# Покрытие тестов
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Загружаемые пользователями файлы.
+# Правило глобальное намеренно: под каталог выше их класть нельзя, а лишний
+# .docx в корне — это внутренний документ. Если понадобится держать в репозитории
+# образец, исключите его адресно: !tests/fixtures/образец.docx
 *.xlsx
 *.xls
 *.mp3
@@ -65,8 +117,9 @@ static/img/logo_custom.*.tmp
 # Логи и отладка
 *.log
 scripts/_debug*
-
-# Кэш HuggingFace / torch (если появится в проекте)
-.cache/
-*.pt
-*.onnx
+*.tmp
+*.bak
+*.orig
+*.rej
+*~
+~$*
