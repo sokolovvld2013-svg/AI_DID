@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -63,7 +63,7 @@ def parse_document(path: Path, *, doc_type: str, filename: str | None = None) ->
         "filename": name,
         "file_hash": file_hash(path),
         "parse_version": PARSE_VERSION,
-        "parsed_at": datetime.now(timezone.utc).isoformat(),
+        "parsed_at": datetime.now(UTC).isoformat(),
         "total_chars": len(text),
         "text": text,
         "fields": fields,

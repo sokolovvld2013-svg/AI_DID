@@ -264,7 +264,6 @@ def cross_validate(
                 )
 
     owner = ef.get("owner") or ""
-    landlord = af.get("address") or ""
     if owner and auction.get("text"):
         auction_text = auction.get("text") or ""
         if owner and text_similarity(owner, auction_text) < TENDERS_LEASEHOLDER_SIMILARITY:
@@ -289,7 +288,7 @@ def compute_score(errors: list[dict], warnings: list[dict]) -> int:
     score = 100
     for e in errors:
         score -= 12 if e.get("severity") == "critical" else 8
-    for w in warnings:
+    for _ in warnings:
         score -= 3
     return max(0, min(100, score))
 

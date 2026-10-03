@@ -19,11 +19,12 @@ from config import (
     MAX_LAWYER_LLM_CONTEXT_CHARS,
 )
 from core.history import lawyer_history
+from core.llm_client import current_usage, get_llm
+from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.session import get_session_id
 from core.templates import templates
-from core.llm_errors import LLMUserFacingError, llm_error_code
-from core.llm_client import current_usage, get_llm
 from core.user_logs import log_query
+from lawyer.citations import select_citations_for_display
 from lawyer.contract_check import (
     CONTRACT_SYSTEM_PROMPT,
     build_contract_context,
@@ -33,9 +34,8 @@ from lawyer.contract_check import (
 from lawyer.contract_label import build_history_label
 from lawyer.contract_state import clear_contract, get_contract, set_contract
 from lawyer.doc_processor import load_document, process_upload
-from lawyer.rag import LawyerRAG, MIN_CITATION_SCORE_RATIO, get_lawyer_rag
+from lawyer.rag import MIN_CITATION_SCORE_RATIO, LawyerRAG, get_lawyer_rag
 from lawyer.search_utils import core_query_tokens, min_core_matches_required
-from lawyer.citations import select_citations_for_display
 from lawyer.text_encoding import (
     clean_llm_display_text,
     decode_upload_filename,

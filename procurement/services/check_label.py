@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-from core.history_label import condense, find_object_address, first_address, pick_procedure, row_value
-
+from core.history_label import (
+    condense,
+    find_object_address,
+    first_address,
+    pick_procedure,
+    row_value,
+)
 
 _PROCEDURE_KEYS = (
     "Способ определения поставщика",

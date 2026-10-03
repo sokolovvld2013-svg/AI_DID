@@ -236,6 +236,48 @@ def normalize_google_sheet_edit_url(url: str) -> str:
 
 ECONOMIST_FACT_SHEET_EDIT_URL = normalize_google_sheet_edit_url(ECONOMIST_FACT_SHEET_URL)
 
+# === Вход по логину и паролю ===
+# Пока выключено (false) — приложение работает без входа. Включайте только
+# вместе с HTTPS: без шифрования пароль ходит по сети открытым текстом.
+AUTH_ENABLED = os.getenv("AUTH_ENABLED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Файл пользователей: логины, argon2id-хеши паролей, роли, отметка о смене пароля.
+# Создаётся командой:  python -m scripts.manage_users add <login> --admin
+# В .gitignore не коммитится (там же, где app_settings.json).
+USERS_FILE = Path(
+    os.getenv("USERS_FILE", "").strip() or str(BASE_DIR / "users.json")
+).expanduser()
+# Ключ подписи cookie сессии. Не задан — генерируется один раз и хранится в
+# USERS_FILE, так что .env обычно править не нужно. Своё значение удобнее при
+# нескольких экземплярах приложения: openssl rand -hex 32
+AUTH_SECRET = os.getenv("AUTH_SECRET", "").strip()
+AUTH_SESSION_MAX_AGE = int(os.getenv("AUTH_SESSION_MAX_AGE", str(12 * 60 * 60)))
+AUTH_COOKIE = "did_auth"
+# true — cookie только по HTTPS. Включайте после установки сертификата;
+# при false cookie уходит и по HTTP (нужно для отладки и локальной разработки).
+AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Защита от подбора: столько неудачных попыток подряд — блокировка на
+# AUTH_LOCKOUT_SEC секунд (по паре «логин + IP»).
+AUTH_MAX_ATTEMPTS = max(1, int(os.getenv("AUTH_MAX_ATTEMPTS", "5")))
+AUTH_LOCKOUT_SEC = max(1, int(os.getenv("AUTH_LOCKOUT_SEC", "300")))
+AUTH_MIN_PASSWORD_LEN = max(1, int(os.getenv("AUTH_MIN_PASSWORD_LEN", "8")))
+AUTH_MAX_PASSWORD_LEN = max(64, int(os.getenv("AUTH_MAX_PASSWORD_LEN", "256")))
+# Админские маршруты (/api/settings) доступны только роли admin. false — всем,
+# кому открыт обычный вход; полезно только когда настройки держит один человек.
+AUTH_ADMIN_ONLY_SETTINGS = os.getenv("AUTH_ADMIN_ONLY_SETTINGS", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+
 # n8n — чат Экономиста
 N8N_ECONOMIST_WEBHOOK_URL = os.getenv("N8N_ECONOMIST_WEBHOOK_URL", "").strip()
 N8N_ECONOMIST_WEBHOOK_METHOD = os.getenv("N8N_ECONOMIST_WEBHOOK_METHOD", "POST").strip().upper()

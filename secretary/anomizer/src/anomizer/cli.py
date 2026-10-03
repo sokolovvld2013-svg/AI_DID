@@ -1,10 +1,12 @@
 from __future__ import annotations
-import click
-from pathlib import Path
-import tempfile
 
-from .pipeline import anonymize_docx, MaskingReport
+import tempfile
+from pathlib import Path
+
+import click
+
 from .converter import ensure_docx, has_libreoffice
+from .pipeline import MaskingReport, anonymize_docx
 
 
 def print_table(headers, rows):
@@ -70,7 +72,7 @@ def main(input_file: Path, output_file: Path | None, report: Path | None, verbos
             print("Анонимизация...")
             report_obj = anonymize_docx(str(docx_path), str(output_file), str(report) if report else None)
             
-            print(f"\nГотово!")
+            print("\nГотово!")
             print(f"Найдено сущностей: {report_obj.entities_found}")
             print(f"Сохранено в: {output_file}")
             

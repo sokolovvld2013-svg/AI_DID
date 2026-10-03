@@ -2,30 +2,19 @@
 
 import logging
 
-
-
 from fastapi import APIRouter, HTTPException, Request
-
 from fastapi.responses import HTMLResponse
-
 from pydantic import BaseModel
 
-
-
 from config import (
-
     ECONOMIST_FACT_SHEET_EDIT_URL,
-
     N8N_ECONOMIST_WEBHOOK_METHOD,
     N8N_ECONOMIST_WEBHOOK_URL,
-
 )
-
 from core.history import economist_history
 from core.session import get_session_id
 from core.templates import templates
 from core.user_logs import log_query
-
 from economist.n8n_client import (
     _is_meaningless_text,
     ask_economist_n8n,
@@ -33,8 +22,6 @@ from economist.n8n_client import (
     n8n_error_code,
     records_are_empty,
 )
-
-
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ import hashlib
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -198,7 +198,7 @@ def parse_documentation(path: Path, filename: str | None = None) -> dict[str, An
         "filename": name,
         "file_hash": file_hash(path),
         "parse_version": PARSE_VERSION,
-        "parsed_at": datetime.now(timezone.utc).isoformat(),
+        "parsed_at": datetime.now(UTC).isoformat(),
         "total_chars": len(full_text),
         "sections": sections,
         "sections_detected": detected,

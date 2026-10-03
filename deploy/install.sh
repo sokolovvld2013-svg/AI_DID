@@ -53,6 +53,24 @@ fi
 ./venv/bin/pip install -q -r requirements.txt
 ./venv/bin/python -c "import fastapi, uvicorn; print('fastapi', fastapi.__version__)"
 
+# Первый запуск: вход по логину включён по умолчанию, а пользователей нет —
+# без этого шага приложение отдаёт 503 на все страницы. users.json не в git,
+# поэтому при обновлении он сохраняется и команда повторно не нужна.
+if [ ! -f "$APP_DIR/users.json" ]; then
+    echo "users.json не найден — создайте администратора (пароль спросит в терминале):"
+    ./venv/bin/python -m scripts.manage_users add admin --admin || {
+        echo "Не удалось создать пользователя. Создайте вручную:"
+        echo "  $APP_DIR/venv/bin/python -m scripts.manage_users add admin --admin"
+    }
+fi
+
+if grep -qE '^AUTH_ENABLED=(true|1|yes)$' "$APP_DIR/.env" 2>/dev/null; then
+    if ! grep -qE '^AUTH_COOKIE_SECURE=(true|1|yes)$' "$APP_DIR/.env" 2>/dev/null; then
+        echo "ВНИМАНИЕ: пароль передаётся по открытому HTTP. Поставьте HTTPS (nginx) и"
+        echo "          включите AUTH_COOKIE_SECURE=true в .env"
+    fi
+fi
+
 log "6/8 Рабочие каталоги"
 mkdir -p logs chroma_data
 for d in economist/uploaded secretary/uploaded lawyer/uploaded; do
@@ -89,8 +107,11 @@ systemctl restart "$SERVICE_NAME"
 log "8/8 Проверка"
 sleep 6
 systemctl is-active "$SERVICE_NAME" || true
-curl -fsS -o /dev/null -w "проверка /economist: HTTP %{http_code}\n" "http://127.0.0.1:$PORT/economist" || true
-curl -fsS -o /dev/null -w "проверка /api/settings: HTTP %{http_code}\n" "http://127.0.0.1:$PORT/api/settings" || true
+curl -fsS -o /dev/null -w "проверка /healthz: HTTP %{http_code}\n" "http://127.0.0.1:$PORT/healthz" || true
+curl -fsS -o /dev/null -w "проверка /login: HTTP %{http_code}\n" "http://127.0.0.1:$PORT/login" || true
+# /api/settings теперь закрыт: без входа отдаёт 401, и это ожидаемо.
+curl -sS -o /dev/null -w "проверка /api/settings: HTTP %{http_code} (401 — нужен вход)\n" \
+    "http://127.0.0.1:$PORT/api/settings" || true
 
 cat <<INFO
 
@@ -100,4 +121,12 @@ cat <<INFO
   Перезапуск после правок: systemctl restart $SERVICE_NAME
   Приложение: http://<IP-сервера>:$PORT
   Не забудьте открыть порт $PORT в firewall и в панели хостинга.
+
+Вход по логину и паролю:
+  Список:     $APP_DIR/venv/bin/python -m scripts.manage_users list
+  Добавить:   $APP_DIR/venv/bin/python -m scripts.manage_users add ivanova
+  Админ:      $APP_DIR/venv/bin/python -m scripts.manage_users add ivanova --admin
+  Сменить:    $APP_DIR/venv/bin/python -m scripts.manage_users passwd ivanova
+  Заблокировать: $APP_DIR/venv/bin/python -m scripts.manage_users disable ivanova
+  Отключить вход целиком (только для отладки): AUTH_ENABLED=false в .env
 INFO

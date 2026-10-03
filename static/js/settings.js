@@ -402,25 +402,500 @@
         }
     }
 
+    // Управление пользователями. Тот же раздел настроек, поэтому администратор
+    // заводит учётки здесь, а не через scripts.manage_users на сервере.
+    const usersBody = document.getElementById('usersBody');
+    const usersError = document.getElementById('usersError');
+    const usersStatus = document.getElementById('usersStatus');
+    const usersPath = document.getElementById('usersPath');
+    const addForm = document.getElementById('usersAddForm');
+    const newLogin = document.getElementById('usersNewLogin');
+    const newPassword = document.getElementById('usersNewPassword');
+    const newPassword2 = document.getElementById('usersNewPassword2');
+    const newRole = document.getElementById('usersNewRole');
+    const newMustChange = document.getElementById('usersNewMustChange');
+    const genPassBtn = document.getElementById('usersGenPass');
+    const addBtn = document.getElementById('usersAddBtn');
+    const usersState = { me: '' };
+
+    const ROLE_LABELS = { user: 'Пользователь', admin: 'Администратор' };
+
+    // Генерация пароля для нового сотрудника. Берём символы из crypto, а не
+    // Math.random: пароль это единственное, что защищает учётку, и Math.random
+    // предсказуем. Из алфавита убраны 0/O, 1/l/I — администратор передаёт пароль
+    // сотруднику устно или в письме, и разница между «О» и «0» стоит лишнего
+    // звонка в поддержку.
+    const PASS_LOWER = 'abcdefghijkmnopqrstuvwxyz';
+    const PASS_UPPER = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const PASS_DIGIT = '23456789';
+    const PASS_SYMBOL = '!@#$%^&*()-_=+[]{}:,.?';
+    const PASS_LENGTH = 16;
+
+    // Случайный индекс без смещения по модулю: значения из хвоста диапазона
+    // отбрасываем, иначе первые символы алфавита выпадали бы чаще.
+    function randomIndex(max) {
+        const limit = Math.floor(0xFFFFFFFF / max) * max;
+        const buf = new Uint32Array(1);
+        let value;
+        do {
+            crypto.getRandomValues(buf);
+            value = buf[0];
+        } while (value >= limit);
+        return value % max;
+    }
+
+    function randomChar(alphabet) {
+        return alphabet.charAt(randomIndex(alphabet.length));
+    }
+
+    function generatePassword(length) {
+        // По символу из каждого класса — иначе пароль может оказаться без цифр
+        // или без знака, и такой его отвергнет внешняя политика паролей.
+        const classes = [PASS_LOWER, PASS_UPPER, PASS_DIGIT, PASS_SYMBOL];
+        const all = classes.join('');
+        const chars = classes.map(randomChar);
+        while (chars.length < length) chars.push(randomChar(all));
+        for (let i = chars.length - 1; i > 0; i -= 1) {
+            const j = randomIndex(i + 1);
+            const swap = chars[i];
+            chars[i] = chars[j];
+            chars[j] = swap;
+        }
+        return chars.join('');
+    }
+
+    function showGeneratedPassword() {
+        if (!newPassword) return;
+        showUsersError('');
+        let pass;
+        try {
+            pass = generatePassword(PASS_LENGTH);
+        } catch (e) {
+            showUsersError('Браузер не даёт сгенерировать пароль — введите его вручную');
+            newPassword.focus();
+            return;
+        }
+        newPassword.value = pass;
+        newPassword2.value = pass;
+        // Показываем текстом: пароль нужно передать сотруднику, из точек его
+        // не прочитать. Поле повтора остаётся замаскированным — это проверка
+        // совпадения, читать его не нужно. После сохранения поля маскируются.
+        newPassword.type = 'text';
+        newMustChange.checked = true;
+        showUsersStatus(`Готов пароль на ${PASS_LENGTH} символов — передайте его сотруднику.`);
+        newPassword.focus();
+        newPassword.select();
+    }
+
+    function hideGeneratedPassword() {
+        if (newPassword) newPassword.type = 'password';
+        if (newPassword2) newPassword2.type = 'password';
+    }
+
+    function apiDetail(data, status) {
+        const detail = data && data.detail;
+        if (Array.isArray(detail)) return detail.map(d => d.msg || String(d)).join('; ');
+        return detail || `HTTP ${status}`;
+    }
+
+    function showUsersError(message) {
+        if (!usersError) return;
+        usersError.textContent = message || '';
+        usersError.hidden = !message;
+    }
+
+    function showUsersStatus(message) {
+        if (!usersStatus) return;
+        usersStatus.textContent = message || '';
+        usersStatus.hidden = !message;
+    }
+
+    function currentLogin() {
+        const el = document.querySelector('.nav-user');
+        return el ? el.textContent.trim() : '';
+    }
+
+    function roleOptions(role, roles) {
+        const list = roles && roles.length ? roles : ['user', 'admin'];
+        return list
+            .map(r => `<option value="${escapeHtml(r)}"${r === role ? ' selected' : ''}>`
+                + `${escapeHtml(ROLE_LABELS[r] || r)}</option>`)
+            .join('');
+    }
+
+    function stateBadge(user) {
+        if (user.disabled) return '<span class="users-badge is-off">заблокирован</span>';
+        if (user.must_change_password) {
+            return '<span class="users-badge is-temp">временный пароль</span>';
+        }
+        return '<span class="users-badge is-on">активен</span>';
+    }
+
+    function changedAt(value) {
+        const raw = String(value || '');
+        if (!raw) return '<span class="muted">—</span>';
+        return escapeHtml(raw.replace('T', ' ').slice(0, 16));
+    }
+
+    function actButton(act, login, label, extra) {
+        return `<button type="button" class="btn btn-sm ${extra} users-act"`
+            + ` data-act="${act}" data-login="${escapeHtml(login)}">${escapeHtml(label)}</button>`;
+    }
+
+    function renderUsers(rows, roles) {
+        if (!usersBody) return;
+        if (!rows.length) {
+            usersBody.innerHTML = '<tr><td colspan="5" class="muted">'
+                + 'Пользователей нет — заведите администратора формой ниже</td></tr>';
+            return;
+        }
+        usersBody.innerHTML = rows.map(user => {
+            const login = user.login || '';
+            const self = login === usersState.me;
+            const loginCell = escapeHtml(login)
+                + (self ? '<span class="users-self" title="Это вы">вы</span>' : '');
+            const toggle = user.disabled
+                ? actButton('enable', login, 'Разблокировать', 'btn-secondary')
+                : actButton('disable', login, 'Заблокировать', 'btn-secondary');
+            return `<tr>
+                <td class="users-login">${loginCell}</td>
+                <td>
+                    <select class="settings-input users-role" data-login="${escapeHtml(login)}"
+                            aria-label="Роль ${escapeHtml(login)}">${roleOptions(user.role, roles)}</select>
+                </td>
+                <td>${stateBadge(user)}</td>
+                <td class="users-changed">${changedAt(user.password_changed_at)}</td>
+                <td class="users-actions">
+                    ${actButton('password', login, 'Сменить пароль', 'btn-secondary')}
+                    ${toggle}
+                    ${actButton('delete', login, 'Удалить', 'btn-danger')}
+                </td>
+            </tr>`;
+        }).join('');
+    }
+
+    function closeEditRows() {
+        if (usersBody) usersBody.querySelectorAll('.users-edit-row').forEach(row => row.remove());
+    }
+
+    function generateEditPassword() {
+        const row = document.querySelector('.users-edit-row');
+        if (!row) return;
+        showUsersError('');
+        const pass = row.querySelector('.users-edit-pass');
+        const pass2 = row.querySelector('.users-edit-pass2');
+        let value;
+        try {
+            value = generatePassword(PASS_LENGTH);
+        } catch (e) {
+            showUsersError('Браузер не даёт сгенерировать пароль — введите его вручную');
+            pass.focus();
+            return;
+        }
+        pass.value = value;
+        pass2.value = value;
+        // Показываем текстом: пароль сбрасывают по запросу сотрудника, и его
+        // нужно передать. Поле «Ещё раз» остаётся замаскированным.
+        pass.type = 'text';
+        row.querySelector('.users-edit-must').checked = true;
+        showUsersStatus(`Готов пароль на ${PASS_LENGTH} символов — передайте сотруднику.`);
+        pass.focus();
+        pass.select();
+    }
+
+    function openEditRow(button) {
+        const row = button.closest('tr');
+        const existing = row.nextElementSibling;
+        if (existing && existing.classList.contains('users-edit-row')) {
+            existing.remove();
+            return;
+        }
+        closeEditRows();
+        const login = button.dataset.login || '';
+        row.insertAdjacentHTML('afterend', `<tr class="users-edit-row">
+            <td colspan="5">
+                <div class="users-edit">
+                    <span class="users-edit-login">${escapeHtml(login)}</span>
+                    <div class="users-field users-edit-field">
+                        <div class="users-field-head">
+                            <label for="usersEditPass">Новый пароль</label>
+                            <button type="button" class="users-gen users-edit-gen"
+                                    title="Подставить надёжный пароль">Сгенерировать</button>
+                        </div>
+                        <input type="password" id="usersEditPass"
+                               class="settings-input users-edit-pass" autocomplete="new-password">
+                    </div>
+                    <div class="users-field users-edit-field">
+                        <div class="users-field-head">
+                            <label for="usersEditPass2">Ещё раз</label>
+                        </div>
+                        <input type="password" id="usersEditPass2"
+                               class="settings-input users-edit-pass2" autocomplete="new-password">
+                    </div>
+                    <label class="users-check">
+                        <input type="checkbox" class="users-edit-must" checked>
+                        <span>потребовать смену при входе</span>
+                    </label>
+                    <button type="button" class="btn btn-primary btn-sm users-edit-save">Сохранить</button>
+                    <button type="button" class="btn btn-secondary btn-sm users-edit-cancel">Отмена</button>
+                </div>
+            </td>
+        </tr>`);
+        const edit = row.nextElementSibling;
+        const first = edit.querySelector('.users-edit-pass');
+        if (first) first.focus();
+    }
+
+    async function usersRequest(url, options) {
+        const resp = await fetch(url, options);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(apiDetail(data, resp.status));
+        return data;
+    }
+
+    function applyUsers(data) {
+        renderUsers(data.users || [], data.roles);
+        showUsersStatus(data.message || '');
+        // Путь хранилища приходит с бэкенда, чтобы не расходиться с config.py.
+        if (usersPath && data.storage_file) {
+            usersPath.textContent = ` (${data.storage_file})`;
+            usersPath.title = data.storage_file;
+            usersPath.hidden = false;
+        }
+    }
+
+    async function loadUsers() {
+        if (!usersBody) return;
+        showUsersError('');
+        try {
+            applyUsers(await usersRequest('/api/settings/users', {
+                headers: { Accept: 'application/json' },
+            }));
+        } catch (e) {
+            usersBody.innerHTML = '<tr><td colspan="5" class="muted">'
+                + 'Не удалось загрузить пользователей</td></tr>';
+            showUsersError(`Не удалось загрузить пользователей: ${e.message}`);
+        }
+    }
+
+    function userUrl(login, action) {
+        return `/api/settings/users/${encodeURIComponent(login)}${action ? `/${action}` : ''}`;
+    }
+
+    async function changeRole(select) {
+        const login = select.dataset.login || '';
+        const role = select.value;
+        showUsersError('');
+        showUsersStatus('');
+        select.disabled = true;
+        try {
+            applyUsers(await usersRequest(userUrl(login, 'role'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role }),
+            }));
+        } catch (e) {
+            showUsersError(e.message);
+            loadUsers();
+        }
+    }
+
+    async function toggleBlock(login, disable) {
+        const self = login === usersState.me;
+        const question = disable
+            ? (self
+                ? `Заблокировать собственный доступ (${login})? Придётся войти заново.`
+                : `Заблокировать доступ для ${login}? Логи сохранятся.`)
+            : `Разблокировать ${login}?`;
+        const ok = await App.confirm(question, {
+            danger: disable,
+            okLabel: disable ? 'Заблокировать' : 'Разблокировать',
+        });
+        if (!ok) return;
+        showUsersError('');
+        showUsersStatus('');
+        try {
+            applyUsers(await usersRequest(userUrl(login, 'disable'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ disabled: disable }),
+            }));
+        } catch (e) {
+            showUsersError(e.message);
+        }
+    }
+
+    async function removeUser(login) {
+        const self = login === usersState.me;
+        const question = self
+            ? `Удалить собственную учётку ${login}? Сессия закончится немедленно.`
+            : `Удалить пользователя ${login}? Вход будет закрыт, логи сохранятся.`;
+        const ok = await App.confirm(question, { danger: true, okLabel: 'Удалить' });
+        if (!ok) return;
+        showUsersError('');
+        showUsersStatus('');
+        try {
+            applyUsers(await usersRequest(userUrl(login), { method: 'DELETE' }));
+        } catch (e) {
+            showUsersError(e.message);
+        }
+    }
+
+    async function savePassword(button) {
+        const edit = button.closest('.users-edit-row');
+        if (!edit) return;
+        const login = edit.querySelector('.users-edit-login').textContent.trim();
+        const pass = edit.querySelector('.users-edit-pass').value;
+        const pass2 = edit.querySelector('.users-edit-pass2').value;
+        if (!pass) {
+            showUsersError('Введите новый пароль');
+            return;
+        }
+        if (pass !== pass2) {
+            showUsersError('Пароли не совпадают');
+            return;
+        }
+        showUsersError('');
+        showUsersStatus('');
+        button.disabled = true;
+        try {
+            applyUsers(await usersRequest(userUrl(login, 'password'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    password: pass,
+                    must_change_password: edit.querySelector('.users-edit-must').checked,
+                }),
+            }));
+        } catch (e) {
+            showUsersError(e.message);
+            button.disabled = false;
+        }
+    }
+
+    async function submitNewUser(event) {
+        event.preventDefault();
+        showUsersError('');
+        showUsersStatus('');
+        const login = newLogin.value.trim();
+        const pass = newPassword.value;
+        if (!login) {
+            showUsersError('Укажите логин');
+            newLogin.focus();
+            return;
+        }
+        if (!pass) {
+            showUsersError('Укажите пароль');
+            newPassword.focus();
+            return;
+        }
+        if (pass !== newPassword2.value) {
+            showUsersError('Пароли не совпадают');
+            newPassword2.focus();
+            return;
+        }
+        addBtn.disabled = true;
+        try {
+            const data = await usersRequest('/api/settings/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    login: login,
+                    password: pass,
+                    role: newRole.value,
+                    must_change_password: newMustChange.checked,
+                }),
+            });
+            // Пароль из формы убираем из DOM, чтобы не остался в памяти вкладки.
+            newPassword.value = '';
+            newPassword2.value = '';
+            newLogin.value = '';
+            hideGeneratedPassword();
+            // Следующего сотрудника заводим без требования смены пароля.
+            newMustChange.checked = false;
+            applyUsers(data);
+            newLogin.focus();
+        } catch (e) {
+            showUsersError(e.message);
+        } finally {
+            addBtn.disabled = false;
+        }
+    }
+
     function open() {        lastFocused = document.activeElement;
         overlay.hidden = false;
         showError('');
         showLogoStatus('', false);
+        showUsersError('');
+        showUsersStatus('');
+        closeEditRows();
         if (logoFile) logoFile.value = '';
+        if (newPassword) newPassword.value = '';
+        if (newPassword2) newPassword2.value = '';
+        hideGeneratedPassword();
         updateCurrentLabel();
         if (!state.loaded) {
             loadSettings().catch(e => showError(`Не удалось загрузить настройки: ${e.message}`));
         }
         loadUserLogs().catch(() => { /* ошибка уже показана в блоке логов */ });
-        const first = overlay.querySelector('input[name="settingsModel"]:checked')
-            || overlay.querySelector('input[name="settingsModel"]:not([disabled])');
+        if (usersBody) {
+            usersState.me = currentLogin();
+            loadUsers().catch(() => { /* ошибка уже показана в блоке пользователей */ });
+        }
+        // Пункты свёрнуты, поэтому фокус берём с первого заголовка раздела.
+        const first = overlay.querySelector('.settings-section[open] input[name="settingsModel"]:checked')
+            || overlay.querySelector('.settings-section[open] input[name="settingsModel"]:not([disabled])')
+            || overlay.querySelector('.settings-section-head')
+            || closeBtn;
         (first || closeBtn).focus();
     }
 
     function close() {
+        closeEditRows();
         overlay.hidden = true;
         if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
     }
+
+    if (usersBody) {
+        usersBody.addEventListener('change', e => {
+            const select = e.target.closest('.users-role');
+            if (select) changeRole(select);
+        });
+        usersBody.addEventListener('click', e => {
+            const save = e.target.closest('.users-edit-save');
+            if (save) {
+                savePassword(save);
+                return;
+            }
+            if (e.target.closest('.users-edit-gen')) {
+                generateEditPassword();
+                return;
+            }
+            if (e.target.closest('.users-edit-cancel')) {
+                closeEditRows();
+                return;
+            }
+            const button = e.target.closest('.users-act');
+            if (!button) return;
+            const act = button.dataset.act;
+            const login = button.dataset.login || '';
+            if (act === 'password') openEditRow(button);
+            else if (act === 'disable') toggleBlock(login, true);
+            else if (act === 'enable') toggleBlock(login, false);
+            else if (act === 'delete') removeUser(login);
+        });
+    }
+    if (addForm) addForm.addEventListener('submit', submitNewUser);
+    if (genPassBtn) genPassBtn.addEventListener('click', showGeneratedPassword);
+
+    // Раскрытый пункт подводим к видимой части окна, иначе содержимое
+    // раскрывается за нижним краем и кажется, что до конца не прокрутить.
+    overlay.querySelectorAll('.settings-section').forEach(section => {
+        section.addEventListener('toggle', () => {
+            if (!section.open) return;
+            section.scrollIntoView({ block: 'nearest' });
+        });
+    });
 
     openBtn.addEventListener('click', open);
     closeBtn.addEventListener('click', close);

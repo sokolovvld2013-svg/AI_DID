@@ -656,7 +656,7 @@ def _read_pdf_rapidocr_impl(
     """OCR для PDF-сканов (RapidOCR + PyMuPDF, только pip-пакеты)."""
     try:
         import fitz
-        import numpy as np
+        import numpy as np  # noqa: F401 - проверка доступности зависимости для OCR
     except ImportError as e:
         return [], f"нет зависимости: {e.name}"
 

@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 import httpx
+
 from config import (
     N8N_ECONOMIST_TIMEOUT,
     N8N_ECONOMIST_WEBHOOK_METHOD,
@@ -186,7 +187,7 @@ def _norm_key(key: str) -> str:
 
 
 def _looks_like_article_record(data: dict) -> bool:
-    keys = {_norm_key(k) for k in data.keys()}
+    keys = {_norm_key(k) for k in data}
     markers = {"Код статьи", "Наименование статьи", "Факт", "Годовой лимит", "Текущий лимит"}
     return len(keys & markers) >= 2
 

@@ -1,0 +1,47 @@
+# ruff — линтер и форматтер. Запуск: ruff check . / ruff format .
+# Правила UP* ( modernization типов) выключены осознанно: проект на Python 3.12,
+# но массовый переход Dict->dict / Optional->X | None трогает десятки файлов
+# без выигрыша. Включать постепенно, по мере правок.
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "C4", "RET", "UP"]
+ignore = [
+  "E501",    # длина строки — форматтер решает
+  "B008",    # Depends()/File() в аргументах — обычный паттерн FastAPI
+  "B905",    # zip(strict=) — требует правок в коде, не ошибка
+  "UP006",   # typing.Dict -> dict: массовая миграция, отложена
+  "UP007",   # typing.Union -> X | Y
+  "UP031",   # printf-форматирование в logger — привычный стиль проекта
+  "UP035",   # typing.List -> list
+  "UP045",   # typing.Optional[X] -> X | None
+  "RET504",  # присваивание перед return — иногда читается лучше
+]
+
+[lint.per-file-ignores]
+# Обезличивание — принесённый извне пакет: NER-проход разбирает runs документа,
+# имена циклов соответствуют терминам предметной области, а не API,
+# а импорты в docx_processor/pipeline/cli оставлены как в исходнике.
+"secretary/anomizer/src/anomizer/ner.py" = ["E", "F", "B", "SIM", "RET", "C4", "ARG"]
+"secretary/anomizer/src/anomizer/docx_processor.py" = ["F402"]
+"secretary/anomizer/src/anomizer/*.py" = ["F401", "B904", "ARG", "SIM", "B007"]
+# Служебные скрипты: print вместо логов, argparse, однократные запуски.
+"scripts/*" = ["ARG", "B", "SIM", "RET", "C4", "F401", "I001", "E402", "F841"]
+# Тесты: фикстуры с аргументами, осмысленные assert.
+"tests/*" = ["ARG", "SIM117", "B011", "B017"]
+
+[lint.isort]
+known-first-party = [
+  "config",
+  "core",
+  "economist",
+  "lawyer",
+  "procurement",
+  "scripts",
+  "secretary",
+  "tenders",
+]
+
+[format]
+quote-style = "double"

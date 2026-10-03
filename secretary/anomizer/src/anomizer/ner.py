@@ -1,18 +1,19 @@
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Set
-from pymorphy2 import MorphAnalyzer
+from typing import Any, List, Optional, Set, Tuple
+
 from natasha import (
-    Segmenter,
+    Doc,
     MorphVocab,
     NewsEmbedding,
     NewsNERTagger,
-    Doc,
+    Segmenter,
 )
+from pymorphy2 import MorphAnalyzer
 
 from .registry import Entity, RegexPatterns
-
 
 # Организационно-правовые формы и прочие служебные слова в наименовании юрлица.
 # Вырезаются при построении канонического ключа.

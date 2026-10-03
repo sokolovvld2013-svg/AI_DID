@@ -5,13 +5,13 @@ import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from core.llm_errors import LLMUserFacingError, friendly_llm_error_message
 from config import (
     DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL,
     GIGACHAT_CREDENTIALS,
     GIGACHAT_SCOPE,
 )
+from core.llm_errors import LLMUserFacingError, friendly_llm_error_message
 from core.settings import get_selected_model, model_provider
 
 logger = logging.getLogger(__name__)

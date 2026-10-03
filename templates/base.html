@@ -1,4 +1,5 @@
-﻿<!DOCTYPE html>
+{%- set current_user = request.state.user if request is defined and request.state.user else None -%}
+<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +7,7 @@
     <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=40">
+    <link rel="stylesheet" href="/static/css/style.css?v=49">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -14,7 +15,7 @@
         <div class="header-brand">
             <img src="{{ logo_url() }}" alt="Логотип {{ company_name() }}" class="logo-img" id="logoImg">
             <h1 class="logo-text">ИИ-помощник <span data-company-name>{{ company_name() }}</span></h1>
-            <div class="header-lottie" id="headerLottie" data-src="/static/animations/did-assistant.json"
+            <div class="header-lottie js-lottie" id="headerLottie" data-src="/static/animations/did-assistant.json"
                  role="img" aria-label="Анимация ИИ-помощника"></div>
         </div>
         <nav class="nav">
@@ -23,6 +24,14 @@
             <a href="/procurement" class="nav-link {% if active == 'procurement' %}active{% endif %}">Специалист по закупкам</a>
             <a href="/tenders" class="nav-link {% if active == 'tenders' %}active{% endif %}">Специалист по торгам</a>
             <a href="/secretary" class="nav-link {% if active == 'secretary' %}active{% endif %}">Секретарь</a>
+            {% if current_user %}
+                <form method="post" action="/logout" class="nav-logout">
+                    <button type="submit" class="nav-logout-btn" title="Выйти">
+                        <span class="nav-user">{{ current_user.login }}</span>
+                        <span aria-hidden="true">&rarr;</span>
+                    </button>
+                </form>
+            {% endif %}
         </nav>
     </header>
 
@@ -32,9 +41,11 @@
 
     <footer class="footer">
         <span data-company-name>{{ company_name() }}</span>
+        {% if not current_user or current_user.role == 'admin' %}
         <button type="button" class="settings-gear" id="settingsOpen" title="Настройки" aria-label="Настройки">
             <span class="settings-gear-icon" aria-hidden="true"></span>
         </button>
+        {% endif %}
     </footer>
 
     <div class="settings-overlay" id="settingsOverlay" hidden>
@@ -45,13 +56,15 @@
             </div>
 
             <div class="settings-body">
-                <section class="settings-section">
-                    <h3>Выберите модель ИИ</h3>
+                <details class="settings-section">
+                    <summary class="settings-section-head">
+                        <h3>Выберите модель ИИ</h3>
+                    </summary>
                     <p class="settings-hint">
                         Цена указана за 1&nbsp;млн выходных токенов.
                         <span id="settingsPricesAt"></span>
                     </p>
-                    <div class="settings-table-wrap">
+                    <div class="settings-table-wrap settings-models-wrap">
                         <table class="settings-table">
                             <thead>
                                 <tr>
@@ -66,17 +79,21 @@
                         </table>
                     </div>
                     <p class="settings-error" id="settingsError" hidden></p>
-                </section>
+                </details>
 
-                <section class="settings-section">
-                    <h3>Наименование компании</h3>
+                <details class="settings-section">
+                    <summary class="settings-section-head">
+                        <h3>Наименование компании</h3>
+                    </summary>
                     <p class="settings-hint">Выводится в шапке, подвале и заголовке вкладки.</p>
                     <input type="text" id="settingsCompany" class="settings-input" maxlength="120"
                            autocomplete="off">
-                </section>
+                </details>
 
-                <section class="settings-section">
-                    <h3>Логотип</h3>
+                <details class="settings-section">
+                    <summary class="settings-section-head">
+                        <h3>Логотип</h3>
+                    </summary>
                     <p class="settings-hint">
                         Картинка вверху слева. Форматы: PNG, JPEG, GIF, WEBP, до 2&nbsp;МБ.
                         Файл применяется сразу.
@@ -100,10 +117,87 @@
                             <span class="settings-logo-status" id="settingsLogoStatus" hidden></span>
                         </div>
                     </div>
-                </section>
+                </details>
 
-                <section class="settings-section">
-                    <h3>Логи пользователей<span class="user-logs-path" id="userLogsPath" hidden></span></h3>
+                <details class="settings-section">
+                    <summary class="settings-section-head">
+                        <h3>Управление пользователями<span class="user-logs-path" id="usersPath" hidden></span></h3>
+                    </summary>
+                    <p class="settings-hint">
+                        Кто имеет доступ к ИИ-помощнику. Пароль выдаётся временным:
+                        при первом входе сотрудник задаёт свой. Смена пароля закрывает
+                        прежние сессии, блокировка сохраняет учётку и её логи.
+                    </p>
+                    <p class="settings-error" id="usersError" hidden></p>
+                    <p class="users-status" id="usersStatus" hidden></p>
+                    <div class="settings-table-wrap">
+                        <table class="settings-table users-table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Логин</th>
+                                    <th scope="col">Роль</th>
+                                    <th scope="col">Состояние</th>
+                                    <th scope="col">Пароль изменён</th>
+                                    <th scope="col">Действия</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersBody">
+                                <tr><td colspan="5" class="muted">Загрузка пользователей…</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <form class="users-form" id="usersAddForm" autocomplete="off">
+                        <h4 class="users-form-title">Добавить или обновить</h4>
+                        <div class="users-form-grid">
+                            <label class="users-field">
+                                <span>Логин</span>
+                                <input type="text" id="usersNewLogin" class="settings-input"
+                                       maxlength="64" placeholder="ivanova"
+                                       autocomplete="off" autocapitalize="none" spellcheck="false">
+                            </label>
+                            <div class="users-field">
+                                <div class="users-field-head">
+                                    <label for="usersNewPassword">Пароль</label>
+                                    <button type="button" class="users-gen" id="usersGenPass"
+                                            title="Подставить надёжный пароль">Сгенерировать</button>
+                                </div>
+                                <input type="password" id="usersNewPassword" class="settings-input"
+                                       autocomplete="new-password">
+                            </div>
+                            <label class="users-field">
+                                <span>Пароль ещё раз</span>
+                                <input type="password" id="usersNewPassword2" class="settings-input"
+                                       autocomplete="new-password">
+                            </label>
+                            <label class="users-field">
+                                <span>Роль</span>
+                                <select id="usersNewRole" class="settings-input">
+                                    <option value="user">Пользователь</option>
+                                    <option value="admin">Администратор</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="users-form-foot">
+                            <label class="users-check">
+                                <input type="checkbox" id="usersNewMustChange">
+                                <span>Потребовать смену пароля при первом входе</span>
+                            </label>
+                            <button type="submit" class="btn btn-primary" id="usersAddBtn">Сохранить</button>
+                        </div>
+                        <p class="users-hint">
+                            Логин приводится к нижнему регистру. Если логин уже есть,
+                            у него меняются пароль и роль. «Сгенерировать» подставляет
+                            пароль без похожих знаков (0/O, 1/l/I) — такой пароль удобно
+                            передать сотруднику устно.
+                        </p>
+                    </form>
+                </details>
+
+                <details class="settings-section">
+                    <summary class="settings-section-head">
+                        <h3>Логи пользователей<span class="user-logs-path" id="userLogsPath" hidden></span></h3>
+                    </summary>
                     <p class="settings-hint">
                         Кто спрашивал, с какого IP, сколько токенов ушло на ответ и чем
                         закончился запрос. Хранятся последние <span id="userLogsRetention">30</span> дней.
@@ -154,7 +248,7 @@
                             </tbody>
                         </table>
                     </div>
-                </section>
+                </details>
             </div>
 
             <div class="settings-foot">
@@ -167,8 +261,8 @@
 
 <script src="/static/js/lottie.min.js?v=5.12.2"></script>
 <script src="/static/js/common.js?v=21"></script>
-<script src="/static/js/header-lottie.js?v=1"></script>
-<script src="/static/js/settings.js?v=11"></script>
+<script src="/static/js/lottie-init.js?v=1"></script>
+<script src="/static/js/settings.js?v=17"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

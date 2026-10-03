@@ -1,15 +1,17 @@
 from __future__ import annotations
+
 import re
 from dataclasses import dataclass
-from typing import List, Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
+
 from docx import Document
+from docx.oxml.ns import qn
+from docx.table import Table
 from docx.text.paragraph import Paragraph
 from docx.text.run import Run
-from docx.table import Table
-from docx.oxml.ns import qn
 
-from .registry import EntityRegistry, Entity
 from .ner import ExtractedEntity, NERExtractor
+from .registry import Entity, EntityRegistry
 
 
 @dataclass

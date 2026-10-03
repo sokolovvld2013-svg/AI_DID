@@ -4,13 +4,12 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
-
-from core.llm_errors import LLMUserFacingError, llm_error_code
-from core.llm_client import current_usage
 from fastapi.responses import HTMLResponse
 
 from config import ALLOWED_AUDIO_EXT, MAX_AUDIO_SIZE, SECRETARY_UPLOAD_DIR
 from core.history import secretary_history
+from core.llm_client import current_usage
+from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.session import get_session_id
 from core.templates import templates
 from core.user_logs import log_query
@@ -46,7 +45,7 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
         content = await file.read()
         if len(content) > MAX_AUDIO_SIZE:
             raise HTTPException(400, f"Файл превышает {MAX_AUDIO_SIZE // (1024*1024)} МБ")
-    except HTTPException as e:
+    except HTTPException:
         log_query(
             module="secretary",
             question=f"[аудио] {file.filename or 'без имени'}",
@@ -68,7 +67,7 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
         if not transcript.strip():
             raise HTTPException(400, "Не удалось распознать речь в аудиофайле")
         protocol = build_protocol(transcript, file.filename or "")
-    except HTTPException as e:
+    except HTTPException:
         log_query(
             module="secretary",
             question=_log_question,

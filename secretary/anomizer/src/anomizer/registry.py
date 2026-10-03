@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set, Tuple
-from collections import defaultdict
 
 
 @dataclass

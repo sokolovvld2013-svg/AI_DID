@@ -5,18 +5,18 @@
 (в отличие от CSV) и легко разбирается построчно. Файлы старше
 ``USER_LOGS_RETENTION_DAYS`` (по умолчанию 30) удаляются при записи и при старте.
 
-Идентификатор пользователя (``login``) заложен на будущее — сейчас входа по
-логинам нет, поэтому поле пишется пустым.
+Поле ``login`` берётся из ``request.state.user``, который кладёт
+``core.auth_router.AuthMiddleware``. Поэтому с появлением входа по логинам
+логи наполняются именами без правок в роутерах.
 """
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
-import contextvars
 import threading
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 from config import USER_LOGS_DIR, USER_LOGS_RETENTION_DAYS
@@ -148,9 +148,8 @@ def log_event(
         _cleanup_once_per_day()
         path = USER_LOGS_DIR / f"{_today_str()}.jsonl"
         line = json.dumps(record, ensure_ascii=False)
-        with _write_lock:
-            with path.open("a", encoding="utf-8") as fh:
-                fh.write(line + "\n")
+        with _write_lock, path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
     except Exception:
         logger.exception("Не удалось записать лог пользователя (%s)", module)
 
@@ -217,10 +216,9 @@ def modules() -> list[str]:
     return ["economist", "lawyer", "procurement", "secretary", "tenders"]
 
 
-# Логин пользователя заложен на будущее: сейчас входа по логинам нет.
-# Когда появится аутентификация, сюда начнёт подставляться реальный логин.
+# Логин берётся из request.state.user — его кладёт AuthMiddleware при входе.
 def get_login(request: Any = None) -> str:
-    """Логин пользователя. Входа по логинам пока нет — поле заложено на будущее."""
+    """Логин пользователя. Пусто, если вход выключен или запрос анонимный."""
     if request is None:
         return ""
     user = getattr(getattr(request, "state", None), "user", None)

@@ -7,12 +7,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from core.session import SessionMiddleware
-from core.settings import get_company_name
-from core.settings_router import router as settings_router
-from core.user_logs import cleanup_old_logs, set_current_request
-
 from config import (
+    AUTH_ENABLED,
     BASE_DIR,
     CHROMA_PERSIST_DIR,
     FAVICON_SOURCE,
@@ -21,20 +17,28 @@ from config import (
     PROCUREMENT_CACHE_DIR,
     PROCUREMENT_POLICY_UPLOAD_DIR,
     PROCUREMENT_UPLOAD_DIR,
-    TENDERS_CACHE_DIR,
-    TENDERS_UPLOAD_DIR,
     SECRETARY_UPLOAD_DIR,
     STATIC_FAVICON,
     STATIC_LOGO,
+    TENDERS_CACHE_DIR,
+    TENDERS_UPLOAD_DIR,
     WHISPER_PRELOAD,
 )
+from core.auth import auth_status
+from core.auth_router import AuthMiddleware
+from core.auth_router import router as auth_router
+from core.session import SessionMiddleware
+from core.settings import get_company_name
+from core.settings_router import router as settings_router
+from core.user_logs import cleanup_old_logs, set_current_request
 from economist.router import router as economist_router
 from lawyer.doc_processor import docx_available, pymupdf_available
 from lawyer.router import router as lawyer_router
-from procurement.router import legacy_router, router as procurement_router
+from procurement.router import legacy_router
+from procurement.router import router as procurement_router
+from secretary.anomizer.src.anomizer import router as anomizer_router
 from secretary.router import router as secretary_router
 from tenders.router import router as tenders_router
-from secretary.anomizer.src.anomizer import router as anomizer_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,9 +129,40 @@ async def lifespan(app: FastAPI):
         logger.info("Очистка логов пользователей: удалено старых файлов — %s", _removed)
     except Exception as e:
         logger.warning("Очистка логов пользователей не удалась: %s", e)
+    _log_auth_status()
     logger.info("Приложение запущено")
     yield
     logger.info("Приложение остановлено")
+
+
+def _log_auth_status() -> None:
+    """Состояние входа при старте: кого пускаем и чем это кончится."""
+    if not AUTH_ENABLED:
+        logger.warning("Вход по логину и паролю выключен (AUTH_ENABLED=false) — приложение доступно всем")
+        return
+    try:
+        status = auth_status()
+    except Exception as e:
+        logger.warning("Не удалось прочитать файл пользователей: %s", e)
+        return
+    if not status["users"]:
+        logger.error(
+            "Вход включён, но пользователей нет (%s) — все страницы вернут 503. "
+            "Создайте администратора: python -m scripts.manage_users add <логин> --admin",
+            status["users_file"],
+        )
+        return
+    logger.info(
+        "Вход включён: пользователей — %s, администраторов — %s, срок сессии — %s с",
+        status["users"],
+        status["admins"],
+        status["session_max_age"],
+    )
+    if not status["cookie_secure"]:
+        logger.warning(
+            "AUTH_COOKIE_SECURE=false: cookie сессии уходит и по HTTP. "
+            "Включите HTTPS и AUTH_COOKIE_SECURE=true, иначе пароль передаётся открыто"
+        )
 
 
 app = FastAPI(
@@ -148,9 +183,13 @@ async def user_logs_middleware(request: Request, call_next):
 
 
 app.add_middleware(SessionMiddleware)
+# AuthMiddleware добавляется последним — значит, выполняется первым и успевает
+# положить request.state.user до остальных middleware и роутеров.
+app.add_middleware(AuthMiddleware)
 
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+app.include_router(auth_router)
 app.include_router(economist_router)
 app.include_router(secretary_router)
 app.include_router(lawyer_router)
@@ -159,6 +198,13 @@ app.include_router(tenders_router)
 app.include_router(legacy_router)
 app.include_router(anomizer_router)
 app.include_router(settings_router)
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz():
+    """Проверка живости для мониторинга. Открыт без входа (см. PUBLIC_PATHS)
+    и ничего не сообщает о состоянии настроек."""
+    return {"status": "ok"}
 
 
 @app.get("/favicon.ico", include_in_schema=False)

@@ -23,6 +23,7 @@ from core.llm_client import get_llm
 from lawyer.search_utils import (
     combined_score,
     core_query_tokens,
+    core_stems_proximity_score,
     count_core_matches,
     enrich_query_for_embedding,
     expand_query_phrases,
@@ -31,7 +32,6 @@ from lawyer.search_utils import (
     keyword_score_core,
     min_core_matches_required,
     phrase_bonus,
-    core_stems_proximity_score,
     query_phrase_score_with_context,
     query_search_substrings,
     query_stem_search_terms,
@@ -715,7 +715,7 @@ class LawyerRAG:
         core: list[str],
     ) -> None:
         """Пересчёт phrase_score с учётом соседних чанков (фраза через границу 600 символов)."""
-        for cid, hit in list(candidates.items()):
+        for hit in list(candidates.values()):
             fid = hit.get("file_id") or ""
             idx = int(hit.get("chunk_index") or 0)
             neighbors: list[str] = []

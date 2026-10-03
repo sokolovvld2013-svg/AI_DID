@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +43,7 @@ def _is_expired(parsed_at: str | None) -> bool:
         return False
     try:
         ts = datetime.fromisoformat(parsed_at.replace("Z", "+00:00"))
-        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        age_h = (datetime.now(UTC) - ts).total_seconds() / 3600
         return age_h > PROCUREMENT_CACHE_TTL_HOURS
     except ValueError:
         return False

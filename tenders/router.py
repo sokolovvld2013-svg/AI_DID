@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 from typing import Any, Literal
 
@@ -18,11 +19,6 @@ from config import (
 from core.history import tenders_history
 from core.llm_client import current_usage, get_llm
 from core.llm_errors import LLMUserFacingError, llm_error_code
-from core.session import get_session_id
-from core.templates import templates
-from core.user_logs import log_query
-from lawyer.citations import select_citations_for_display
-from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
 from core.prompt_guards import (
     EXPERT_FORMAT_HINT,
     EXPERT_REFUSAL_HINT,
@@ -30,6 +26,11 @@ from core.prompt_guards import (
     ensure_expert_sources_block,
     renumber_inline_citations,
 )
+from core.session import get_session_id
+from core.templates import templates
+from core.user_logs import log_query
+from lawyer.citations import select_citations_for_display
+from lawyer.text_encoding import clean_llm_display_text, repair_filename, strip_urls
 from tenders.services.cache_store import get_by_doc_id, get_by_hash, save_parsed
 from tenders.services.check_context import (
     CHECK_SYSTEM_PROMPT,
@@ -44,7 +45,6 @@ from tenders.session_state import (
     all_loaded,
     clear_document,
     clear_documents,
-    get_document,
     get_documents,
     set_document,
 )
@@ -84,8 +84,10 @@ class TendersExpertQuery(BaseModel):
 def _check_access(request: Request) -> None:
     if not TENDERS_ACCESS_TOKEN:
         return
-    token = request.headers.get("X-Tenders-Token") or request.query_params.get("token")
-    if token != TENDERS_ACCESS_TOKEN:
+    token = request.headers.get("X-Tenders-Token") or request.query_params.get("token") or ""
+    # compare_digest, а не ==: сравнение секрета не должно зависеть от времени,
+    # иначе по задержке можно подбирать токен побайтово.
+    if not hmac.compare_digest(token, TENDERS_ACCESS_TOKEN):
         raise HTTPException(403, "Нет доступа к модулю «Торги»")
 
 

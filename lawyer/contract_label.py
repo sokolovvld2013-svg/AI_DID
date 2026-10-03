@@ -6,7 +6,6 @@ import re
 
 from core.history_label import condense, truncate
 
-
 _KIND_RULES = (
     (r"договор\s+найм", "Договор найма"),
     (r"договор\s+аренд", "Договор аренды"),

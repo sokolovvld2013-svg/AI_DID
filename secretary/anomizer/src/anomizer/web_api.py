@@ -28,12 +28,13 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile
-from fastapi.responses import JSONResponse, Response as FastAPIResponse
+from fastapi.responses import JSONResponse
+from fastapi.responses import Response as FastAPIResponse
 
-from .availability import ensure_available, unavailable_message, missing_dependencies
+from .availability import ensure_available, missing_dependencies, unavailable_message
 from .converter import ensure_docx, has_libreoffice
 from .ner import parse_orgs_string
-from .pipeline import anonymize_docx, MaskingReport
+from .pipeline import MaskingReport, anonymize_docx
 
 router = APIRouter(prefix="/api/anonymize", tags=["anonymize"])
 

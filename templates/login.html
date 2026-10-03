@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход — ИИ-помощник {{ company_name() }}</title>
+    <link rel="icon" href="/static/img/favicon.png" type="image/png">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/png">
+    <link rel="stylesheet" href="/static/css/style.css?v=46">
+</head>
+<body class="login-body">
+    <main class="main main--login">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="login-lottie js-lottie" data-src="/static/animations/did-assistant.json"
+                     role="img" aria-label="Анимация ИИ-помощника"></div>
+                <h1 class="login-title">ИИ-помощник <span data-company-name>{{ company_name() }}</span></h1>
+            </div>
+
+            {% if no_users %}
+                <p class="settings-error">
+                    Вход включён, но пользователей нет. Создайте администратора
+                    на сервере командой
+                    <code>python -m scripts.manage_users add &lt;логин&gt; --admin</code>
+                </p>
+            {% else %}
+                <form method="post" action="/login" class="login-form" autocomplete="on">
+                    <input type="hidden" name="next" value="{{ next }}">
+
+                    <label class="login-field">
+                        <span class="login-label">Логин</span>
+                        <input type="text" name="login" id="login" class="settings-input"
+                               value="{{ login }}" required autofocus
+                               autocomplete="username" autocapitalize="none"
+                               autocorrect="off" spellcheck="false" maxlength="64">
+                    </label>
+
+                    <label class="login-field">
+                        <span class="login-label">Пароль</span>
+                        <input type="password" name="password" id="password" class="settings-input"
+                               required autocomplete="current-password" maxlength="256">
+                    </label>
+
+                    {% if error %}
+                        <p class="settings-error" role="alert">{{ error }}</p>
+                    {% endif %}
+
+                    <button type="submit" class="btn btn-primary login-submit">Войти</button>
+                </form>
+            {% endif %}
+        </div>
+    </main>
+<script src="/static/js/lottie.min.js?v=5.12.2"></script>
+<script src="/static/js/lottie-init.js?v=1"></script>
+</body>
+</html>

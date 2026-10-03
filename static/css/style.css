@@ -77,10 +77,8 @@ body {
     white-space: nowrap;
 }
 
-/* Анимация lottie сразу после названия «ИИ-помощник …» */
-.header-lottie {
-    width: 42px;
-    height: 42px;
+/* Анимация lottie с роботом-помощником: в шапке и на странице входа */
+.js-lottie {
     flex-shrink: 0;
     align-self: center;
     opacity: 0;
@@ -88,14 +86,20 @@ body {
     pointer-events: none;
 }
 
-.header-lottie.is-ready {
+.js-lottie.is-ready {
     opacity: 1;
 }
 
-.header-lottie svg {
+.js-lottie svg {
     display: block;
     width: 100%;
     height: 100%;
+}
+
+/* В шапке — сразу после названия «ИИ-помощник …» */
+.header-lottie {
+    width: 42px;
+    height: 42px;
 }
 
 .nav {
@@ -2041,12 +2045,61 @@ body.confirm-open { overflow: hidden; }
 .settings-body {
     padding: 1.1rem 1.25rem;
     overflow-y: auto;
+    /* Полоса прокрутки видна всегда: окно настроек прокручивается по высоте. */
+    scrollbar-gutter: stable;
 }
 .settings-section + .settings-section {
-    margin-top: 1.5rem;
-    padding-top: 1.25rem;
+    margin-top: 0.3rem;
+    padding-top: 0.3rem;
     border-top: 1px solid var(--border-light);
 }
+.settings-section[open] {
+    padding-bottom: 1rem;
+}
+
+/* Заголовок пункта настроек: раскрывает пункт по клику */
+.settings-section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin: 0;
+    padding: 0.4rem 0.25rem;
+    border-radius: 6px;
+    color: var(--text);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.settings-section-head::-webkit-details-marker {
+    display: none;
+}
+.settings-section-head:hover {
+    background: var(--surface-hover);
+}
+.settings-section-head:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+}
+.settings-section[open] > .settings-section-head {
+    margin-bottom: 0.6rem;
+}
+
+/* Стрелка: повёрнута вниз, когда пункт раскрыт */
+.settings-section-head::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 0.4rem;
+    height: 0.4rem;
+    margin-left: auto;
+    border-right: 2px solid var(--text-muted);
+    border-bottom: 2px solid var(--text-muted);
+    transform: rotate(45deg) translate(-0.1rem, -0.1rem);
+    transition: transform 0.15s ease;
+}
+.settings-section[open] > .settings-section-head::after {
+    transform: rotate(-135deg);
+}
+
 .settings-section h3 {
     font-size: 0.95rem;
     font-weight: 600;
@@ -2054,6 +2107,10 @@ body.confirm-open { overflow: hidden; }
     display: flex;
     align-items: center;
     gap: 0.45rem;
+}
+/* Внутри раскрывающего заголовка отступ задаёт сам заголовок */
+.settings-section-head h3 {
+    margin: 0;
 }
 /* Маркер пункта настроек — как в перечислении */
 .settings-section h3::before {
@@ -2076,6 +2133,13 @@ body.confirm-open { overflow: hidden; }
     overflow-x: auto;
     border: 1px solid var(--border-light);
     border-radius: var(--radius);
+}
+/* Список моделей прокручивается внутри рамки: до последней модели не нужно
+   прокручивать всё окно настроек. */
+.settings-models-wrap {
+    max-height: min(46vh, 420px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 .settings-table {
     width: 100%;
@@ -2119,7 +2183,135 @@ body.confirm-open { overflow: hidden; }
 }
 .settings-table input[type="radio"]:disabled { cursor: not-allowed; }
 
+/* Управление пользователями (секция в настройках) */
+.users-status {
+    font-size: 0.8rem;
+    color: var(--success);
+    background: var(--success-soft);
+    border-radius: var(--radius);
+    padding: 0.4rem 0.6rem;
+    margin-bottom: 0.6rem;
+}
+.users-status[hidden] { display: none; }
+.users-table td { vertical-align: middle; }
+.users-login { font-weight: 600; white-space: nowrap; }
+.users-self {
+    display: inline-block;
+    margin-left: 0.4rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-hover);
+    font-size: 0.68rem;
+    font-weight: 600;
+}
+.users-role { min-width: 9.5rem; }
+.users-changed { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.users-actions { white-space: nowrap; }
+.users-actions .btn { margin: 0 0.35rem 0.35rem 0; }
+.users-badge {
+    display: inline-block;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+.users-badge.is-on { color: var(--success); background: var(--success-soft); }
+.users-badge.is-off { color: var(--danger); background: var(--danger-soft); }
+.users-badge.is-temp { color: var(--warning); background: var(--warning-soft); }
+.users-edit-row td { background: var(--highlight); }
+.users-edit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+}
+.users-edit-login { font-weight: 600; }
+.users-edit .settings-input { min-width: 11rem; }
+/* Поля пароля в строке смены — те же блоки с заголовком, что и в форме
+   добавления, поэтому фиксируем ширину обёртки, а не самого поля. */
+.users-edit-field { flex: 0 0 11rem; }
+.users-form {
+    margin-top: 0.85rem;
+    padding: 0.8rem 0.9rem;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    background: var(--surface);
+}
+.users-form-title {
+    margin: 0 0 0.6rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.users-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.6rem;
+}
+.users-field { display: flex; flex-direction: column; gap: 0.2rem; }
+.users-field > span {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.users-field .settings-input { width: 100%; }
+.users-field-head {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+.users-field-head label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+/* Кнопка стоит в строке заголовка, поэтому по высоте равна шрифту: тот же
+   кегль и та же строка, без рамки — читается как ссылка, а не как кнопка. */
+.users-gen {
+    padding: 0;
+    border: 0;
+    background: none;
+    font-family: inherit;
+    font-size: 0.72rem;
+    line-height: normal;
+    font-weight: 500;
+    color: var(--accent);
+    cursor: pointer;
+}
+.users-gen:hover {
+    color: var(--accent-hover);
+    text-decoration: underline;
+}
+.users-gen:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+.users-form-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin-top: 0.7rem;
+}
+.users-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.users-hint {
+    margin: 0.6rem 0 0;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    line-height: 1.45;
+}
+
 /* Логи пользователей (секция в настройках) */
+
 .user-logs-path {
     font-weight: 400;
     font-size: 0.72rem;
@@ -2127,6 +2319,18 @@ body.confirm-open { overflow: hidden; }
     word-break: break-all;
     cursor: text;
     user-select: all;
+}
+/* В свёрнутом пункте путь занимает одну строку, чтобы не ломать заголовок */
+.settings-section-head .user-logs-path {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+/* Путь к файлу показываем только в раскрытом пункте */
+.settings-section:not([open]) .user-logs-path {
+    display: none;
 }
 .user-logs-toolbar {
     display: flex;
@@ -2314,4 +2518,168 @@ body.confirm-open { overflow: hidden; }
     .settings-dialog { max-height: 92vh; border-radius: var(--radius) var(--radius) 0 0; }
     .settings-foot { flex-wrap: wrap; }
     .settings-current { flex: 1 0 100%; order: -1; }
+}
+
+/* === Вход по логину и паролю === */
+.login-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: var(--bg);
+}
+
+.main--login {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 1.5rem;
+}
+
+.login-card {
+    width: min(400px, 100%);
+    padding: 2rem;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+}
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.login-brand .logo-img {
+    width: 40px;
+    height: 40px;
+    object-fit: contain;
+}
+
+/* Робот перед названием «ИИ-помощник …» на странице входа */
+.login-lottie {
+    width: 44px;
+    height: 44px;
+}
+
+@media (max-width: 420px) {
+    .login-lottie {
+        width: 36px;
+        height: 36px;
+    }
+}
+
+.login-title {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text);
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.login-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.login-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-muted);
+}
+
+.login-submit {
+    margin-top: 0.25rem;
+    padding: 0.65rem 1rem;
+    font-size: 0.95rem;
+}
+
+.login-hint {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.login-logout {
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-light);
+    text-align: center;
+}
+
+.login-card code {
+    display: block;
+    margin-top: 0.4rem;
+    padding: 0.4rem 0.5rem;
+    font-size: 0.8rem;
+    word-break: break-all;
+    background: var(--highlight);
+    border-radius: var(--radius);
+}
+
+/* Кнопка выхода в шапке: последний пункт навигации, отделён вертикальной чертой */
+.nav-logout {
+    margin-left: 0.35rem;
+    padding-left: 0.6rem;
+    border-left: 1px solid var(--border-light);
+}
+
+.nav-logout-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-weight: 500;
+    white-space: nowrap;
+    color: var(--danger);
+    background: var(--danger-soft);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.nav-logout-btn:hover {
+    color: #ffffff;
+    background: var(--danger);
+    border-color: var(--danger);
+}
+
+.nav-logout-btn:focus-visible {
+    outline: 2px solid var(--danger);
+    outline-offset: 2px;
+}
+
+.nav-user {
+    font-weight: 500;
+}
+
+/* На узком экране пункты занимают сетку — кнопка выхода занимает строку целиком */
+@media (max-width: 768px) {
+    .nav-logout {
+        flex: 1 1 100%;
+        display: flex;
+        justify-content: center;
+        margin-left: 0;
+        padding-left: 0;
+        border-left: none;
+    }
+
+    .nav-logout-btn {
+        width: 100%;
+        justify-content: center;
+        font-size: 0.88rem;
+    }
 }

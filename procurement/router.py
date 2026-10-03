@@ -1,4 +1,5 @@
 """API-роутер модуля «Закупка 223-ФЗ»."""
+import hmac
 import logging
 from typing import Literal
 
@@ -17,6 +18,14 @@ from config import (
 from core.history import procurement_history
 from core.llm_client import current_usage, get_llm
 from core.llm_errors import LLMUserFacingError, llm_error_code
+from core.prompt_guards import (
+    ANTI_HALLUCINATION_RULES,
+    EXPERT_ANSWER_FORMAT,
+    EXPERT_FORMAT_HINT,
+    EXPERT_REFUSAL_HINT,
+    ensure_expert_sources_block,
+    renumber_inline_citations,
+)
 from core.session import get_session_id
 from core.templates import templates
 from core.user_logs import log_query
@@ -28,21 +37,14 @@ from lawyer.text_encoding import (
     repair_filename,
     strip_urls,
 )
-from core.prompt_guards import (
-    ANTI_HALLUCINATION_RULES,
-    EXPERT_ANSWER_FORMAT,
-    EXPERT_FORMAT_HINT,
-    EXPERT_REFUSAL_HINT,
-    ensure_expert_sources_block,
-    renumber_inline_citations,
-)
 from procurement.kb_rag import get_policy_rag
 from procurement.services.cache_store import get_by_audit_id, get_by_hash, save_parsed
 from procurement.services.check_context import CHECK_SYSTEM_PROMPT, build_check_context
 from procurement.services.check_label import build_history_label
-from procurement.services.policy_search import enrich_policy_query, prioritize_policy_hits
 from procurement.services.file_upload import read_upload_file, safe_stored_name, write_temp_file
 from procurement.services.parser import PARSE_VERSION, parse_documentation, summary_for_client
+from procurement.services.policy_search import enrich_policy_query, prioritize_policy_hits
+from procurement.session_state import clear_documentation, get_documentation, set_documentation
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +90,11 @@ class ProcurementQuery(BaseModel):
 def _check_access(request: Request) -> None:
     if not PROCUREMENT_ACCESS_TOKEN:
         return
-    token = request.headers.get("X-Procurement-Token") or request.query_params.get("token")
-    if token != PROCUREMENT_ACCESS_TOKEN:
+    token = request.headers.get("X-Procurement-Token") or request.query_params.get("token") or ""
+    # compare_digest, а не ==: сравнение секрета не должно зависеть от времени,
+    # иначе по задержке можно подбирать токен побайтово.
+    if not hmac.compare_digest(token, PROCUREMENT_ACCESS_TOKEN):
         raise HTTPException(403, "Нет доступа к модулю «Закупка»")
-
-
-from procurement.session_state import clear_documentation, get_documentation, set_documentation
 
 
 def _citation_ref(citation: dict) -> dict:

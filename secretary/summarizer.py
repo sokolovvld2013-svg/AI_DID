@@ -1,5 +1,6 @@
 """Формирование протокола совещания через LLM."""
 import logging
+
 from core.app_time import format_history_timestamp
 from core.llm_client import get_llm
 

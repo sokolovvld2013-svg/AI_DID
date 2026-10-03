@@ -1,12 +1,13 @@
 from __future__ import annotations
-from dataclasses import dataclass, asdict
-from typing import Dict, List, Optional
-import json
-from pathlib import Path
 
-from .registry import EntityRegistry, Entity
-from .ner import ExtractedEntity, NERExtractor
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Dict, List, Optional
+
 from .docx_processor import DocxProcessor, process_docx
+from .ner import ExtractedEntity, NERExtractor
+from .registry import Entity, EntityRegistry
 
 
 @dataclass
