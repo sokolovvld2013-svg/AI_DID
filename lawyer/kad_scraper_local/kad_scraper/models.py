@@ -282,16 +282,65 @@ def next_hearing(events: Sequence[dict[str, str]] | None) -> str:
     return ""
 
 
-def _with_hearing(status: str, hearing: str) -> str:
-    """Дополняет статус строкой заседания.
+#: Оборот «рассматривается в …» для стадии, по которой дело ещё ждёт акта.
+#: Название стадии КАД даёт в именительном («Апелляционная инстанция»), а в
+#: предложном падеже читается «в апелляционной», поэтому короткий словарь
+#: вместо склонения. Неизвестная стадия остаётся как есть — лучше видеть
+#: подпись КАД, чем ничего.
+_PENDING_PHRASES: dict[str, str] = {
+    "первая инстанция": "Рассматривается в первой инстанции",
+    "апелляционная инстанция": "Рассматривается в апелляционной инстанции",
+    "кассационная инстанция": "Рассматривается в кассационной инстанции",
+    "надзорная инстанция": "Рассматривается в надзорной инстанции",
+}
+
+
+def pending_instance(events: Sequence[dict[str, str]] | None) -> str:
+    """Инстанция, в которой дело ещё ждёт судебного акта.
+
+    Хронология отсортирована от свежей записи к старой, поэтому такая инстанция
+    стоит *выше* той, чей акт стал статусом. Так выглядит дело, поданное на
+    апелляцию: в хронологии есть блок «Апелляционная инстанция» с номером и
+    судом, но без судебного акта, и тогда :func:`latest_event` берёт решение
+    первой инстанции. Без этого дополнения номер апелляционного дела из
+    выгрузки пропадал совсем — а именно он отвечает на вопрос, где дело сейчас.
+
+    Смотрим только записи выше найденного акта. Если акта нет вовсе, статусом
+    становится первая запись по :func:`latest_event`, и дописывать её же
+    второй раз незачем.
+    """
+    items = [event for event in (events or []) if isinstance(event, dict)]
+    for index, event in enumerate(items):
+        if _str(event.get("result")):
+            return _pending_phrase(items[:index])
+    return ""
+
+
+def _pending_phrase(candidates: Sequence[dict[str, str]]) -> str:
+    """Оборот о первой инстанции без акта: номер дела и суд."""
+    for event in candidates:
+        head = " ".join(
+            part
+            for part in (_str(event.get("instance_number")), _str(event.get("court")))
+            if part
+        )
+        if not head:
+            continue
+        phrase = _PENDING_PHRASES.get(_str(event.get("stage")).lower(), "Рассматривается")
+        return f"{phrase}: {head}"
+    return ""
+
+
+def _extend(status: str, extra: str) -> str:
+    """Дополнить статус строкой, которой в нём ещё нет.
 
     Текст заседания переносим дословно, вместе с особенностями набора КАД
     (пробел перед запятой в «09:30 , зал»): это данные суда, а не наш текст,
     и переписывать их — значит исказить.
     """
-    if not hearing or hearing in status:
+    if not extra or extra in status:
         return status
-    return f"{status} {hearing}" if status else hearing
+    return f"{status} {extra}" if status else extra
 
 
 def clean_parties(value: Any) -> list[dict[str, str]]:
@@ -414,15 +463,18 @@ def build_deep_status(
     нет — падаем на шапку и дату регистрации, лучше так, чем пустая ячейка.
 
     Назначенное заседание дописывается к статусу в обоих случаях: по нему
-    видно, что дело ещё не завершено и когда ждать результата.
+    видно, что дело ещё не завершено и когда ждать результата. Там же, где дело
+    ждёт акта в верхней инстанции, дописывается и она сама — см.
+    :func:`pending_instance`.
     """
     hearing = next_hearing(case_events)
+    pending = pending_instance(case_events)
 
     event = latest_event(case_events)
     if event is not None:
         status = _status_from_event(event)
         if status:
-            return _with_hearing(status, hearing)
+            return _extend(_extend(status, pending), hearing)
 
     parts: list[str] = []
     for value in (status_details, instance_desc):

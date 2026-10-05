@@ -319,6 +319,120 @@ def main() -> int:
           and saved_hearing.case_events == hearing_record.case_events,
           str(saved_hearing.case_events if saved_hearing else None))
 
+    # Разбор карточки дела А40-121733/2026 (f24c471a): апелляция приняла дело,
+    # но акта по нему ещё нет — в хронологии только номер и суд. Статусом по
+    # latest_event становится решение первой инстанции, и без дополнения номер
+    # 09АП-42803/2026 из выгрузки пропадал.
+    appealed = [
+        {
+            "stage": "Апелляционная инстанция",
+            "date": "",
+            "instance_number": "09АП-42803/2026",
+            "court": "9 арбитражный апелляционный суд",
+            "result": "",
+            "result_url": "",
+            "next_hearing": "",
+        },
+        {
+            "stage": "Первая инстанция",
+            "date": "10.07.2026",
+            "instance_number": "А40-121733/2026",
+            "court": "АС города Москвы",
+            "result": (
+                "Мотивированное решение по делу, рассмотренному в порядке "
+                "упрощенного производства"
+            ),
+            "result_url": "https://kad.arbitr.ru/Kad/PdfDocument/reshenie.pdf",
+            "next_hearing": "",
+        },
+    ]
+    appealed_status = build_deep_status(
+        case_events=appealed,
+        instance_desc="",
+        status_details="",
+        next_date="",
+        duration="5 месяцев 7 дней",
+        category="Оспаривание решений арбитражных судов",
+        reg_date="10.07.2026",
+    )
+    expected_appealed_status = (
+        "А40-121733/2026 АС города Москвы. Мотивированное решение по делу, "
+        "рассмотренному в порядке упрощенного производства. "
+        "Рассматривается в апелляционной инстанции: 09АП-42803/2026 "
+        "9 арбитражный апелляционный суд"
+    )
+    check("апелляционная инстанция без акта попала в статус",
+          appealed_status == expected_appealed_status, appealed_status)
+    check("текст акта первой инстанции не потерялся",
+          appealed_status.startswith(
+              "А40-121733/2026 АС города Москвы. Мотивированное решение"
+          ),
+          appealed_status)
+    check("номер апелляционного дела виден в статусе",
+          "09АП-42803/2026" in appealed_status, appealed_status)
+    check("ссылка на статус осталась от акта первой инстанции",
+          str(latest_event(appealed).get("result_url") or "").endswith("reshenie.pdf"),
+          str((latest_event(appealed) or {}).get("result_url")))
+
+    # Инстанция без акта, но и без номера/суда, в статус не попадает.
+    check("пустая запись без номера не ломает статус",
+          build_deep_status(
+              case_events=[{"stage": "Апелляционная инстанция"}, *appealed],
+              instance_desc="",
+              status_details="",
+              next_date="",
+              duration="",
+              category="",
+              reg_date="10.07.2026",
+          ) == expected_appealed_status,
+          build_deep_status(
+              case_events=[{"stage": "Апелляционная инстанция"}, *appealed],
+              instance_desc="",
+              status_details="",
+              next_date="",
+              duration="",
+              category="",
+              reg_date="10.07.2026",
+          ))
+
+    # Вынесенный акт верхней инстанции — дублировать её в статусе нельзя.
+    check("готовая инстанция не дописывается дважды",
+          build_deep_status(
+              case_events=[
+                  {
+                      "stage": "Апелляционная инстанция",
+                      "instance_number": "09АП-46507/2026",
+                      "court": "9 арбитражный апелляционный суд",
+                      "result": "Оставить без изменения Решение",
+                  }
+              ],
+              instance_desc="",
+              status_details="",
+              next_date="",
+              duration="",
+              category="",
+              reg_date="",
+          ) == (
+              "09АП-46507/2026 9 арбитражный апелляционный суд. "
+              "Оставить без изменения Решение."
+          ),
+          build_deep_status(
+              case_events=[
+                  {
+                      "stage": "Апелляционная инстанция",
+                      "instance_number": "09АП-46507/2026",
+                      "court": "9 арбитражный апелляционный суд",
+                      "result": "Оставить без изменения Решение",
+                  }
+              ],
+              instance_desc="",
+              status_details="",
+              next_date="",
+              duration="",
+              category="",
+              reg_date="",
+          ))
+
     print(f"\n=== ИТОГ: успешно {passed}, сбоев {failed} ===")
     return 0 if failed == 0 else 1
 
