@@ -45,7 +45,14 @@ LOGIN_URL = "/login"
 PASSWORD_URL = "/account/password"
 # Пути, минующие проверку входа: форма входа и файлы оформления.
 # Сравнение — точное или с префиксом «/» (то есть и /static/css/style.css).
-PUBLIC_PATHS = frozenset({LOGIN_URL, "/favicon.ico", "/static", "/healthz"})
+#
+# AGENT_API_PREFIX — маршруты агента парсера КАД. Агент это фоновая программа
+# на компьютере сотрудника: сессии у него нет, поэтому вход он не проходит.
+# Пропускаем его здесь, а пароль машины проверяет lawyer.arbitr.agent_api.
+AGENT_API_PREFIX = "/api/agent"
+PUBLIC_PATHS = frozenset(
+    {LOGIN_URL, "/favicon.ico", "/static", "/healthz", AGENT_API_PREFIX}
+)
 # Обрабатывают вход и выход сами, поэтому middleware их не перекрывает.
 AUTH_PATHS = frozenset({"/api/login", "/api/logout", "/logout"})
 # Пока пароль временный, доступно только то, что нужно для его смены.

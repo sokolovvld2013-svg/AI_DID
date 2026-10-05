@@ -278,6 +278,70 @@ AUTH_ADMIN_ONLY_SETTINGS = os.getenv("AUTH_ADMIN_ONLY_SETTINGS", "true").strip()
 )
 
 
+# === Парсер КАД (арбитражные дела) ===
+# Кнопка в блоке «Юрист» только ставит задание в очередь. Сбор выполняет
+# локальный агент на компьютере сотрудника: с VPS до КАД не ходят, потому
+# что там нет видимого браузера и IP дата-центровый.
+KAD_AGENT_ENABLED = os.getenv("KAD_AGENT_ENABLED", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+# Токены машин: "ivan-pc:TOKEN1,petr-pc:TOKEN2". Своя строка на машину нужна,
+# чтобы сотрудник не мог назваться чужой: имя машины попадает в историю заданий,
+# и без раздельных токенов привязка задания к владельцу недостоверна.
+KAD_AGENT_TOKENS = os.getenv("KAD_AGENT_TOKENS", "").strip()
+# Сколько агент держит запрос открытым, ожидая задание. 30 с — с запасом ниже
+# лимита туннеля на длительность запроса; ждать дольше не нужно, агент просто
+# спросит снова, а задержка передачи всё равно нулевая.
+KAD_AGENT_HOLD = max(5, min(60, int(os.getenv("KAD_AGENT_HOLD", "30"))))
+# Как часто агент подтверждает, что он жив, пока идёт долгий сбор.
+KAD_AGENT_HEARTBEAT = max(5, int(os.getenv("KAD_AGENT_HEARTBEAT", "30")))
+# После какой тишины считать машину отключённой. С запасом больше двух
+# heartbeat: иначе одно потерянное подтверждение снимет машину с обхода.
+KAD_AGENT_STALE = max(30, int(os.getenv("KAD_AGENT_STALE", "180")))
+# Сколько дней хранить выгрузки на сервере, 0 — не удалять.
+KAD_ARBITR_RETENTION_DAYS = max(0, int(os.getenv("KAD_ARBITR_RETENTION_DAYS", "10")))
+# Сколько ждать задание в очереди без взявшего агента, потом отметить истёкшим.
+# Нужно, чтобы старые задания не копились и не занимали место в очереди.
+KAD_ARBITR_QUEUE_TTL_HOURS = max(1, int(os.getenv("KAD_ARBITR_QUEUE_TTL_HOURS", "24")))
+# Потолок на загруженный агентом Excel, МБ. Выгрузка на 787 дел — доли мегабайта,
+# запас нужен на жирные дела с длинным текстом.
+KAD_ARBITR_MAX_FILE_MB = max(1, int(os.getenv("KAD_ARBITR_MAX_FILE_MB", "20")))
+# Потолок на число дел в одном задании: результат хранится целиком в памяти
+# при отдаче постранично, а 787 дел не должны превращаться в 200 000.
+KAD_ARBITR_MAX_RECORDS = max(100, int(os.getenv("KAD_ARBITR_MAX_RECORDS", "2000")))
+KAD_ARBITR_DATA_DIR = BASE_DIR / os.getenv("KAD_ARBITR_DATA_DIR", "lawyer/arbitr/data")
+
+
+def _parse_agent_tokens(raw: str) -> tuple[dict[str, str], list[str]]:
+    """Разобрать ``имя:токен,имя2:токен2`` в словарь и список претензий.
+
+    Токен едет в HTTP-заголовке, поэтому должен кодироваться в latin-1.
+    Некодируемые значения не выбрасываются молча, а попадают в список
+    претензий: иначе опечатка в .env выглядела бы как «агент никак не
+    подключается» без внятной причины.
+    """
+    tokens: dict[str, str] = {}
+    issues: list[str] = []
+    for chunk in (raw or "").replace(";", ",").split(","):
+        name, _, token = chunk.partition(":")
+        name = name.strip()
+        token = token.strip()
+        if not name or not token:
+            continue
+        try:
+            token.encode("latin-1")
+        except UnicodeEncodeError:
+            issues.append(f"{name}: токен содержит нелатинские символы")
+            token = ""
+        tokens[name] = token
+    return tokens, issues
+
+
+KAD_AGENT_TOKENS_BY_NAME, KAD_AGENT_TOKEN_ISSUES = _parse_agent_tokens(KAD_AGENT_TOKENS)
+
+
 # n8n — чат Экономиста
 N8N_ECONOMIST_WEBHOOK_URL = os.getenv("N8N_ECONOMIST_WEBHOOK_URL", "").strip()
 N8N_ECONOMIST_WEBHOOK_METHOD = os.getenv("N8N_ECONOMIST_WEBHOOK_METHOD", "POST").strip().upper()

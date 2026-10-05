@@ -42,6 +42,7 @@
 ├── economist/              # модуль Экономист
 ├── secretary/              # модуль Секретарь
 ├── lawyer/                 # модуль Юрист
+│   └── kad_scraper_local/  # локальный агент КАД для компьютеров сотрудников
 ├── procurement/            # модуль Закупка 223-ФЗ
 ├── tenders/                # модуль Торги
 ├── core/                   # LLM, эмбеддинги, история, сессии, настройки, курс ЦБ
@@ -91,6 +92,28 @@
 
 - Загрузка документов базы — **DOCX**, **TXT** (рекомендуется), **PDF** до 50 МБ; база и индекс Chroma (`lawyer_kb`) — **общие** для всех сотрудников.
 - На странице указано: *поиск по PDF не эффективен* — для сканов используйте **DOCX** или PDF с текстовым слоем.
+
+#### Арбитражные дела по ИНН
+
+Вкладка «Арбитражные дела (ИНН)» ставит задание в очередь. Сам обход КАД
+выполняет локальный агент на компьютере сотрудника:
+
+```text
+lawyer/kad_scraper_local/
+```
+
+Подробная инструкция установки агента на новый компьютер находится в
+[`lawyer/kad_scraper_local/README.md`](lawyer/kad_scraper_local/README.md).
+
+Кратко:
+
+1. На компьютере сотрудника установить Python 3.11+ и Chrome/Edge.
+2. Перейти в `lawyer\kad_scraper_local` и выполнить `setup.cmd`.
+3. Заполнить `agent.env`: адрес сервера, токен машины, имя машины и логин владельца.
+4. Проверить, что машина появилась в блоке «Состояние сбора».
+5. В приложении ввести ИНН и нажать «Найти арбитражные дела».
+6. При появлении PravoCaptcha решить её в видимом окне браузера агента.
+7. После завершения скачать XLSX из задания.
 
 **Как работает RAG**
 
@@ -356,6 +379,9 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
+Если нужен только локальный агент КАД, полный `requirements.txt` основного
+приложения устанавливать не нужно: используйте `lawyer\kad_scraper_local\setup.cmd`.
+
 Локальные эмбеддинги (`EMBEDDING_PROVIDER=local`):
 
 ```bash
@@ -446,6 +472,12 @@ pip install -r requirements.txt
 | `CHROMA_PERSIST_DIR` | Папка индекса (по умолчанию `chroma_data`) |
 | `APP_TIMEZONE` | Часовой пояс истории (`Europe/Moscow`) |
 | `HISTORY_SIZE` | История Экономист / Юрист / Секретарь (5) |
+| `KAD_AGENT_ENABLED` | Включить вкладку и API локальных агентов КАД |
+| `KAD_AGENT_TOKENS` | Токены машин в формате `имя-машины:токен` через запятую |
+| `KAD_AGENT_HOLD` | Длительность long polling агента, секунды |
+| `KAD_AGENT_HEARTBEAT` / `KAD_AGENT_STALE` | Интервал heartbeat и таймаут отключения машины |
+| `KAD_ARBITR_QUEUE_TTL_HOURS` | Срок ожидания задания без агента |
+| `KAD_ARBITR_RETENTION_DAYS` | Срок хранения результатов КАД |
 
 Полный шаблон: [.env.example](.env.example).
 
@@ -480,6 +512,10 @@ pip install -r requirements.txt
 
 Не коммитьте `~/AI_DID/.env` с ключами. Шаблон: `.env.example`.  
 `app_settings.json` (компания и выбранная модель) — тоже локальное состояние, он в `.gitignore`; задавайте его на сервере копией файла или через интерфейс.  
+Для локального агента не коммитьте `lawyer/kad_scraper_local/agent.env`,
+`lawyer/kad_scraper_local/.venv/`, `lawyer/kad_scraper_local/logs/` и
+`lawyer/kad_scraper_local/output/`. В репозитории должен находиться только
+`agent.env.example`; реальный токен каждой машины задаётся после клонирования.
 Инструкция: [docs/GITHUB.md](docs/GITHUB.md).
 
 ---

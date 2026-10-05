@@ -1,0 +1,37 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Промежуточные данные парсера
+output/
+output_agent_test/
+agent.env
+logs/
+*.tmp
+
+# Сервер очереди: база заданий и выгрузки
+
+# Логи проверок
+t1.log
+t2.log
+test_run.log
+test_agent_run.log
+
+# Артефакты Playwright / MCP
+.playwright-mcp/
+kad_step*.png
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Excel-выгрузки
+*.xlsx
+!examples/*.xlsx
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

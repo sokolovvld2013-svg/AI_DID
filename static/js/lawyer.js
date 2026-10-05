@@ -13,6 +13,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const actionHint = document.getElementById('chat-action-hint');
     const guidance = document.getElementById('module-guidance');
     const clearIndexButton = document.getElementById('clear-index');
+    const chatSection = document.getElementById('lawyer-chat');
+    const historyCard = document.getElementById('lawyer-history-card');
+    const arbitrCard = document.getElementById('arbitr-card');
+    const arbitrResults = document.getElementById('arbitr-results');
 
     const CHECK_QUESTION =
         'Проверь договор и сформируй отчёт о проверке с замечаниями.';
@@ -82,6 +86,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (contractCard) contractCard.classList.toggle('hidden', mode !== 'contract');
         if (kbCard) kbCard.classList.toggle('hidden', mode !== 'kb');
+        // Вкладка КАД - разовый инструмент, а не разговор с LLM. Диалог и
+        // история вопросов на ней бессмысленны, поэтому прячем их целиком.
+        const isArbitr = mode === 'arbitr';
+        if (arbitrCard) arbitrCard.classList.toggle('hidden', !isArbitr);
+        if (arbitrResults) arbitrResults.classList.toggle('hidden', !isArbitr);
+        if (chatSection) chatSection.classList.toggle('hidden', isArbitr);
+        if (historyCard) historyCard.classList.toggle('hidden', isArbitr);
+        if (isArbitr) startArbitrPolling(); else stopArbitrPolling();
         document.querySelectorAll('.lawyer-mode-btn').forEach(btn => {
             const isActive = btn.getAttribute('data-tab') === mode;
             btn.classList.toggle('active', isActive);
@@ -91,7 +103,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const guidanceText = guidance?.querySelector('.guidance-text');
         if (guidanceText) guidanceText.textContent = mode === 'contract'
             ? '1. Загрузите договор. 2. Дождитесь обработки. 3. Запустите проверку.'
-            : 'Задайте вопрос по загруженным внутренним нормативным документам.';
+            : isArbitr
+                ? 'Укажите ИНН и запустите поиск. Результат сохранится, даже если закрыть страницу.'
+                : 'Задайте вопрос по загруженным внутренним нормативным документам.';
         const emptyState = document.getElementById('chat-empty-state');
         if (emptyState) {
             const title = emptyState.querySelector('strong');
@@ -445,6 +459,280 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('loadChatHistory', e);
         }
     }
+
+// ── Вкладка «Арбитражные дела» ──────────────────────────────────
+    // Здесь только постановка задания и просмотр результата. Сам обход КАД
+    // выполняет локальный агент сотрудника, поэтому вкладке важно различать
+    // «ждём машину», «машина работает» и «выгрузка готова».
+    const ARBITR_PAGE = 50;
+    let arbitrTimer = null;
+    let arbitrRecordsJob = null;
+
+    function stopArbitrPolling() {
+        if (arbitrTimer) {
+            clearInterval(arbitrTimer);
+            arbitrTimer = null;
+        }
+    }
+
+    async function refreshArbitrStatus() {
+        if (document.hidden) return;
+        try {
+            const resp = await fetch('/lawyer/arbitr/status');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            renderArbitrMachines(data);
+            renderArbitrJobs(data.jobs || []);
+        } catch (e) {
+            console.error('refreshArbitrStatus', e);
+        }
+    }
+
+    function startArbitrPolling() {
+        if (arbitrTimer) return;
+        refreshArbitrStatus();
+        // Пять секунд: состояние «идёт сбор» меняется медленно, но пользователь
+        // должен увидеть его появление без ручного обновления страницы.
+        arbitrTimer = setInterval(refreshArbitrStatus, 5000);
+    }
+
+    function arbitrTime(ts) {
+        if (!ts) return '';
+        const d = new Date(ts * 1000);
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toLocaleString('ru-RU', {
+            day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+        });
+    }
+
+    function renderArbitrMachines(data) {
+        const list = document.getElementById('arbitr-machines');
+        if (!list) return;
+        // Сервер отдаёт только живые машины: молчавшие из списка убраны.
+        const rows = (data.agents || []).map(a => {
+            const owner = a.owner ? ' · ' + escapeHtml(a.owner) : '';
+            return `<li>${escapeHtml(a.name)}${owner} — ${a.busy ? 'выполняет другое задание' : 'готов к сбору'}</li>`;
+        });
+        if (!rows.length) {
+            rows.push('<li class="muted">Сборщик сейчас недоступен. Задание подождёт в очереди и запустится автоматически.</li>');
+        }
+        list.innerHTML = rows.join('');
+    }
+
+    function arbitrJobCard(job) {
+        const meta = [];
+        if (job.requested_by) meta.push('заказал ' + job.requested_by);
+        if (job.agent) meta.push('машина ' + job.agent);
+        const when = arbitrTime(job.started_at || job.created_at);
+        if (when) meta.push(when);
+
+        const facts = [];
+        if (job.enrich) facts.push('с карточками дел');
+        if (job.limit) facts.push('лимит ' + job.limit);
+        if (job.records_count) facts.push('записей: ' + job.records_count);
+        if (job.pages_visited) facts.push('страниц: ' + job.pages_visited);
+        if (job.captcha_hits) facts.push('капч: ' + job.captcha_hits);
+        if (job.elapsed) facts.push('время: ' + job.elapsed + ' с');
+        if (job.finish_label) facts.push(job.finish_label);
+
+        const warn = (job.warnings || [])
+            .map(w => `<div class="arbitr-warn">${escapeHtml(w)}</div>`).join('');
+        const err = job.error ? `<div class="arbitr-error">${escapeHtml(job.error)}</div>` : '';
+
+        const actions = ['<button type="button" class="btn btn-sm" data-action="records">Записи</button>'];
+        if (job.has_file) {
+            actions.push(
+                `<a class="btn btn-sm btn-secondary" href="/lawyer/arbitr/jobs/`
+                + `${encodeURIComponent(job.id)}/download">Скачать XLSX</a>`
+            );
+        }
+        actions.push('<button type="button" class="btn btn-sm btn-danger" data-action="delete">Удалить</button>');
+
+        const head = `<div class="arbitr-job-head"><strong>ИНН ${escapeHtml(job.inn)}</strong>`
+            + `<span class="arbitr-badge" data-state="${escapeHtml(job.state)}">`
+            + `${escapeHtml(job.state_label)}</span></div>`;
+        const lines = (meta.length ? `<div class="arbitr-job-meta">${meta.map(escapeHtml).join(' · ')}</div>` : '')
+            + (facts.length ? `<div class="arbitr-job-meta">${facts.map(escapeHtml).join(' · ')}</div>` : '');
+
+        return `<div class="arbitr-job" data-job-id="${escapeHtml(job.id)}">`
+            + head + lines + err + warn
+            + `<div class="arbitr-job-actions">${actions.join('')}</div>`
+            + '</div>';
+    }
+
+    function renderArbitrJobs(jobs) {
+        const box = document.getElementById('arbitr-jobs');
+        if (!box) return;
+        if (!jobs.length) {
+            box.innerHTML = '<div class="module-empty-state"><strong>Заданий пока нет</strong>'
+                + '<span>Укажите ИНН и нажмите «Найти арбитражные дела».</span></div>';
+            return;
+        }
+        box.innerHTML = jobs.map(arbitrJobCard).join('');
+    }
+
+    function renderArbitrRecords(data, box) {
+        // Эти технические поля не нужны в экранной таблице: номер дела по
+        // инстанции дублирует основное дело, а адреса участников перегружают
+        // просмотр. В полной XLSX-выгрузке данные сохраняются.
+        const hiddenColumns = new Set([
+            'Номер дела по инстанции',
+            'Участники (адреса)',
+        ]);
+        const columns = (data.columns || []).filter(column => !hiddenColumns.has(column));
+        const records = data.records || [];
+        if (!columns.length) {
+            box.innerHTML = '<div class="module-empty-state"><strong>Записей нет</strong>'
+                + '<span>Агент не прислал данных по этому заданию.</span></div>';
+            box.classList.remove('hidden');
+            return;
+        }
+        const head = columns.map(c => `<th>${escapeHtml(c)}</th>`).join('');
+        const rows = records.map(r => '<tr>' + columns.map(c => {
+            const v = r[c];
+            return `<td>${escapeHtml(Array.isArray(v) ? v.join(', ') : String(v ?? ''))}</td>`;
+        }).join('') + '</tr>').join('');
+
+        const offset = data.offset || 0;
+        const nav = [];
+        if (offset > 0) {
+            nav.push(`<button type="button" class="btn btn-sm" data-offset="${offset - ARBITR_PAGE}">← Назад</button>`);
+        }
+        nav.push(`<span class="muted">с ${offset + 1} по ${offset + records.length}</span>`);
+        if (data.has_more) {
+            nav.push(`<button type="button" class="btn btn-sm" data-offset="${offset + ARBITR_PAGE}">Вперёд →</button>`);
+        }
+
+        const total = data.total ?? null;
+        const totalLabel = total === null ? '' : ` из ${total}`;
+        box.innerHTML = `<div class="arbitr-records-head"><strong>Найденные дела</strong><span class="muted">Показаны записи ${offset + 1}–${offset + records.length}${totalLabel}</span>`
+            + '<button type="button" class="btn btn-sm" data-close-records="1">Свернуть</button></div>'
+            + `<div class="economist-table-wrap"><table class="economist-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`
+            + `<div class="arbitr-records-nav">${nav.join('')}</div>`;
+        box.classList.remove('hidden');
+    }
+
+    async function loadArbitrRecords(jobId, offset) {
+        const box = document.getElementById('arbitr-records');
+        if (!box) return;
+        try {
+            const resp = await fetch(
+                `/lawyer/arbitr/jobs/${encodeURIComponent(jobId)}/records?offset=${offset}`
+            );
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                box.innerHTML = `<div class="arbitr-error">${
+                    escapeHtml(safeText(err.detail) || 'Не удалось загрузить записи')}</div>`;
+                box.classList.remove('hidden');
+                return;
+            }
+            arbitrRecordsJob = jobId;
+            renderArbitrRecords(await resp.json(), box);
+        } catch (e) {
+            console.error('loadArbitrRecords', e);
+        }
+    }
+
+    document.getElementById('arbitr-body')?.addEventListener('click', async e => {
+        const pageBtn = e.target.closest('[data-offset]');
+        if (pageBtn && arbitrRecordsJob) {
+            loadArbitrRecords(arbitrRecordsJob, Number(pageBtn.dataset.offset) || 0);
+            return;
+        }
+        if (e.target.closest('[data-close-records]')) {
+            arbitrRecordsJob = null;
+            document.getElementById('arbitr-records')?.classList.add('hidden');
+            return;
+        }
+        const card = e.target.closest('.arbitr-job');
+        const action = e.target.closest('[data-action]')?.dataset.action;
+        if (!card || !action) return;
+        const jobId = card.dataset.jobId;
+
+        if (action === 'records') {
+            loadArbitrRecords(jobId, 0);
+            return;
+        }
+        if (action === 'delete') {
+            if (!(await App.confirm('Удалить задание вместе с выгрузкой?', { danger: true }))) return;
+            try {
+                const resp = await fetch(`/lawyer/arbitr/jobs/${encodeURIComponent(jobId)}`, {
+                    method: 'DELETE',
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    App.setStatus('arbitr-status', safeText(err.detail) || 'Не удалось удалить', 'error');
+                    return;
+                }
+                if (arbitrRecordsJob === jobId) {
+                    arbitrRecordsJob = null;
+                    document.getElementById('arbitr-records')?.classList.add('hidden');
+                }
+                App.setStatus('arbitr-status', '✓ Задание удалено', 'ok');
+                await refreshArbitrStatus();
+            } catch (err) {
+                App.setStatus('arbitr-status', 'Ошибка при удалении', 'error');
+            }
+        }
+    });
+
+    document.getElementById('arbitr-run')?.addEventListener('click', async () => {
+        const innField = document.getElementById('arbitr-inn');
+        const limitField = document.getElementById('arbitr-limit');
+        const inn = (innField?.value || '').replace(/\D/g, '');
+        if (inn.length < 10 || inn.length > 12) {
+            App.setStatus(
+                'arbitr-status',
+                'Укажите ИНН: 10 цифр у организации или 12 у физического лица.',
+                'error'
+            );
+            return;
+        }
+        // Полный сбор подробностей включён всегда: переключателя в UI нет.
+        const payload = { inn: inn, enrich: true };
+        const limit = (limitField?.value || '').trim();
+        if (limit) payload.limit = Number(limit);
+
+        const button = document.getElementById('arbitr-run');
+        button.disabled = true;
+        App.setStatus('arbitr-status', 'Ставлю задание в очередь…', 'loading');
+        try {
+            const resp = await fetch('/lawyer/arbitr/jobs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                App.setStatus(
+                    'arbitr-status',
+                    safeText(data.detail) || 'Не удалось поставить задание',
+                    'error'
+                );
+                return;
+            }
+            const online = data.agents_online || 0;
+            App.setStatus(
+                'arbitr-status',
+                online
+                    ? `✓ Задание принято. Доступных сборщиков: ${online}. Обычно сбор занимает от 2 до 15 минут.`
+                    : '✓ Задание принято. Сбор начнётся автоматически, когда будет доступен сборщик. Страницу можно закрыть.',
+                'ok'
+            );
+            await refreshArbitrStatus();
+        } catch (e) {
+            App.setStatus('arbitr-status', 'Ошибка сети', 'error');
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    document.getElementById('arbitr-refresh')?.addEventListener('click', async () => {
+        const button = document.getElementById('arbitr-refresh');
+        button.disabled = true;
+        try { await refreshArbitrStatus(); }
+        finally { button.disabled = false; }
+    });
 
     refreshContractStatus();
     refreshFiles();

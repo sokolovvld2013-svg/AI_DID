@@ -1823,6 +1823,10 @@ body.confirm-open { overflow: hidden; }
     box-shadow: var(--shadow-sm);
 }
 
+.lawyer-mode-switch {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .procurement-mode-btn,
 .lawyer-mode-btn {
     min-height: 2.75rem;
@@ -2707,4 +2711,138 @@ body.confirm-open { overflow: hidden; }
         justify-content: center;
         font-size: 0.88rem;
     }
+}
+
+/* Вкладка «Арбитражные дела»: карточки заданий и состояния сбора КАД */
+.arbitr-job {
+    padding: 0.7rem 0.8rem;
+    border: 1px solid var(--border-light);
+    border-radius: 8px;
+    margin-bottom: 0.6rem;
+}
+
+.arbitr-intro {
+    margin: -0.25rem 0 1rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.arbitr-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.arbitr-form > label:not(.arbitr-checkbox) {
+    margin-top: 0.45rem;
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.arbitr-form input[type="text"],
+.arbitr-form input[type="number"] {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.field-hint,
+.arbitr-checkbox small {
+    display: block;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    line-height: 1.35;
+}
+
+.arbitr-checkbox {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0.7rem 0 0.25rem;
+    cursor: pointer;
+}
+
+.arbitr-checkbox input {
+    margin-top: 0.2rem;
+    flex: 0 0 auto;
+}
+
+.arbitr-checkbox strong {
+    display: block;
+    font-size: 0.88rem;
+}
+
+.arbitr-agents-heading {
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 0.8rem;
+    border-top: 1px solid var(--border-light);
+    font-weight: 600;
+    font-size: 0.88rem;
+}
+
+.arbitr-agents-heading .btn {
+    margin-left: auto;
+}
+
+.arbitr-job-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.arbitr-badge {
+    flex: 0 0 auto;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    background: var(--accent-soft);
+    color: var(--text-muted);
+}
+
+.arbitr-badge[data-state="running"] { background: var(--warning-soft); color: var(--warning); }
+.arbitr-badge[data-state="done"] { background: var(--success-soft); color: var(--success); }
+.arbitr-badge[data-state="failed"] { background: var(--danger-soft); color: var(--danger); }
+
+.arbitr-job-meta {
+    margin-top: 0.25rem;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.arbitr-job-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.arbitr-job-actions .btn {
+    text-decoration: none;
+}
+
+.arbitr-warn,
+.arbitr-error {
+    margin-top: 0.3rem;
+    font-size: 0.82rem;
+}
+
+.arbitr-warn { color: var(--warning); }
+.arbitr-error { color: var(--danger); }
+
+.arbitr-records-head,
+.arbitr-records-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0.8rem 0 0.4rem;
+}
+
+.arbitr-records-nav {
+    justify-content: flex-start;
+    font-size: 0.85rem;
 }

@@ -1,0 +1,13 @@
+# Минимальный набор для компьютера сотрудника: только сбор и отправка
+# результатов на сервер. Ни Streamlit, ни FastAPI здесь не нужны.
+#
+#   pip install -r requirements-agent.txt
+#   python -m playwright install chromium
+#
+# Если Playwright не смог скачать Chromium, парсер возьмёт установленный
+# Chrome или Edge — проверяется автоматически при первом запуске.
+
+playwright>=1.47
+pandas>=2.2
+openpyxl>=3.1
+requests>=2.31

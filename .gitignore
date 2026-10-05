@@ -62,6 +62,9 @@ lawyer/uploaded/*
 !lawyer/uploaded/.gitkeep
 economist/uploaded/*
 !economist/uploaded/.gitkeep
+# Очередь заданий парсера КАД (KAD_ARBITR_DATA_DIR): задания и выгрузки с
+# ИНН участников — это рабочие данные, в репозитории им не место.
+lawyer/arbitr/data/
 logs/*
 !logs/.gitkeep
 

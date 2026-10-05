@@ -12,6 +12,11 @@ import tempfile
 from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
+# Тесты приложения не должны зависеть от локального .env разработчика. В
+# production-файле KAD включается отдельно, а тест маршрутов без фичи должен
+# оставаться детерминированным.
+os.environ.setdefault("KAD_AGENT_ENABLED", "false")
+
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent

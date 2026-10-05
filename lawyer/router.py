@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from config import (
     ALLOWED_DOC_EXT,
+    KAD_AGENT_ENABLED,
     LAWYER_BALANCE_FILES,
     LAWYER_SEMANTIC_MIN_SCORE,
     LAWYER_UPLOAD_DIR,
@@ -257,6 +258,9 @@ async def lawyer_page(request: Request):
             "history": lawyer_history.list(sid),
             "files": _rag().list_files(),
             "contract": get_contract(sid) or None,
+            # Вкладка парсера КАД показывается только при включённой настройке:
+            # иначе вкладка вела бы в 404.
+            "kad_enabled": KAD_AGENT_ENABLED,
         },
     )
 

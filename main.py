@@ -12,6 +12,7 @@ from config import (
     BASE_DIR,
     CHROMA_PERSIST_DIR,
     FAVICON_SOURCE,
+    KAD_AGENT_ENABLED,
     LAWYER_UPLOAD_DIR,
     LOGO_SOURCE,
     PROCUREMENT_CACHE_DIR,
@@ -32,6 +33,8 @@ from core.settings import get_company_name
 from core.settings_router import router as settings_router
 from core.user_logs import cleanup_old_logs, set_current_request
 from economist.router import router as economist_router
+from lawyer.arbitr.agent_api import router as kad_agent_router
+from lawyer.arbitr.router import router as kad_router
 from lawyer.doc_processor import docx_available, pymupdf_available
 from lawyer.router import router as lawyer_router
 from procurement.router import legacy_router
@@ -198,6 +201,12 @@ app.include_router(tenders_router)
 app.include_router(legacy_router)
 app.include_router(anomizer_router)
 app.include_router(settings_router)
+
+# Парсер КАД: маршруты появляются только при KAD_AGENT_ENABLED. Пока фича
+# выключена, её нет вовсе - ни вкладки, ни 404-заглушек, ни в OpenAPI.
+if KAD_AGENT_ENABLED:
+    app.include_router(kad_router)
+    app.include_router(kad_agent_router)
 
 
 @app.get("/healthz", include_in_schema=False)
