@@ -13,6 +13,9 @@ dist/
 .env
 .env.*
 !.env.example
+# Старые бэкапы .env (например .envold) — как и .env, не публиковать
+.envold
+.env.old
 *.pem
 *.key
 *.p12

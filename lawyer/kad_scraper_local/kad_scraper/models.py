@@ -243,15 +243,24 @@ def latest_event(events: Sequence[dict[str, str]] | None) -> dict[str, str] | No
 
 
 def _status_from_event(event: dict[str, str]) -> str:
-    """Статус по одному проходу дела: инстанция и текст её акта.
+    """Статус по одному проходу дела: наименование инстанции и текст её акта.
 
-    Формат — как в карточке КАД: сначала номер дела и суд, затем через точку
-    формулировка последнего судебного акта.
+    Формат — как в карточке КАД: сперва инстанция, затем номер дела и суд,
+    через точку — формулировка последнего судебного акта. Проходу без акта
+    отвечает оборотом «Рассматривается в …», как в шапке карточки.
     """
+    stage = _str(event.get("stage"))
     number = _str(event.get("instance_number"))
     court = _str(event.get("court"))
     result = _str(event.get("result")).rstrip(" .")
     head = " ".join(part for part in (number, court) if part)
+    if not result:
+        if not head:
+            return ""
+        phrase = _PENDING_PHRASES.get(stage.lower(), "Рассматривается")
+        return f"{phrase}: {head}"
+    if stage and head:
+        head = f"{stage}: {head}"
     if head and result:
         return f"{head}. {result}."
     if head:
@@ -462,10 +471,11 @@ def build_deep_status(
     текстом последнего акта, а не сводка из шапки страницы. Если хронологии
     нет — падаем на шапку и дату регистрации, лучше так, чем пустая ячейка.
 
-    Назначенное заседание дописывается к статусу в обоих случаях: по нему
-    видно, что дело ещё не завершено и когда ждать результата. Там же, где дело
-    ждёт акта в верхней инстанции, дописывается и она сама — см.
-    :func:`pending_instance`.
+    Инстанции перечисляются в порядке карточки, от свежей к старой: сверху
+    та, где дело сейчас ждёт акта (оборот «Рассматривается в …»), ниже —
+    инстанция последнего судебного акта; каждая отдельной строкой, как блоки
+    в хронологии. Назначенное заседание дописывается в конец: по нему видно,
+    что дело ещё не завершено и когда ждать результата.
     """
     hearing = next_hearing(case_events)
     pending = pending_instance(case_events)
@@ -474,7 +484,8 @@ def build_deep_status(
     if event is not None:
         status = _status_from_event(event)
         if status:
-            return _extend(_extend(status, pending), hearing)
+            lines = [part for part in (pending, status) if part]
+            return _extend("\n".join(lines), hearing)
 
     parts: list[str] = []
     for value in (status_details, instance_desc):

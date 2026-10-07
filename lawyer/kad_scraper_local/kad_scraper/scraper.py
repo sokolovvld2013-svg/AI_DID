@@ -39,10 +39,12 @@ from .browser import BrowserSession, human_delay
 from .exporter import CheckpointStore
 from .extract import (
     CHECK_PAGE_JS,
+    CHRONO_EXPANDED_READY_JS,
     CHRONO_READY_JS,
     CLICK_NEXT_JS,
     CLICK_SUBMIT_JS,
     DISMISS_OVERLAYS_JS,
+    EXPAND_CHRONO_JS,
     EXTRACT_CARD_JS,
     EXTRACT_ROWS_JS,
     FOCUS_PARTICIPANT_JS,
@@ -809,7 +811,7 @@ class KadScraper:
         deadline = time.monotonic() + config.CAPTCHA_GRACE_SEC * 3
         while time.monotonic() < deadline:
             page.wait_for_timeout(1500)
-            state = page.evaluate(CHECK_PAGE_JS) or {}
+            state = self._eval_page(page, CHECK_PAGE_JS) or {}
             if not state.get("captcha"):
                 page.wait_for_timeout(2000)
                 return True
@@ -858,12 +860,12 @@ class KadScraper:
             report(progress)
 
             try:
-                page.goto(record.url, wait_until="domcontentloaded")
+                self._open_card(page, record.url)
 
                 # Капча и блокировка приходят раньше таблицы сторон, поэтому
                 # проверяем их до ``wait_for_selector`` — иначе ожидание
                 # таблицы истечёт по таймауту, так и не дав решить капчу.
-                state = page.evaluate(CHECK_PAGE_JS) or {}
+                state = self._eval_page(page, CHECK_PAGE_JS) or {}
                 if state.get("blocked"):
                     warnings.append(
                         "КАД заблокировал доступ по IP во время обогащения — "
@@ -879,7 +881,7 @@ class KadScraper:
                             f"{record.case_number}: капча на карточке — данные не дополнены."
                         )
                         break
-                    state = page.evaluate(CHECK_PAGE_JS) or {}
+                    state = self._eval_page(page, CHECK_PAGE_JS) or {}
                     if state.get("blocked"):
                         warnings.append(
                             "КАД заблокировал доступ по IP во время обогащения — "
@@ -891,7 +893,14 @@ class KadScraper:
                     config.CARD_SEL_PARTIES_TABLE, timeout=config.DEFAULT_TIMEOUT_MS
                 )
                 self._await_chrono(page)
-                card = page.evaluate(EXTRACT_CARD_JS) or {}
+                card = self._eval_page(page, EXTRACT_CARD_JS) or {}
+                # Сумма иска есть не в шапке, а в полной хронологии, которую
+                # КАД доливает по клику на «Нажмите, чтобы ознакомиться…».
+                # Разворачиваем и разбираем карточку ещё раз, только когда в
+                # шапке суммы не нашлось.
+                if not str(card.get("claim_amount") or "").strip():
+                    self._expand_chrono(page)
+                    card = self._eval_page(page, EXTRACT_CARD_JS) or {}
             except (PlaywrightTimeout, PlaywrightError) as exc:
                 warnings.append(f"{record.case_number}: не удалось открыть карточку ({exc}).")
                 continue
@@ -924,6 +933,68 @@ class KadScraper:
             page.wait_for_function(CHRONO_READY_JS, timeout=config.CHRONO_WAIT_MS)
         except (PlaywrightTimeout, PlaywrightError) as exc:
             log.debug("Хронология карточки не догрузилась: %s", exc)
+
+    @staticmethod
+    def _expand_chrono(page: Page) -> None:
+        """Раскрывает полную хронологию инстанций ради суммы иска.
+
+        На карточках упрощённого производства КАД прячет сумму исковых
+        требований в теге ``additional-info`` события «Заявление» полной
+        хронологии; блок доливается отдельным запросом по клику на «Нажмите,
+        чтобы ознакомиться со полной хронологией дела». Не развернулось — не
+        беда: сумма останется пустой, как было раньше.
+        """
+        try:
+            page.evaluate(EXPAND_CHRONO_JS)
+            page.wait_for_function(
+                CHRONO_EXPANDED_READY_JS, timeout=config.CHRONO_EXPAND_WAIT_MS
+            )
+        except (PlaywrightTimeout, PlaywrightError) as exc:
+            log.debug("Полная хронология карточки не развернулась: %s", exc)
+
+    @staticmethod
+    def _open_card(page: Page, url: str) -> None:
+        """Открыть карточку, пережив перенаправление КАД.
+
+        КАД иногда встречает карточку временной страницей, которая тут же
+        перенаправляет на саму карточку: ``goto`` успевает пройти до
+        ``domcontentloaded`` и падает с «Navigation is interrupted by another
+        navigation». Это не повод терять карточку — переходим заново, пока
+        навигация не перестанет конкурировать.
+        """
+        last: BaseException | None = None
+        for _ in range(config.CARD_OPEN_RETRIES):
+            try:
+                page.goto(url, wait_until="domcontentloaded")
+                return
+            except (PlaywrightTimeout, PlaywrightError) as exc:
+                last = exc
+                page.wait_for_timeout(config.CARD_OPEN_RETRY_MS)
+        raise PlaywrightError(
+            f"карточка не открылась за {config.CARD_OPEN_RETRIES} попыток: {last}"
+        )
+
+    @staticmethod
+    def _eval_page(page: Page, script: str) -> Any:
+        """Выполнить скрипт, переждав незавершённый редирект карточки.
+
+        ``goto`` возвращается по ``domcontentloaded``, но КАД может запустить
+        перенаправление следом: прилетает «Execution context was destroyed,
+        most likely because of a navigation». Новый контекст появится после
+        перехода — пробуем ещё раз через паузу.
+        """
+        last: BaseException | None = None
+        for _ in range(config.CARD_OPEN_RETRIES):
+            try:
+                return page.evaluate(script)
+            except PlaywrightError as exc:
+                if "Execution context was destroyed" not in str(exc):
+                    raise
+                last = exc
+                page.wait_for_timeout(config.CARD_OPEN_RETRY_MS)
+        raise PlaywrightError(
+            f"страница не устоялась за {config.CARD_OPEN_RETRIES} попыток: {last}"
+        )
 
     @staticmethod
     def _apply_card(record: CaseRecord, card: dict[str, Any]) -> None:

@@ -78,13 +78,16 @@
         <div class="card hidden arbitr-panel" id="arbitr-card" role="tabpanel" aria-labelledby="arbitr-tab">
             <h3>Поиск по КАД</h3>
             <div class="arbitr-form" id="arbitr-form">
-                <label for="arbitr-inn">Введите ИНН</label>
-                <input type="text" id="arbitr-inn" placeholder="Например, 7707083893" inputmode="numeric" maxlength="12" autocomplete="off" aria-describedby="arbitr-inn-hint">
-                <small id="arbitr-inn-hint" class="field-hint">10 цифр для организации, 12 — для физического лица</small>
-                <label for="arbitr-limit">Максимальное количество дел</label>
-                <input type="number" id="arbitr-limit" placeholder="Без ограничения" min="1" max="2000" aria-describedby="arbitr-limit-hint">
-                <small id="arbitr-limit-hint" class="field-hint">Для первого поиска рекомендуем ограничить результат 200 делами.</small>
-                <button type="button" class="btn btn-primary" id="arbitr-run">Найти арбитражные дела</button>
+                <div class="arbitr-field" id="arbitr-inn-field">
+                    <label for="arbitr-inn">Введите ИНН</label>
+                    <input type="text" id="arbitr-inn" class="arbitr-input" placeholder="Например, 7707083893" inputmode="numeric" maxlength="12" autocomplete="off" aria-describedby="arbitr-inn-hint">
+                    <small id="arbitr-inn-hint" class="field-hint">10 цифр для организации, 12 — для физического лица</small>
+                </div>
+                <div class="arbitr-field" id="arbitr-limit-field">
+                    <label for="arbitr-limit">Максимальное количество дел</label>
+                    <input type="number" id="arbitr-limit" class="arbitr-input" placeholder="Без ограничения" min="1" max="2000">
+                </div>
+                <button type="button" class="btn btn-primary arbitr-run-btn" id="arbitr-run">Найти арбитражные дела</button>
             </div>
             <div class="status" id="arbitr-status" role="status" aria-live="polite"></div>
             <div class="arbitr-agents-heading">Состояние сбора <button type="button" class="btn btn-sm" id="arbitr-refresh">Обновить статус</button></div>
@@ -114,7 +117,6 @@
             <div id="arbitr-jobs">
                 <div class="module-empty-state" id="arbitr-empty"><strong>Заданий пока нет</strong><span>Укажите ИНН и нажмите «Найти дела в КАД».</span></div>
             </div>
-            <div class="hidden" id="arbitr-records"></div>
         </div>
     </section>
     {% endif %}
@@ -122,5 +124,5 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="/static/js/lawyer.js?v=10"></script>
+    <script src="/static/js/lawyer.js?v=12"></script>
 {% endblock %}

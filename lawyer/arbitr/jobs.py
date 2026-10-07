@@ -8,9 +8,8 @@
 
 Состояние лежит на диске, а не в памяти: приложение перезапускается systemd
 при падении, а обход на 787 дел иначе пропадёт вместе с выгрузкой. Каждое
-задание - отдельный каталог с ``job.json``, ``records.json`` и ``result.xlsx``.
-Записи вынесены из ``job.json`` намеренно: их несколько мегабайт, а статус
-вкладка опрашивает каждые пару секунд.
+задание - отдельный каталог с ``job.json`` и ``result.xlsx``; Excel собирает
+агент на своей машине и присылает готовым файлом.
 
 Агенты ждут задание обычным long polling: держу запрос открытым и отдаю
 задание сразу, как только оно появилось. Это дешевле опроса с интервалом и не
@@ -328,16 +327,6 @@ class JobStore:
             shutil.rmtree(self._job_dir(job_id), ignore_errors=True)
             return True
 
-    def read_records(self, job_id: str, *, offset: int = 0, limit: int = 50) -> list[dict[str, Any]]:
-        """Страница записей. Читает файл, а не память: записей бывают тысячи."""
-        with self._lock:
-            self._load_locked()
-            path = self._job_dir(job_id) / "records.json"
-        records = self._read_json(path) if path.exists() else None
-        if not isinstance(records, list):
-            return []
-        return records[offset : offset + limit]
-
     def file_path(self, job_id: str) -> Path | None:
         with self._lock:
             self._load_locked()
@@ -384,8 +373,6 @@ class JobStore:
             job["state"] = STATE_DONE if usable else STATE_FAILED
             job["finished_at"] = float(report.get("finished_at") or time.time())
             job["error"] = None if usable else (report.get("error") or report.get("stop_reason"))
-            if records:
-                self._write_json(self._job_dir(job_id) / "records.json", records)
             self._write_job_locked(job)
             self._release_machine_locked(agent, job)
             self._dispatch_locked()

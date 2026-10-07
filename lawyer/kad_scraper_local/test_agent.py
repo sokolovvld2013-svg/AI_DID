@@ -26,6 +26,7 @@ from kad_scraper.models import (  # noqa: E402
     latest_event,
 )
 from kad_scraper.protocol import make_result  # noqa: E402
+from kad_scraper.scraper import KadScraper  # noqa: E402
 from openpyxl import load_workbook  # noqa: E402
 
 passed = failed = 0
@@ -163,7 +164,8 @@ def main() -> int:
         reg_date="11.08.2026",
     )
     expected_status = (
-        "09АП-46507/2026 9 арбитражный апелляционный суд. Оставить без изменения "
+        "Апелляционная инстанция: 09АП-46507/2026 "
+        "9 арбитражный апелляционный суд. Оставить без изменения "
         "Решение; Оставить без изменения решение, а апелляционную жалобу - "
         "без удовлетворения (п.1 ст.269 АПК)."
     )
@@ -196,9 +198,8 @@ def main() -> int:
     sheet = workbook[workbook.sheetnames[0]]
     status_header = [cell.value for cell in sheet[1]].index("Статус") + 1
     status_cell = sheet.cell(row=2, column=status_header)
-    check("в Excel статус — гиперссылка на документ",
-          status_cell.hyperlink is not None
-          and status_cell.hyperlink.target == record.status_url,
+    check("в Excel статус — текст без гиперссылки на документ",
+          status_cell.hyperlink is None,
           str(status_cell.hyperlink.target if status_cell.hyperlink else None))
     check("текст статуса в Excel не потерялся",
           status_cell.value == expected_status, str(status_cell.value))
@@ -211,6 +212,34 @@ def main() -> int:
     check("значения попали в DataFrame",
           frame.loc[0, "Сумма иска"] == "1 234 567,89 руб.",
           str(frame.loc[0, "Сумма иска"]))
+
+    # Сумма иска достаётся из карточки и переносится в запись методом
+    # разбора (реальный сценарий: карточка f24c471a, «Сумма исковых
+    # требований 682933,74» из события «Заявление» полной хронологии).
+    enriched = CaseRecord(
+        url="https://kad.arbitr.ru/Card/f24c471a-b48c-4ba9-a6a2-f82e040b08cc",
+        case_number="А40-121733/2026",
+        reg_date="28.04.2026",
+    )
+    KadScraper._apply_card(enriched, {
+        "claim_amount": "682933,74",
+        "instance_level": "А40-121733/2026",
+        "instance_desc": "",
+        "status_details": "",
+        "case_events": [],
+        "next_date": "",
+        "duration": "",
+        "category": "",
+        "third": [], "others": [], "plaintiffs": [], "defendants": [],
+    })
+    check("сумма иска из карточки попала в запись",
+          enriched.claim_amount == "682933,74", str(enriched.claim_amount))
+    check("сумма иска пуста, если карточка её не отдала",
+          CaseRecord(
+              url="https://kad.arbitr.ru/Card/f24c471a-b48c-4ba9-a6a2-f82e040b08cc",
+              case_number="А40-121733/2026",
+              reg_date="28.04.2026",
+          ).claim_amount == "", "")
 
     # Дело 0c83f2c3: хронология без судебного акта, зато назначено заседание.
     # Текст взят с карточки дословно, вместе с пробелом перед запятой в
@@ -241,8 +270,8 @@ def main() -> int:
         reg_date="10.07.2026",
     )
     expected_hearing_status = (
-        "А60-43345/2026 АС Свердловской области. "
-        "Следующее заседание: 21.10.2026, 09:30 , зал № 306"
+        "Рассматривается в первой инстанции: А60-43345/2026 "
+        "АС Свердловской области Следующее заседание: 21.10.2026, 09:30 , зал № 306"
     )
     check("статус без судебного акта берёт номер инстанции",
           hearing_record.status == expected_hearing_status,
@@ -284,7 +313,8 @@ def main() -> int:
           mixed_status)
     check("статус с заседанием не потерял текст акта",
           mixed_status.startswith(
-              "09АП-46507/2026 9 арбитражный апелляционный суд. "
+              "Апелляционная инстанция: 09АП-46507/2026 "
+              "9 арбитражный апелляционный суд. "
               "Оставить без изменения Решение."
           ),
           mixed_status)
@@ -356,16 +386,18 @@ def main() -> int:
         reg_date="10.07.2026",
     )
     expected_appealed_status = (
-        "А40-121733/2026 АС города Москвы. Мотивированное решение по делу, "
-        "рассмотренному в порядке упрощенного производства. "
         "Рассматривается в апелляционной инстанции: 09АП-42803/2026 "
-        "9 арбитражный апелляционный суд"
+        "9 арбитражный апелляционный суд\n"
+        "Первая инстанция: А40-121733/2026 АС города Москвы. Мотивированное "
+        "решение по делу, рассмотренному в порядке упрощенного производства."
     )
-    check("апелляционная инстанция без акта попала в статус",
+    check("апелляционная инстанция без акта попала в статус первой строкой",
           appealed_status == expected_appealed_status, appealed_status)
     check("текст акта первой инстанции не потерялся",
-          appealed_status.startswith(
-              "А40-121733/2026 АС города Москвы. Мотивированное решение"
+          appealed_status.endswith(
+              "Первая инстанция: А40-121733/2026 АС города Москвы. "
+              "Мотивированное решение по делу, рассмотренному в порядке "
+              "упрощенного производства."
           ),
           appealed_status)
     check("номер апелляционного дела виден в статусе",
@@ -413,7 +445,8 @@ def main() -> int:
               category="",
               reg_date="",
           ) == (
-              "09АП-46507/2026 9 арбитражный апелляционный суд. "
+              "Апелляционная инстанция: 09АП-46507/2026 "
+              "9 арбитражный апелляционный суд. "
               "Оставить без изменения Решение."
           ),
           build_deep_status(

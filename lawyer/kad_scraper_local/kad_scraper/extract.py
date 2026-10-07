@@ -262,13 +262,21 @@ EXTRACT_CARD_JS = f"""() => {{
   ));
   out.status_details = Array.from(new Set(statusNodes.map(clean).filter(Boolean))).join('; ');
 
-  const amountLabel = Array.from(document.querySelectorAll('td,th,dt,dd,div,span,li'))
-    .find((el) => /^(сумма|цена|размер)\\s+иска\\s*:?$/i.test(clean(el)));
-  if (amountLabel) {{
-    const sibling = amountLabel.nextElementSibling;
-    const amountText = clean(sibling) || clean(amountLabel.parentElement);
-    out.claim_amount = amountText.replace(/^.*?(сумма|цена|размер)\\s+иска\\s*:?[\\s-]*/i, '').trim();
+  // Сумма исковых требований: в шапке карточки — «Сумма исковых требований:
+  // 682 933,74 руб.», а на карточках упрощённого производства — только в
+  // событии «Заявление» полной хронологии (тег ``additional-info``), которое
+  // КАД доливает после разворачивания (EXPAND_CHRONO_JS). Сначала ищем в
+  // шапке, затем в хронологии.
+  const AMOUNT_RE = /(?:сумма|цена|размер|стоимость)\\s+(?:исковых\\s+)?(?:требований|иска)\\s*[:\\-]?\\s*([0-9](?:[0-9 \\u00a0.,\\-]*[0-9])?)(\\s*(?:руб(?:лей)?|р)\\.?)?/i;
+  const headerEl = document.querySelector('#b-case-header');
+  let amountMatch = headerEl ? AMOUNT_RE.exec(headerEl.innerText) : null;
+  if (!amountMatch) {{
+    const chronoEl = document.querySelector('#chrono_list_content');
+    amountMatch = chronoEl ? AMOUNT_RE.exec(chronoEl.innerText) : null;
   }}
+  out.claim_amount = amountMatch
+    ? (amountMatch[1] + (amountMatch[2] || '')).replace(/\\s+/g, ' ').trim()
+    : '';
 
   // Нужный пользователю статус находится не в шапке, а в хронологии дела
   // (вкладка «Карточки»): там видно движение по всем инстанциям, текст
@@ -376,6 +384,43 @@ CHRONO_READY_JS = f"""() => {{
     if (!box) return true;
     return !!(box.textContent || '').trim();
   }});
+}}"""
+
+#: Раскрывает свёрнутую полную хронологию каждой инстанции. КАД показывает по
+#: клику на «Нажмите, чтобы ознакомиться с полной хронологией дела»
+#: (``.b-collapse.js-collapse``) блок ``.js-chrono-items-wrapper`` с событиями
+#: инстанции; именно там живёт тег ``additional-info`` события «Заявление» с
+#: суммой исковых требований — в сводке-шапке её нет. ``.click()`` из JS
+#: срабатывает, т.к. обработчик навешен как у пагинации, через jQuery.
+EXPAND_CHRONO_JS = f"""() => {{
+  const root = document.querySelector({_js(config.CARD_CHRONO_ROOT)});
+  if (!root) return 0;
+  const buttons = Array.from(root.querySelectorAll(
+    '{config.CARD_CHRONO_ITEM} .b-collapse.js-collapse'
+  )).filter((btn) => {{
+    const header = btn.closest('{config.CARD_CHRONO_ITEM}');
+    return !header || !header.classList.contains('b-chrono-item-header-expanded');
+  }});
+  buttons.forEach((btn) => {{
+    if (typeof btn.click === 'function') {{
+      btn.click();
+    }} else {{
+      btn.dispatchEvent(new MouseEvent('click', {{ bubbles: true }}));
+    }}
+  }});
+  return buttons.length;
+}}"""
+
+#: Долилась ли полная хронология хотя бы одной инстанции: появился блок
+#: ``.js-chrono-items-wrapper`` хотя бы с одним событием. Сумма иска лежит в
+#: событии «Заявление» самой старой инстанции, обычно первой, поэтому одной
+#: загруженной инстанции достаточно. Не дождались — сумма останется пустой,
+#: как и раньше.
+CHRONO_EXPANDED_READY_JS = f"""() => {{
+  const root = document.querySelector({_js(config.CARD_CHRONO_ROOT)});
+  if (!root) return false;
+  const wrappers = Array.from(root.querySelectorAll('.js-chrono-items-wrapper'));
+  return wrappers.some((w) => w.querySelectorAll('.js-chrono-item, .b-chrono-item').length > 0);
 }}"""
 
 #: Диагностика страницы без разбора таблицы: капча или IP-блокировка.

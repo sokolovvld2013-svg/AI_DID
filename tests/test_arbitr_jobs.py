@@ -167,24 +167,13 @@ async def test_busy_machine_cannot_take_two_jobs(store: JobStore) -> None:
 
 # ---------- результат ----------
 
-async def test_result_is_stored_and_read_back(store: JobStore) -> None:
+async def test_result_is_stored(store: JobStore) -> None:
     job = await _claim(store)
 
     saved = store.save_result(job["id"], _report(job["id"]), IVAN)
 
     assert saved["state"] == STATE_DONE
     assert saved["result"]["records_count"] == 3
-    assert store.read_records(job["id"])[1] == {"Номер дела": "А40-1"}
-
-
-async def test_records_are_paged(store: JobStore) -> None:
-    job = await _claim(store)
-    store.save_result(job["id"], _report(job["id"], records=120), IVAN)
-
-    page = store.read_records(job["id"], offset=50, limit=50)
-
-    assert len(page) == 50
-    assert page[0]["Номер дела"] == "А40-50"
 
 
 async def test_failed_status_is_not_marked_done(store: JobStore) -> None:
@@ -203,7 +192,6 @@ async def test_captcha_still_counts_as_usable(store: JobStore) -> None:
     saved = store.save_result(job["id"], _report(job["id"], records=40, status="captcha"), IVAN)
 
     assert saved["state"] == STATE_DONE
-    assert store.read_records(job["id"])
 
 
 async def test_only_assigned_machine_may_report(store: JobStore) -> None:
@@ -478,11 +466,6 @@ async def test_full_round_trip(kad) -> None:
     assert download.content == b"xlsx-content"
     assert ".xlsx" in download.headers["content-disposition"]
 
-    records = (await ac.get(f"/lawyer/arbitr/jobs/{job_id}/records")).json()
-    assert records["columns"] == ["Номер дела"]
-    assert len(records["records"]) == 50
-    assert records["has_more"] is True
-
     assert (await ac.delete(f"/lawyer/arbitr/jobs/{job_id}")).status_code == 200
     assert store.get_job(job_id) is None
 
@@ -558,14 +541,6 @@ async def test_download_without_file_is_not_found(kad) -> None:
     job = store.create_job(inn="7707083893", requested_by=OWNER)
 
     response = await ac.get(f"/lawyer/arbitr/jobs/{job['id']}/download")
-
-    assert response.status_code == 404
-
-
-async def test_unknown_job_is_not_found(kad) -> None:
-    ac, _ = kad
-
-    response = await ac.get("/lawyer/arbitr/jobs/job-0000000000/records")
 
     assert response.status_code == 404
 

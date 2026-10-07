@@ -1823,8 +1823,19 @@ body.confirm-open { overflow: hidden; }
     box-shadow: var(--shadow-sm);
 }
 
-.lawyer-mode-switch {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+/* Колонки создаются по числу кнопок — чтобы не оставалось пустой колонки
+   под кнопку, которой нет (у «Юриста» третья кнопка «Сбор информации»
+   появляется только при включённом KAD-агенте). */
+.module-header-row > .lawyer-mode-switch {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+}
+
+/* В «Секретаре» полоса сжимается по содержимому: две кнопки без пустой
+   трети, место под третью кнопку не резервируется. */
+.module-header > .lawyer-mode-switch {
+    width: fit-content;
 }
 
 .procurement-mode-btn,
@@ -1878,6 +1889,12 @@ body.confirm-open { overflow: hidden; }
     .module-header-row > .lawyer-mode-switch {
         flex: 1 1 auto;
         min-width: 0;
+        grid-template-columns: 1fr;
+        grid-auto-flow: row;
+    }
+
+    .module-header > .lawyer-mode-switch {
+        width: 100%;
     }
 }
 
@@ -2733,16 +2750,87 @@ body.confirm-open { overflow: hidden; }
     gap: 0.4rem;
 }
 
-.arbitr-form > label:not(.arbitr-checkbox) {
+.arbitr-form > label:not(.arbitr-checkbox),
+.arbitr-field > label {
     margin-top: 0.45rem;
     font-weight: 600;
     font-size: 0.88rem;
 }
 
-.arbitr-form input[type="text"],
-.arbitr-form input[type="number"] {
+/* Группа «лейбл — поле — подсказка» в форме сбора информации */
+.arbitr-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+}
+
+.arbitr-form .arbitr-input {
     width: 100%;
     box-sizing: border-box;
+    padding: 0.6rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: var(--text);
+    background: var(--surface-elevated);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.arbitr-form .arbitr-input::placeholder {
+    color: #93a0af;
+}
+
+.arbitr-form .arbitr-input:hover {
+    border-color: var(--border);
+}
+
+.arbitr-form .arbitr-input:focus {
+    outline: none;
+    border-color: var(--accent-muted);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ИНН — цифры моноширинные, чтобы было видно каждую из 10–12 позиций */
+#arbitr-inn {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.08em;
+}
+
+/* Счётчик дел: аккуратное поле без браузерных «стрелок» */
+.arbitr-form .arbitr-input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+.arbitr-form .arbitr-input[type="number"]::-webkit-outer-spin-button,
+.arbitr-form .arbitr-input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.arbitr-form .arbitr-run-btn {
+    align-self: flex-start;
+    margin-top: 0.55rem;
+}
+
+/* Живая проверка полей: зелёная — можно искать, красная — поправьте ввод */
+.arbitr-field.is-valid .arbitr-input {
+    border-color: var(--success);
+}
+
+.arbitr-field.is-valid .field-hint {
+    color: var(--success);
+}
+
+.arbitr-field.is-invalid .arbitr-input {
+    border-color: var(--danger);
+}
+
+.arbitr-field.is-invalid .field-hint {
+    color: var(--danger);
 }
 
 .field-hint,
@@ -2832,17 +2920,3 @@ body.confirm-open { overflow: hidden; }
 
 .arbitr-warn { color: var(--warning); }
 .arbitr-error { color: var(--danger); }
-
-.arbitr-records-head,
-.arbitr-records-nav {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin: 0.8rem 0 0.4rem;
-}
-
-.arbitr-records-nav {
-    justify-content: flex-start;
-    font-size: 0.85rem;
-}

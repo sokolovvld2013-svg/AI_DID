@@ -464,9 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Здесь только постановка задания и просмотр результата. Сам обход КАД
     // выполняет локальный агент сотрудника, поэтому вкладке важно различать
     // «ждём машину», «машина работает» и «выгрузка готова».
-    const ARBITR_PAGE = 50;
     let arbitrTimer = null;
-    let arbitrRecordsJob = null;
 
     function stopArbitrPolling() {
         if (arbitrTimer) {
@@ -539,7 +537,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .map(w => `<div class="arbitr-warn">${escapeHtml(w)}</div>`).join('');
         const err = job.error ? `<div class="arbitr-error">${escapeHtml(job.error)}</div>` : '';
 
-        const actions = ['<button type="button" class="btn btn-sm" data-action="records">Записи</button>'];
+        const actions = [];
         if (job.has_file) {
             actions.push(
                 `<a class="btn btn-sm btn-secondary" href="/lawyer/arbitr/jobs/`
@@ -571,88 +569,12 @@ document.addEventListener('DOMContentLoaded', () => {
         box.innerHTML = jobs.map(arbitrJobCard).join('');
     }
 
-    function renderArbitrRecords(data, box) {
-        // Эти технические поля не нужны в экранной таблице: номер дела по
-        // инстанции дублирует основное дело, а адреса участников перегружают
-        // просмотр. В полной XLSX-выгрузке данные сохраняются.
-        const hiddenColumns = new Set([
-            'Номер дела по инстанции',
-            'Участники (адреса)',
-        ]);
-        const columns = (data.columns || []).filter(column => !hiddenColumns.has(column));
-        const records = data.records || [];
-        if (!columns.length) {
-            box.innerHTML = '<div class="module-empty-state"><strong>Записей нет</strong>'
-                + '<span>Агент не прислал данных по этому заданию.</span></div>';
-            box.classList.remove('hidden');
-            return;
-        }
-        const head = columns.map(c => `<th>${escapeHtml(c)}</th>`).join('');
-        const rows = records.map(r => '<tr>' + columns.map(c => {
-            const v = r[c];
-            return `<td>${escapeHtml(Array.isArray(v) ? v.join(', ') : String(v ?? ''))}</td>`;
-        }).join('') + '</tr>').join('');
-
-        const offset = data.offset || 0;
-        const nav = [];
-        if (offset > 0) {
-            nav.push(`<button type="button" class="btn btn-sm" data-offset="${offset - ARBITR_PAGE}">← Назад</button>`);
-        }
-        nav.push(`<span class="muted">с ${offset + 1} по ${offset + records.length}</span>`);
-        if (data.has_more) {
-            nav.push(`<button type="button" class="btn btn-sm" data-offset="${offset + ARBITR_PAGE}">Вперёд →</button>`);
-        }
-
-        const total = data.total ?? null;
-        const totalLabel = total === null ? '' : ` из ${total}`;
-        box.innerHTML = `<div class="arbitr-records-head"><strong>Найденные дела</strong><span class="muted">Показаны записи ${offset + 1}–${offset + records.length}${totalLabel}</span>`
-            + '<button type="button" class="btn btn-sm" data-close-records="1">Свернуть</button></div>'
-            + `<div class="economist-table-wrap"><table class="economist-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`
-            + `<div class="arbitr-records-nav">${nav.join('')}</div>`;
-        box.classList.remove('hidden');
-    }
-
-    async function loadArbitrRecords(jobId, offset) {
-        const box = document.getElementById('arbitr-records');
-        if (!box) return;
-        try {
-            const resp = await fetch(
-                `/lawyer/arbitr/jobs/${encodeURIComponent(jobId)}/records?offset=${offset}`
-            );
-            if (!resp.ok) {
-                const err = await resp.json().catch(() => ({}));
-                box.innerHTML = `<div class="arbitr-error">${
-                    escapeHtml(safeText(err.detail) || 'Не удалось загрузить записи')}</div>`;
-                box.classList.remove('hidden');
-                return;
-            }
-            arbitrRecordsJob = jobId;
-            renderArbitrRecords(await resp.json(), box);
-        } catch (e) {
-            console.error('loadArbitrRecords', e);
-        }
-    }
-
     document.getElementById('arbitr-body')?.addEventListener('click', async e => {
-        const pageBtn = e.target.closest('[data-offset]');
-        if (pageBtn && arbitrRecordsJob) {
-            loadArbitrRecords(arbitrRecordsJob, Number(pageBtn.dataset.offset) || 0);
-            return;
-        }
-        if (e.target.closest('[data-close-records]')) {
-            arbitrRecordsJob = null;
-            document.getElementById('arbitr-records')?.classList.add('hidden');
-            return;
-        }
         const card = e.target.closest('.arbitr-job');
         const action = e.target.closest('[data-action]')?.dataset.action;
         if (!card || !action) return;
         const jobId = card.dataset.jobId;
 
-        if (action === 'records') {
-            loadArbitrRecords(jobId, 0);
-            return;
-        }
         if (action === 'delete') {
             if (!(await App.confirm('Удалить задание вместе с выгрузкой?', { danger: true }))) return;
             try {
@@ -664,10 +586,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     App.setStatus('arbitr-status', safeText(err.detail) || 'Не удалось удалить', 'error');
                     return;
                 }
-                if (arbitrRecordsJob === jobId) {
-                    arbitrRecordsJob = null;
-                    document.getElementById('arbitr-records')?.classList.add('hidden');
-                }
                 App.setStatus('arbitr-status', '✓ Задание удалено', 'ok');
                 await refreshArbitrStatus();
             } catch (err) {
@@ -676,11 +594,66 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Форма КАД: живая проверка полей ИНН и количества дел
+    const arbitrInn = document.getElementById('arbitr-inn');
+    const arbitrLimit = document.getElementById('arbitr-limit');
+    const arbitrInnBox = document.getElementById('arbitr-inn-field');
+    const arbitrLimitBox = document.getElementById('arbitr-limit-field');
+    const arbitrInnHint = document.getElementById('arbitr-inn-hint');
+    const INN_HINT_DEFAULT = arbitrInnHint?.textContent || '';
+    const LIMIT_MIN = 1;
+    const LIMIT_MAX = 2000;
+
+    function innIsValid(value) {
+        return /^\d{10}$|^\d{12}$/.test(value);
+    }
+
+    function updateInnState() {
+        if (!arbitrInn || !arbitrInnBox || !arbitrInnHint) return;
+        const digits = (arbitrInn.value || '').replace(/\D/g, '');
+        arbitrInnBox.classList.remove('is-valid', 'is-invalid');
+        if (!digits) {
+            arbitrInnHint.textContent = INN_HINT_DEFAULT;
+        } else if (innIsValid(digits)) {
+            arbitrInnBox.classList.add('is-valid');
+            arbitrInnHint.textContent =
+                digits.length === 10
+                    ? '✓ ИНН организации принят (10 цифр)'
+                    : '✓ ИНН физического лица принят (12 цифр)';
+        } else {
+            arbitrInnBox.classList.add('is-invalid');
+            arbitrInnHint.textContent = `Введено ${digits.length} из 10 или 12 цифр.`;
+        }
+    }
+
+    function updateLimitState() {
+        if (!arbitrLimit || !arbitrLimitBox) return;
+        const raw = (arbitrLimit.value || '').trim();
+        const value = raw === '' ? null : Number(raw);
+        const valid = value === null || (Number.isFinite(value) && value >= LIMIT_MIN && value <= LIMIT_MAX);
+        arbitrLimitBox.classList.toggle('is-invalid', !valid);
+    }
+
+    if (arbitrInn) {
+        arbitrInn.addEventListener('input', () => {
+            arbitrInn.value = (arbitrInn.value || '').replace(/\D/g, '').slice(0, 12);
+            updateInnState();
+        });
+        updateInnState();
+    }
+
+    if (arbitrLimit) {
+        arbitrLimit.addEventListener('input', updateLimitState);
+        updateLimitState();
+    }
+
     document.getElementById('arbitr-run')?.addEventListener('click', async () => {
         const innField = document.getElementById('arbitr-inn');
         const limitField = document.getElementById('arbitr-limit');
         const inn = (innField?.value || '').replace(/\D/g, '');
         if (inn.length < 10 || inn.length > 12) {
+            updateInnState();
+            arbitrInn?.focus();
             App.setStatus(
                 'arbitr-status',
                 'Укажите ИНН: 10 цифр у организации или 12 у физического лица.',
@@ -691,7 +664,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Полный сбор подробностей включён всегда: переключателя в UI нет.
         const payload = { inn: inn, enrich: true };
         const limit = (limitField?.value || '').trim();
-        if (limit) payload.limit = Number(limit);
+        const limitValue = limit === '' ? null : Number(limit);
+        if (limit && (limitValue === null || !Number.isFinite(limitValue) || limitValue < LIMIT_MIN || limitValue > LIMIT_MAX)) {
+            updateLimitState();
+            arbitrLimit?.focus();
+            App.setStatus(
+                'arbitr-status',
+                `Количество дел — число от ${LIMIT_MIN} до ${LIMIT_MAX} либо пустое поле.`,
+                'error'
+            );
+            return;
+        }
+        if (limitValue !== null) payload.limit = limitValue;
 
         const button = document.getElementById('arbitr-run');
         button.disabled = true;

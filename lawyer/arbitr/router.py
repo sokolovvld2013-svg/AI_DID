@@ -5,8 +5,7 @@
 состояния: ждёт машину, машина выполняет, выгрузка готова.
 
 Ответы разделены намеренно. Статус вкладка опрашивает каждые пару секунд, а
-записей в выгрузке бывают тысячи, поэтому статус отдаёт только счётчики,
-записи - постранично, а Excel - отдельным запросом.
+Excel - отдельным запросом.
 """
 
 from __future__ import annotations
@@ -25,10 +24,6 @@ from lawyer.arbitr.jobs import STATE_LABELS, JobError, get_store
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/lawyer/arbitr", tags=["lawyer-arbitr"])
-
-#: Сколько строк отдавать за раз: этого хватает на экран, а файл с записями
-#: на 787 дел целиком весит несколько мегабайт.
-PAGE_SIZE = 50
 
 
 class CreateJob(BaseModel):
@@ -118,29 +113,6 @@ async def create_job(request: Request, payload: CreateJob) -> dict[str, Any]:
         job["requested_by"],
     )
     return {"job": _job_view(job), "agents_online": store.online_count()}
-
-
-@router.get("/jobs/{job_id}/records")
-async def job_records(job_id: str, offset: int = 0) -> dict[str, Any]:
-    """Страница записей выгрузки."""
-    _enabled()
-    store = get_store()
-    job = store.get_job(job_id)
-    if not job:
-        raise HTTPException(404, "Задание не найдено")
-    records = store.read_records(job_id, offset=offset, limit=PAGE_SIZE)
-    # Колонки берём из самих записей, а не из жёсткого списка: парсер может
-    # добавить поле, и тогда оно появится в таблице само, без правки здесь.
-    columns = list(records[0].keys()) if records else []
-    return {
-        "job": _job_view(job),
-        "columns": columns,
-        "records": records,
-        "total": int((job.get("result") or {}).get("records_count") or 0),
-        "offset": offset,
-        "limit": PAGE_SIZE,
-        "has_more": len(records) == PAGE_SIZE,
-    }
 
 
 @router.get("/jobs/{job_id}/download")

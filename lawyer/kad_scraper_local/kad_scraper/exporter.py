@@ -130,28 +130,13 @@ def records_to_excel(
             sheet_name=sheet_title or _safe_sheet_name(f"Дела по ИНН {inn}" if inn else "Дела"),
         )
         data_sheet = next(iter(writer.sheets.values()))
-        _style_sheet(data_sheet, _status_links(records))
+        _style_sheet(data_sheet)
         _fill_meta(writer.book.create_sheet("Источник"), records, inn)
 
     return buffer.getvalue()
 
 
-def _status_links(records: Sequence[CaseRecord]) -> dict[int, str]:
-    """Ссылки на судебные акты по номерам строк листа (нумерация с единицы).
-
-    В Excel это «номер строки», поэтому первая запись — строка 2: строка 1
-    занята шапкой.
-    """
-    return {
-        index: record.status_url
-        for index, record in enumerate(records, start=2)
-        if record.status_url
-    }
-
-
-def _style_sheet(
-    worksheet: Any, status_links: dict[int, str] | None = None
-) -> None:
+def _style_sheet(worksheet: Any) -> None:
     """Оформление листа: шапка, автофильтр, закреплённая шапка, ширины, ссылки."""
     if worksheet is None or worksheet.max_row < 1:
         return
@@ -175,7 +160,6 @@ def _style_sheet(
 
     # Кликабельная ссылка на карточку дела + перенос строк в длинных колонках.
     link_column = headers.get("Ссылка на источник")
-    status_column = headers.get("Статус")
     wrap_columns = {
         column for header, column in headers.items() if str(header) in _WRAP_HEADERS
     }
@@ -190,13 +174,6 @@ def _style_sheet(
             if isinstance(cell.value, str) and cell.value.startswith("http"):
                 cell.hyperlink = cell.value
                 cell.font = _LINK_FONT
-        # Статус — ссылка на сам судебный акт, как в карточке КАД: текст
-        # формулировки остаётся в ячейке, но открывается документ.
-        document_url = (status_links or {}).get(row[0].row)
-        if status_column and document_url:
-            cell = row[status_column - 1]
-            cell.hyperlink = document_url
-            cell.font = _LINK_FONT
 
 
 def _fill_meta(worksheet: Any, records: Sequence[CaseRecord], inn: str | None) -> None:
