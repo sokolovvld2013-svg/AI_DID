@@ -35,6 +35,7 @@ os.environ.update(
         "USERS_FILE": str(_TMP / "users.json"),
         "SETTINGS_FILE": str(_TMP / "app_settings.json"),
         "CHROMA_PERSIST_DIR": str(_TMP / "chroma"),
+        "USER_LOGS_DIR": str(_TMP / "logs" / "user_logs"),
         "WHISPER_PRELOAD": "false",
         "AUTH_ADMIN_ONLY_SETTINGS": "false",
     }

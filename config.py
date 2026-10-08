@@ -210,7 +210,8 @@ ALLOWED_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg", ".flac"}
 ALLOWED_DOC_EXT = {".pdf", ".docx", ".txt"}
 
 # Логи пользователей: JSONL-файл на день, глубина хранения задаётся переменной.
-USER_LOGS_DIR = BASE_DIR / "logs" / "user_logs"
+# Каталог переопределяется через USER_LOGS_DIR (в тестах — временный).
+USER_LOGS_DIR = Path(os.getenv("USER_LOGS_DIR") or (BASE_DIR / "logs" / "user_logs"))
 USER_LOGS_RETENTION_DAYS = int(os.getenv("USER_LOGS_RETENTION_DAYS", "30"))
 
 # Google-таблица фактических затрат (ссылка с правом редактирования)

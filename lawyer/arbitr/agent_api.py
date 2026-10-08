@@ -20,7 +20,8 @@ from typing import Any
 from fastapi import APIRouter, Body, File, HTTPException, Request, Response, UploadFile
 
 from config import KAD_AGENT_HOLD, KAD_AGENT_TOKENS_BY_NAME, KAD_ARBITR_MAX_FILE_MB
-from lawyer.arbitr.jobs import JobError, JobStore, get_store
+from core.user_logs import log_event
+from lawyer.arbitr.jobs import STATE_DONE, JobError, JobStore, get_store
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,20 @@ async def save_result(
         raise HTTPException(404, "Задание не найдено") from None
     except JobError as exc:
         raise HTTPException(409, str(exc)) from exc
+    # Действие «парсинг сайта» выполнено агентом, но в журнале пользователей оно
+    # принадлежит заказчику задания: логин машины администратору не интересен.
+    result = job.get("result") or {}
+    log_event(
+        module="lawyer",
+        question=(
+            f"Парсер КАД: ИНН {job.get('inn') or ''} — "
+            f"{result.get('label') or job.get('state')}, "
+            f"дел {result.get('records_count') or 0}"
+        ),
+        tokens=0,
+        status="ok" if job["state"] == STATE_DONE else "error",
+        login=job.get("requested_by") or "",
+    )
     return {"ok": True, "state": job["state"]}
 
 

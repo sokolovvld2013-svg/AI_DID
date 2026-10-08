@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from config import KAD_AGENT_ENABLED, KAD_ARBITR_MAX_RECORDS
 from core.auth_router import require_user
+from core.user_logs import log_query
 from lawyer.arbitr.jobs import STATE_LABELS, JobError, get_store
 
 logger = logging.getLogger(__name__)
@@ -112,11 +113,17 @@ async def create_job(request: Request, payload: CreateJob) -> dict[str, Any]:
         job["inn"],
         job["requested_by"],
     )
+    log_query(
+        request,
+        module="lawyer",
+        question=f"Парсер КАД: задание по ИНН {job['inn']}",
+        status="ok",
+    )
     return {"job": _job_view(job), "agents_online": store.online_count()}
 
 
 @router.get("/jobs/{job_id}/download")
-async def download(job_id: str) -> FileResponse:
+async def download(request: Request, job_id: str) -> FileResponse:
     """Отдать выгрузку Excel."""
     _enabled()
     store = get_store()
@@ -126,6 +133,12 @@ async def download(job_id: str) -> FileResponse:
     path = store.file_path(job_id)
     if not path:
         raise HTTPException(404, "Файл ещё не пришёл от агента")
+    log_query(
+        request,
+        module="lawyer",
+        question=f"Парсер КАД: скачана выгрузка по ИНН {job['inn']}",
+        status="ok",
+    )
     filename = f"kad_{job['inn']}_{job_id.replace('job-', '')}.xlsx"
     return FileResponse(path, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=filename)
 
@@ -153,4 +166,10 @@ async def delete(request: Request, job_id: str) -> dict[str, Any]:
         store.delete_job(job_id)
     except JobError as exc:
         raise HTTPException(409, str(exc)) from exc
+    log_query(
+        request,
+        module="lawyer",
+        question=f"Парсер КАД: удалено задание {job_id} (ИНН {job['inn']})",
+        status="ok",
+    )
     return {"ok": True}

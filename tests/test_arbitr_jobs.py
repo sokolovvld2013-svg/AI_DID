@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+import core.user_logs as user_logs
 from lawyer.arbitr.jobs import (
     MAX_ATTEMPTS,
     STATE_DONE,
@@ -468,6 +469,60 @@ async def test_full_round_trip(kad) -> None:
 
     assert (await ac.delete(f"/lawyer/arbitr/jobs/{job_id}")).status_code == 200
     assert store.get_job(job_id) is None
+
+
+async def test_parser_actions_are_logged(kad) -> None:
+    """Действия парсера КАД оседают в журнале пользователей.
+
+    Создание задания, завершение парсинга, скачивание и удаление пишутся тем же
+    ``log_query``/``log_event``, что и запросы в других модулях: администратор
+    видит парсинг в «Логах пользователей» среди последних действий.
+    """
+    ac, _ = kad
+    auth = {"X-Agent-Token": IVAN_TOKEN}
+
+    created = await ac.post("/lawyer/arbitr/jobs", json={"inn": "7707083893"})
+    assert created.status_code == 200
+    job_id = created.json()["job"]["id"]
+
+    claimed = await ac.get(
+        "/api/agent/jobs/next",
+        headers=auth,
+        params={"agent": IVAN, "owner": OWNER, "hold": 1},
+    )
+    assert claimed.status_code == 200
+    assert claimed.json()["id"] == job_id
+
+    report = await ac.post(
+        f"/api/agent/jobs/{job_id}/result",
+        headers=auth,
+        params={"agent": IVAN},
+        json=_report(job_id, records=12),
+    )
+    assert report.status_code == 200
+    assert report.json()["state"] == STATE_DONE
+
+    upload = await ac.post(
+        f"/api/agent/jobs/{job_id}/file",
+        headers=auth,
+        params={"agent": IVAN},
+        files={"file": ("kad.xlsx", b"xlsx-content", "application/vnd.ms-excel")},
+    )
+    assert upload.status_code == 200
+
+    assert (await ac.get(f"/lawyer/arbitr/jobs/{job_id}/download")).status_code == 200
+    assert (await ac.delete(f"/lawyer/arbitr/jobs/{job_id}")).status_code == 200
+
+    questions = [row.get("question", "") for row in user_logs.read_logs(module="lawyer", limit=50)]
+    assert any(q.startswith("Парсер КАД: задание по ИНН 7707083893") for q in questions)
+    assert any(q.startswith("Парсер КАД: скачана выгрузка по ИНН 7707083893") for q in questions)
+    assert any(q.startswith("Парсер КАД: удалено задание") for q in questions)
+
+    done = [row for row in user_logs.read_logs(module="lawyer", limit=50)
+            if row.get("question", "").startswith("Парсер КАД: ИНН 7707083893")]
+    assert done
+    assert done[0]["status"] == "ok"
+    assert "дел 12" in done[0]["question"]
 
 
 async def test_report_for_another_job_is_refused(kad) -> None:

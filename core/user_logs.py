@@ -171,6 +171,9 @@ def read_logs(
         cutoff = now_app().date() - timedelta(days=max(0, window))
 
         rows: list[dict[str, Any]] = []
+        # Файлы идём от свежих к старым, а внутри файла — от последней записи
+        # к первой: так готовый список уже отсортирован «свежие сверху», без
+        # разворота всего набора (тот переставил бы файлы целиком).
         for path in sorted(USER_LOGS_DIR.glob("*.jsonl"), reverse=True):
             try:
                 file_date = datetime.strptime(path.stem, _FILE_DATE_FMT).date()
@@ -180,6 +183,7 @@ def read_logs(
                 continue
             try:
                 with path.open("r", encoding="utf-8") as fh:
+                    file_rows: list[dict[str, Any]] = []
                     for line in fh:
                         line = line.strip()
                         if not line:
@@ -189,14 +193,10 @@ def read_logs(
                         except json.JSONDecodeError:
                             continue
                         if isinstance(row, dict):
-                            rows.append(row)
+                            file_rows.append(row)
+                    rows.extend(reversed(file_rows))
             except OSError:
                 logger.warning("Не удалось прочитать лог %s", path.name)
-
-        # Файлы уже отсортированы от новых к старым, но внутри файла записи
-        # идут по возрастанию — разворачиваем весь набор, чтобы получить
-        # хронологический порядок «свежие сверху».
-        rows.reverse()
 
         if module:
             rows = [r for r in rows if r.get("module") == module]
