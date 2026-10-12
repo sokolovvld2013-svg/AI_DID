@@ -104,7 +104,14 @@ async def next_job(request: Request) -> Any:
     name = request.query_params.get("agent", "")
     _check_machine(request, name)
     owner = request.query_params.get("owner", "")
-    job = await _store().take(name, owner=owner, hold=KAD_AGENT_HOLD)
+    try:
+        job = await _store().take(name, owner=owner, hold=KAD_AGENT_HOLD)
+    except JobError as exc:
+        # Машина уже получила задание и ещё не отчиталась за него. Это не поломка
+        # сервера, а конфликт состояния, поэтому отвечаем 409 - как и в приёме
+        # отчёта. Без этой ветки исключение улетало наружу пятисоткой и в журнале
+        # выглядело как сбой, хотя агент просто забежал вперёд.
+        raise HTTPException(409, str(exc)) from exc
     if not job:
         return Response(status_code=204)
     return job

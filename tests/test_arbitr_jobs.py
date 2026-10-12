@@ -421,6 +421,37 @@ async def test_empty_queue_returns_no_content(kad) -> None:
     assert response.status_code == 204
 
 
+async def test_busy_machine_gets_conflict_not_server_error(kad) -> None:
+    """Повторный запрос задания от занятой машины - 409, а не 500.
+
+    Агент иногда успевает попросить следующее задание раньше, чем отчитается за
+    текущее: тогда ``take`` бросает ``JobError``. Наружу он должен выходить
+    конфликтом, а не пятисоткой - иначе в журнале это выглядело бы как поломка
+    сервера, хотя сервер в порядке.
+    """
+    ac, _ = kad
+    auth = {"X-Agent-Token": IVAN_TOKEN}
+
+    created = await ac.post("/lawyer/arbitr/jobs", json={"inn": "7707083893"})
+    job_id = created.json()["job"]["id"]
+
+    first = await ac.get(
+        "/api/agent/jobs/next",
+        headers=auth,
+        params={"agent": IVAN, "owner": OWNER, "hold": 1},
+    )
+    assert first.status_code == 200
+    assert first.json()["id"] == job_id
+
+    again = await ac.get(
+        "/api/agent/jobs/next",
+        headers=auth,
+        params={"agent": IVAN, "owner": OWNER, "hold": 1},
+    )
+
+    assert again.status_code == 409
+
+
 async def test_full_round_trip(kad) -> None:
     """Путь целиком: кнопка -> очередь -> агент -> отчёт -> файл -> скачивание."""
     ac, store = kad
