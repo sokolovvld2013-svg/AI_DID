@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -282,7 +283,9 @@ async def upload_contract(request: Request, file: UploadFile = File(...)):
     temp_path = write_temp_file(LAWYER_UPLOAD_DIR, content, orig_name, ext)
 
     try:
-        pages = load_document(temp_path)
+        # Разбор PDF/DOCX (в том числе OCR) — долгая синхронная операция:
+        # в потоке не блокирует event loop.
+        pages = await run_in_threadpool(load_document, temp_path)
         if not pages:
             raise ValueError("Не удалось извлечь текст договора (пустой или битый файл)")
         full_text = "\n\n".join(
@@ -357,10 +360,10 @@ async def upload_document(file: UploadFile = File(...)):
             len(content),
             temp_path.name,
         )
-        file_id, chunks = process_upload(temp_path, orig_name)
+        file_id, chunks = await run_in_threadpool(process_upload, temp_path, orig_name)
         dest = LAWYER_UPLOAD_DIR / f"{file_id}_{stored_name}"
         temp_path.rename(dest)
-        count = _rag().add_chunks(chunks)
+        count = await run_in_threadpool(_rag().add_chunks, chunks)
         if count == 0:
             raise ValueError("Не удалось проиндексировать документ (пустые фрагменты)")
     except ValueError as e:
@@ -409,11 +412,13 @@ async def query(req: LawyerQuery, request: Request):
         )
         raise HTTPException(400, "Пустой вопрос")
     if req.mode == "contract":
-        return await _query_contract(sid, question)
-    return _query_kb(sid, question)
+        return await run_in_threadpool(_query_contract, sid, question)
+    return await run_in_threadpool(_query_kb, sid, question)
 
 
-async def _query_contract(session_id: str, question: str) -> dict:
+# Проверка договора синхронная и долгая (LLM) — запускается в потоке из
+# эндпоинта, чтобы не замораживать event loop и не ронять параллельные запросы.
+def _query_contract(session_id: str, question: str) -> dict:
     contract = get_contract(session_id)
     if not contract:
         log_query(

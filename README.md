@@ -267,6 +267,47 @@ python -m scripts.manage_users rm ivanova            # удалить
 8000 наружижу не открывать, в `.env` — `AUTH_COOKIE_SECURE=true`. При старте
 приложение предупредит, если cookie уходит по HTTP.
 
+### Таймаут обратного прокси (nginx)
+
+Проверка торгов и другие длинные операции (разбор скана PDF, транскрибация
+аудио) идут на стороне приложения десятки секунд и больше. Стандартный
+`proxy_read_timeout` в nginx — 60 секунд, поэтому в браузере появляется
+**Gateway Time-out** (HTTP 504), хотя приложение продолжает работать.
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name assistant.example.ru;
+    # ssl_certificate ...; ssl_certificate_key ...;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Ждём ответ приложения дольше стандартных 60 с. Значение должно быть
+        # не меньше самой долгой операции: для сканов PDF учтите
+        # LAWYER_OCR_TIMEOUT_SEC (по умолчанию 900 с).
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+
+        # Загрузка файлов: MAX_DOCUMENT_SIZE=50 МБ + запас на multipart.
+        client_max_body_size 64m;
+    }
+}
+```
+
+**Это не конфликтует с диспетчером служб (systemd).** nginx, `proxy_pass` и
+`proxy_read_timeout` — только про то, сколько прокси ждёт ответа от
+приложения. systemd управляет жизненным циклом процесса (`aid.service`):
+его `TimeoutStopSec` относится исключительно к остановке службы и на время
+обработки запросов не влияет. После правки конфигурации достаточно
+`sudo nginx -t && sudo systemctl reload nginx` — перезапускать `aid.service`
+не нужно.
+
 ---
 
 ## Настройки приложения
@@ -504,6 +545,7 @@ pip install -r requirements.txt
 | Не меняется наименование компании | Проверьте `app_settings.json`; страницу обновить не нужно, значения применяются сразу после сохранения |
 | В ценах DeepSeek старый курс | Курс ЦБ кэшируется на 6 часов; если ЦБ недоступен, в подписи будет «не удалось обновить» |
 | Торги: 404 на `/tenders` | Перезапустить uvicorn после `git pull` |
+| `Gateway Time-out` (504) при проверке/загрузке | Увеличить `proxy_read_timeout` в nginx (см. «Таймаут обратного прокси»); для сканов PDF — не меньше `LAWYER_OCR_TIMEOUT_SEC` |
 | Торги: «загрузите три документа» в экспертном режиме | Обновить код и перезапустить сервер; эксперт — `POST /tenders/expert/query` |
 
 ---

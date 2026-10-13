@@ -7,6 +7,7 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -183,7 +184,12 @@ async def _upload_zone(request: Request, zone: str, file: UploadFile) -> dict:
     content, orig_name, ext = await read_upload_file(file, allowed_ext=ZONE_EXT[zone])
     temp_path = write_temp_file(TENDERS_UPLOAD_DIR, content, orig_name, ext)
     try:
-        parsed = parse_document(temp_path, doc_type=zone, filename=orig_name)
+        # Разбор PDF/DOCX (в том числе OCR) синхронный и может идти минутами.
+        # В отдельном потоке он не замораживает event loop: иначе все запросы
+        # (статус, другие загрузки) висят и внешний прокси отдаёт 504.
+        parsed = await run_in_threadpool(
+            parse_document, temp_path, doc_type=zone, filename=orig_name
+        )
         cached = get_by_hash(parsed["file_hash"])
         if cached and cached.get("parse_version") == PARSE_VERSION:
             doc_id = cached["doc_id"]
@@ -237,7 +243,7 @@ async def query_check(request: Request, body: TendersQuery):
     _check_access(request)
     sid = get_session_id(request)
     question = (body.question or CHECK_QUESTION).strip() or CHECK_QUESTION
-    return await _query_check(sid, question)
+    return await run_in_threadpool(_query_check, sid, question)
 
 
 @router.post("/expert/query")
@@ -255,10 +261,14 @@ async def query_expert(request: Request, body: TendersExpertQuery):
             error_code="EMPTY_QUESTION",
         )
         raise HTTPException(400, "Пустой вопрос")
-    return await _query_expert(sid, question)
+    return await run_in_threadpool(_query_expert, sid, question)
 
 
-async def _query_check(session_id: str, question: str) -> dict:
+# LLM и разбор контекста синхронные и долгие. Функции запускаются в отдельном
+# потоке (run_in_threadpool), чтобы не блокировать event loop и не ронять
+# остальные запросы в таймаут прокси. Счётчик токенов (contextvar) при этом
+# живёт в контексте потока: log_query внутри функции видит верный расход.
+def _query_check(session_id: str, question: str) -> dict:
     sid = session_id
 
     if not all_loaded(sid):
@@ -377,7 +387,7 @@ async def _query_check(session_id: str, question: str) -> dict:
         return _error_reply(sid, question, _msg, "check")
 
 
-async def _query_expert(session_id: str, question: str) -> dict:
+def _query_expert(session_id: str, question: str) -> dict:
     try:
         llm = get_llm()
         raw_answer = llm.generate(

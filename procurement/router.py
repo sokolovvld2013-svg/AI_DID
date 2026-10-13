@@ -4,6 +4,7 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
@@ -172,7 +173,9 @@ async def upload_documentation(request: Request, file: UploadFile = File(...)):
     temp_path = write_temp_file(PROCUREMENT_UPLOAD_DIR, content, orig_name, ext)
 
     try:
-        parsed = parse_documentation(temp_path, filename=orig_name)
+        # Разбор документации — синхронный и долгий: в потоке не блокирует
+        # event loop, иначе остальные запросы падают в таймаут прокси.
+        parsed = await run_in_threadpool(parse_documentation, temp_path, filename=orig_name)
         cached = get_by_hash(parsed["file_hash"])
         if cached and cached.get("parse_version") == PARSE_VERSION:
             audit_id = cached["audit_id"]
@@ -220,7 +223,7 @@ async def upload_policy(file: UploadFile = File(...)):
     rag = _policy_rag()
 
     try:
-        file_id, chunks = process_upload(temp_path, orig_name)
+        file_id, chunks = await run_in_threadpool(process_upload, temp_path, orig_name)
         if not chunks:
             raise ValueError("Не удалось проиндексировать Положение (пустые фрагменты)")
 
@@ -229,7 +232,7 @@ async def upload_policy(file: UploadFile = File(...)):
         dest = PROCUREMENT_POLICY_UPLOAD_DIR / f"{file_id}_{safe_stored_name(orig_name, ext)}"
         dest.write_bytes(content)
 
-        count = rag.add_chunks(chunks)
+        count = await run_in_threadpool(rag.add_chunks, chunks)
         if count == 0:
             raise ValueError("Не удалось проиндексировать Положение (пустые фрагменты)")
     except ValueError as e:
@@ -276,8 +279,8 @@ async def query(req: ProcurementQuery, request: Request):
         raise HTTPException(400, "Пустой вопрос")
 
     if mode == "check":
-        return await _query_check(sid, question)
-    return await _query_expert(sid, question)
+        return await run_in_threadpool(_query_check, sid, question)
+    return await run_in_threadpool(_query_expert, sid, question)
 
 def _build_policy_context(
     question: str,
@@ -331,7 +334,10 @@ def _build_policy_context(
     return "\n\n".join(context_parts), citations
 
 
-async def _query_check(session_id: str, question: str) -> dict:
+# LLM и сборка контекста синхронные и долгие — их запускает run_in_threadpool
+# из эндпоинта, чтобы не блокировать event loop (иначе — 504 у параллельных
+# запросов). Счётчик токенов при этом остаётся в контексте рабочего потока.
+def _query_check(session_id: str, question: str) -> dict:
     doc = get_documentation(session_id)
     if not doc:
         log_query(
@@ -463,7 +469,7 @@ async def _query_check(session_id: str, question: str) -> dict:
         return _error_reply(session_id, question, _msg, "check")
 
 
-async def _query_expert(session_id: str, question: str) -> dict:
+def _query_expert(session_id: str, question: str) -> dict:
     context, citations = _build_policy_context(enrich_policy_query(question))
 
     user_prompt = f"Вопрос пользователя: {question}\n\n"

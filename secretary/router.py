@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import HTMLResponse
 
 from config import ALLOWED_AUDIO_EXT, MAX_AUDIO_SIZE, SECRETARY_UPLOAD_DIR
@@ -62,15 +63,36 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
     # Вопросом считаем загруженный аудиофайл: отдельного текстового поля нет.
     _log_question = f"[аудио] {file.filename or file_id}"
 
+    # Транскрибация (Whisper) и генерация протокола (LLM) — долгие синхронные
+    # операции. В отдельном потоке они не замораживают event loop (иначе
+    # параллельные запросы падают в таймаут прокси). Счётчик токенов остаётся
+    # в контексте рабочего потока, поэтому лог расхода верный.
+    return await run_in_threadpool(
+        _process_audio,
+        get_session_id(request),
+        dest,
+        file.filename,
+        file_id,
+        _log_question,
+    )
+
+
+def _process_audio(
+    sid: str,
+    dest: Path,
+    filename: str | None,
+    file_id: str,
+    log_question: str,
+) -> dict:
     try:
         transcript = transcribe(dest)
         if not transcript.strip():
             raise HTTPException(400, "Не удалось распознать речь в аудиофайле")
-        protocol = build_protocol(transcript, file.filename or "")
+        protocol = build_protocol(transcript, filename or "")
     except HTTPException:
         log_query(
             module="secretary",
-            question=_log_question,
+            question=log_question,
             status="error",
             tokens=current_usage(),
             error_code="AUDIO_UNREADABLE",
@@ -80,7 +102,7 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
         logger.warning("Ошибка LLM при обработке аудио: %s", e.original or e)
         log_query(
             module="secretary",
-            question=_log_question,
+            question=log_question,
             status="error",
             tokens=current_usage(),
             error_code=llm_error_code(e.original or e),
@@ -90,7 +112,7 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
         logger.warning("Ошибка транскрибации: %s", e)
         log_query(
             module="secretary",
-            question=_log_question,
+            question=log_question,
             status="error",
             tokens=current_usage(),
             error_code="AUDIO_TRANSCRIBE_FAILED",
@@ -101,33 +123,32 @@ async def upload_audio(request: Request, file: UploadFile = File(...)):
         _msg = "Ошибка обработки аудио. Попробуйте другой файл."
         log_query(
             module="secretary",
-            question=_log_question,
+            question=log_question,
             status="error",
             tokens=current_usage(),
             error_code="PROTOCOL_BUILD_FAILED",
         )
         raise HTTPException(500, _msg) from e
 
-    sid = get_session_id(request)
     secretary_history.add(
         sid,
-        query=file.filename or "audio",
+        query=filename or "audio",
         response=protocol,
         file_id=file_id,
-        filename=file.filename,
+        filename=filename,
         transcript=transcript[:500] + ("..." if len(transcript) > 500 else ""),
     )
 
     log_query(
         module="secretary",
-        question=_log_question,
+        question=log_question,
         status="ok",
         tokens=current_usage(),
     )
 
     return {
         "status": "ok",
-        "filename": file.filename,
+        "filename": filename,
         "file_id": file_id,
         "transcript_preview": transcript[:300],
         "protocol": protocol,
