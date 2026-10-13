@@ -92,13 +92,54 @@ def parse_dates(text: str) -> list[datetime]:
     return dates
 
 
+_ADDRESS_KEYS = ("адрес", "местоположен")
+_ADDRESS_LABEL_LIMIT = 40
+
+_ADDRESS_PLACEHOLDERS = frozenset(
+    {"данные отсутствуют", "нет данных", "отсутствует", "не указано", "-", "—"}
+)
+
+
+def _is_placeholder(value: str) -> bool:
+    return value.strip().lower().rstrip(" .:") in _ADDRESS_PLACEHOLDERS
+
+
+def _value_after_label(lines: list[str], index: int) -> str:
+    """Значение табличной строки: следующая непустая строка без заглушек."""
+    for line in lines[index + 1 :]:
+        candidate = line.strip()
+        if not candidate or _is_placeholder(candidate):
+            continue
+        return candidate
+    return ""
+
+
 def extract_address_hint(text: str) -> str:
-    """Грубое извлечение адреса по ключевым словам."""
+    """Грубое извлечение адреса по ключевым словам.
+
+    В табличных разделах (например, в выписке ЕГРН) подпись «Местоположение :»
+    стоит отдельной строкой, а значение — следующей. Возвращаем значение, а не
+    подпись: иначе в метку «Истории вопросов» попадал обрывок фразы вроде
+    «которых расположен объект недвижимости».
+    """
     lines = (text or "").splitlines()
-    for line in lines:
+    for index, line in enumerate(lines):
         low = line.lower()
-        if any(k in low for k in ("адрес", "местоположен", "расположен")) and len(line.strip()) > 15:
-            return line.strip()
+        if not any(key in low for key in _ADDRESS_KEYS):
+            continue
+        stripped = line.strip()
+        if ":" in stripped:
+            label, _, inline = stripped.partition(":")
+            if len(label.strip()) <= _ADDRESS_LABEL_LIMIT:
+                inline = inline.strip(" \t.,;")
+                if len(inline) >= 5 and not _is_placeholder(inline):
+                    return inline
+                value = _value_after_label(lines, index)
+                if value:
+                    return value
+                continue
+        if len(stripped) > 15:
+            return stripped
     for line in lines:
         if re.search(r"\b(ул\.|пр\.|пер\.|г\.|обл\.|район)\b", line, re.I):
             return line.strip()

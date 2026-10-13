@@ -15,7 +15,7 @@ from tenders.services.fields import (
     extract_egrn_fields,
 )
 
-PARSE_VERSION = 1
+PARSE_VERSION = 2
 
 DOC_LABELS = {
     "auction": "Торговая документация",

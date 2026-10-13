@@ -16,6 +16,7 @@ _ADDRESS_LEAD_RE = re.compile(
 
 _NOISE_PART_RE = re.compile(
     r"вн\.?\s*тер|внутритерриториальн|муниципальн|городск\w*\s+округ|"
+    r"сельск\w*\s+поселени|"
     r"территориальн\w*\s+(?:единиц|образован)|^\d{5,6}$|^№|^[а-яё]{0,3}\.?$",
     re.IGNORECASE,
 )
@@ -23,6 +24,7 @@ _NOISE_PART_RE = re.compile(
 _TOKEN_RULES = (
     (r"^улиц\w*\.?\s+", "ул. "),
     (r"^ул\.\s*", "ул. "),
+    (r"^ул\s+(?=\S)", "ул. "),
     (r"^переулок\s+", "пер. "),
     (r"^пер\.?\s+", "пер. "),
     (r"^проспект\s+", "пр-т "),
@@ -42,6 +44,7 @@ _TOKEN_RULES = (
     (r"^территория\s+", "тер. "),
     (r"^город\s+", "г. "),
     (r"^г\.\s*", "г. "),
+    (r"^г\s+(?=\S)", "г. "),
     (r"^пос[её]лок\s+", "с. "),
     (r"^село\s+", "с. "),
     (r"^пгт\s+", "пгт "),
@@ -100,7 +103,7 @@ def condense(*parts: str | None, limit: int = MAX_LABEL_LEN) -> str:
 
 
 def _norm_part(part: str) -> str:
-    out = part.strip(" \t\r\n,.;")
+    out = re.sub(r"\s+\.", ".", part).strip(" \t\r\n,.;")
     for pattern, replacement in _TOKEN_RULES:
         new = re.sub(pattern, replacement, out, count=1, flags=re.IGNORECASE)
         if new != out:
@@ -113,7 +116,7 @@ def _normalize_tokens(text: str) -> str:
     kept: list[str] = []
     has_house = False
     for raw_part in text.split(","):
-        part = raw_part.strip()
+        part = re.sub(r"\s+", " ", raw_part).strip()
         if not part or _NOISE_PART_RE.search(part):
             continue
         normalized = _norm_part(part)
@@ -145,13 +148,15 @@ def first_address(text: str | None) -> str:
 def find_object_address(text: str | None) -> str:
     """Ищет адрес объекта по маркеру «расположенн... по адресу».
 
-    Если ведущий маркер города отсутствует (например «Санкт-Петербург, ул. Садовая,
-    д. 72/16»), первый проход может обрезать адрес до номера дома — тогда
-    адрес пересчитывается по захваченной части целиком.
+    Захват не обрывается на переносе строки: в таблицах адрес часто разбит
+    («Санкт-Петербург, пр-кт» / «Невский, д. 139»). Если ведущий маркер города
+    отсутствует (например «Санкт-Петербург, ул. Садовая, д. 72/16»), первый
+    проход может обрезать адрес до номера дома — тогда адрес пересчитывается по
+    захваченной части целиком.
     """
     source = text or ""
     match = re.search(
-        r"расположенн\w*\s+(?:по\s+)?адресу\s*[:\s]\s*([^|\n;]{5,220})",
+        r"расположенн\w*\s+(?:по\s+)?адресу\s*[:\s]\s*([^|;]{5,220})",
         source,
         re.IGNORECASE,
     )
