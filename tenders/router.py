@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hmac
+import json
 import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
 
 from config import (
@@ -18,7 +21,7 @@ from config import (
     TENDERS_UPLOAD_DIR,
 )
 from core.history import tenders_history
-from core.llm_client import current_usage, get_llm
+from core.llm_client import LLMClient, LLMUsage, current_usage, get_llm
 from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.prompt_guards import (
     EXPERT_FORMAT_HINT,
@@ -239,16 +242,20 @@ async def delete_zone_document(request: Request, zone: str):
 
 @router.post("/query")
 async def query_check(request: Request, body: TendersQuery):
-    """Проверка торговой документации (обязателен только файл торговой документации)."""
+    """Проверка торговой документации — ответ уходит браузеру потоком (SSE)."""
     _check_access(request)
     sid = get_session_id(request)
     question = (body.question or CHECK_QUESTION).strip() or CHECK_QUESTION
-    return await run_in_threadpool(_query_check, sid, question)
+    # Подготовка (разбор документов, сборка контекста) синхронная — идёт в
+    # отдельном потоке, чтобы не блокировать цикл событий; её ошибки (400)
+    # уходят обычным JSON до начала потока.
+    plan = await run_in_threadpool(_prepare_check, sid, question)
+    return _stream_response(_check_events(sid, question, plan))
 
 
 @router.post("/expert/query")
 async def query_expert(request: Request, body: TendersExpertQuery):
-    """Экспертное мнение — без загрузки документов."""
+    """Экспертное мнение — без загрузки документов, ответ потоком (SSE)."""
     _check_access(request)
     sid = get_session_id(request)
     question = (body.question or "").strip()
@@ -261,14 +268,48 @@ async def query_expert(request: Request, body: TendersExpertQuery):
             error_code="EMPTY_QUESTION",
         )
         raise HTTPException(400, "Пустой вопрос")
-    return await run_in_threadpool(_query_expert, sid, question)
+    llm = await run_in_threadpool(get_llm)
+    return _stream_response(_expert_events(sid, question, llm))
 
 
-# LLM и разбор контекста синхронные и долгие. Функции запускаются в отдельном
-# потоке (run_in_threadpool), чтобы не блокировать event loop и не ронять
-# остальные запросы в таймаут прокси. Счётчик токенов (contextvar) при этом
-# живёт в контексте потока: log_query внутри функции видит верный расход.
-def _query_check(session_id: str, question: str) -> dict:
+# Потоковый ответ (SSE): проверка документации генерится минутами, и ответ одним
+# куском упирался в таймаут обратного прокси — браузер получал 504 Gateway
+# Time-out, хотя приложение работало (ответ добирался в историю). Теперь первый
+# байт уходит сразу, таймаут прокси не срабатывает, а расход токенов передаётся
+# в log_query явно через LLMUsage: стрим читается из потоков диспетчера, где
+# contextvar между вызовами не переносится.
+# Заголовки ниже отключают буферизацию в прокси впереди (nginx и ему подобные).
+STREAM_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _sse(data: dict[str, Any]) -> str:
+    """Одно SSE-сообщение: строка «data: {json}» и пустая строка-разделитель."""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _stream_response(events: Iterator[str]) -> StreamingResponse:
+    """Поток событий для браузера: куски текста, затем done/error."""
+    return StreamingResponse(events, media_type="text/event-stream", headers=STREAM_HEADERS)
+
+
+@dataclass
+class _CheckPlan:
+    """Подготовленные данные одного потока проверки."""
+
+    llm: LLMClient
+    prompt: str
+    context: str
+    citations: list[dict[str, Any]]
+    validation: dict[str, Any]
+    label: str
+
+
+def _prepare_check(session_id: str, question: str) -> _CheckPlan:
+    """Подготовка проверки: валидация комплекта и сборка контекста LLM."""
     sid = session_id
 
     if not all_loaded(sid):
@@ -329,27 +370,48 @@ def _query_check(session_id: str, question: str) -> dict:
         parsed_approval,
     )
 
+    prompt = (
+        f"Запрос: {question}\n\n"
+        "Проверь комплект документов по фрагментам ниже. "
+        "Сформируй отчёт в формате: 📄 Документация, Предмет, НМЦД (если есть), 📋 Вердикт, "
+        "затем 🔴 Критические замечания и 🟡 Важные замечания "
+        "с полями Где / Суть / Обоснование у каждого пункта. "
+        "Укажи номера [N] использованных фрагментов."
+    )
+    return _CheckPlan(
+        llm=get_llm(),
+        prompt=prompt,
+        context=context,
+        citations=citations,
+        validation=validation,
+        label=build_history_label(parsed_auction, parsed_egrn, parsed_approval)
+        or CHECK_HISTORY_LABEL,
+    )
+
+
+def _check_events(sid: str, question: str, plan: _CheckPlan) -> Iterator[str]:
+    """SSE-поток проверки: куски ответа, затем итог с источниками и баннером."""
+    usage = LLMUsage()
     try:
-        llm = get_llm()
-        raw_answer = llm.generate(
-            f"Запрос: {question}\n\n"
-            "Проверь комплект документов по фрагментам ниже. "
-            "Сформируй отчёт в формате: 📄 Документация, Предмет, НМЦД (если есть), 📋 Вердикт, "
-            "затем 🔴 Критические замечания и 🟡 Важные замечания "
-            "с полями Где / Суть / Обоснование у каждого пункта. "
-            "Укажи номера [N] использованных фрагментов.",
+        chunks, usage = plan.llm.stream(
+            plan.prompt,
             system_prompt=CHECK_SYSTEM_PROMPT,
-            context=context,
+            context=plan.context,
         )
-        answer = clean_llm_display_text(raw_answer)
-        citations = select_citations_for_display(answer, citations)
-        verification = _verification_summary(validation)
+        raw_parts: list[str] = []
+        for delta in chunks:
+            raw_parts.append(delta)
+            yield _sse({"type": "delta", "text": delta})
+
+        answer = clean_llm_display_text("".join(raw_parts))
+        citations = select_citations_for_display(answer, plan.citations)
+        verification = _verification_summary(plan.validation)
         tenders_history.add(
             sid,
             question,
             answer,
             mode="check",
-            label=build_history_label(parsed_auction, parsed_egrn, parsed_approval) or CHECK_HISTORY_LABEL,
+            label=plan.label,
             citations=citations,
             verification=verification,
         )
@@ -357,23 +419,27 @@ def _query_check(session_id: str, question: str) -> dict:
             module="tenders",
             question=question,
             status="ok",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
         )
-        return {
-            "answer": answer,
-            "citations": [_citation_ref(c) for c in citations],
-            "verification": verification,
-        }
+        yield _sse(
+            {
+                "type": "done",
+                "answer": answer,
+                "citations": [_citation_ref(c) for c in citations],
+                "verification": verification,
+            }
+        )
     except LLMUserFacingError as e:
         logger.warning("Tenders check LLM error: %s", e.original or e)
         log_query(
             module="tenders",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code=llm_error_code(e.original or e),
         )
-        return _error_reply(sid, question, e.user_message, "check")
+        _error_reply(sid, question, e.user_message, "check")
+        yield _sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Tenders check failed: %s", e)
         _msg = "Произошла ошибка при проверке. Попробуйте позже."
@@ -381,46 +447,54 @@ def _query_check(session_id: str, question: str) -> dict:
             module="tenders",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code="INTERNAL_ERROR",
         )
-        return _error_reply(sid, question, _msg, "check")
+        _error_reply(sid, question, _msg, "check")
+        yield _sse({"type": "error", "message": _msg})
 
 
-def _query_expert(session_id: str, question: str) -> dict:
+def _expert_events(sid: str, question: str, llm: LLMClient) -> Iterator[str]:
+    """SSE-поток экспертного мнения: куски ответа, затем итог."""
+    usage = LLMUsage()
     try:
-        llm = get_llm()
-        raw_answer = llm.generate(
+        chunks, usage = llm.stream(
             f"Вопрос пользователя: {question}\n\n"
             "Отвечай только по действующему праву (135-ФЗ, Приказ ФАС № 147/23 и иные актуальные акты). "
             "Не ссылайся на Приказ ФАС № 67 и другие утратившие силу акты. "
             f"{EXPERT_FORMAT_HINT} {EXPERT_REFUSAL_HINT}",
             system_prompt=EXPERT_SYSTEM_PROMPT,
         )
-        answer = clean_llm_display_text(raw_answer)
+        raw_parts: list[str] = []
+        for delta in chunks:
+            raw_parts.append(delta)
+            yield _sse({"type": "delta", "text": delta})
+
+        answer = clean_llm_display_text("".join(raw_parts))
         answer = renumber_inline_citations(answer)
         answer = ensure_expert_sources_block(
             answer,
             fallback_lines=TENDERS_EXPERT_FALLBACK_SOURCES,
         )
-        tenders_history.add(session_id, question, answer, mode="expert")
+        tenders_history.add(sid, question, answer, mode="expert")
         log_query(
             module="tenders",
             question=question,
             status="ok",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
         )
-        return {"answer": answer, "citations": [], "verification": None}
+        yield _sse({"type": "done", "answer": answer, "citations": [], "verification": None})
     except LLMUserFacingError as e:
         logger.warning("Tenders expert LLM error: %s", e.original or e)
         log_query(
             module="tenders",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code=llm_error_code(e.original or e),
         )
-        return _error_reply(session_id, question, e.user_message, "expert")
+        _error_reply(sid, question, e.user_message, "expert")
+        yield _sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Tenders expert failed: %s", e)
         _msg = "Произошла ошибка при консультации. Попробуйте переформулировать вопрос."
@@ -428,10 +502,11 @@ def _query_expert(session_id: str, question: str) -> dict:
             module="tenders",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code="INTERNAL_ERROR",
         )
-        return _error_reply(session_id, question, _msg, "expert")
+        _error_reply(sid, question, _msg, "expert")
+        yield _sse({"type": "error", "message": _msg})
 
 
 @router.get("/history")
