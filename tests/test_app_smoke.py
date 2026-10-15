@@ -43,3 +43,20 @@ async def test_static_css_is_served(client) -> None:
     response = await client.get("/static/css/style.css")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
+
+
+async def test_static_auth_modal_script_is_served(client) -> None:
+    response = await client.get("/static/js/auth-modal.js")
+    assert response.status_code == 200
+    assert "javascript" in response.headers["content-type"]
+
+
+async def test_module_page_has_reauth_modal(client) -> None:
+    """Окно возврата после разрыва сессии должно быть на каждой странице модуля."""
+    response = await client.get("/economist")
+    assert response.status_code == 200
+    body = response.text
+    assert 'id="authOverlay"' in body
+    assert 'id="authLogin"' in body
+    assert 'id="authPassword"' in body
+    assert "/static/js/auth-modal.js" in body

@@ -7,7 +7,7 @@
     <title>{% block title %}ИИ-помощник {{ company_name() }}{% endblock %}</title>
     <link rel="icon" href="/static/img/favicon.png" type="image/png">
     <link rel="shortcut icon" href="/favicon.ico" type="image/png">
-    <link rel="stylesheet" href="/static/css/style.css?v=59">
+    <link rel="stylesheet" href="/static/css/style.css?v=60">
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -259,10 +259,45 @@
         </div>
     </div>
 
+    {# Возврат в систему после разрыва сессии. Окно открывает auth-modal.js,
+       когда запросы модулей получают 401 (см. AUTH_SESSION_MAX_AGE). #}
+    <div class="auth-overlay hidden" id="authOverlay"
+         data-login="{{ current_user.login if current_user else '' }}">
+        <form class="auth-dialog" id="authForm" autocomplete="on" role="dialog"
+              aria-modal="true" aria-labelledby="authTitle">
+            <h2 class="auth-title" id="authTitle">Сессия истекла</h2>
+            <p class="auth-hint">
+                Войдите заново, чтобы продолжить. Прерванный запрос выполнится
+                автоматически после входа.
+            </p>
+
+            <label class="login-field">
+                <span class="login-label">Логин</span>
+                <input type="text" id="authLogin" class="settings-input" required
+                       autocomplete="username" autocapitalize="none"
+                       autocorrect="off" spellcheck="false" maxlength="64">
+            </label>
+
+            <label class="login-field">
+                <span class="login-label">Пароль</span>
+                <input type="password" id="authPassword" class="settings-input" required
+                       autocomplete="current-password" maxlength="256">
+            </label>
+
+            <p class="settings-error" id="authError" role="alert" hidden></p>
+
+            <div class="auth-actions">
+                <button type="button" class="btn btn-secondary" id="authCancel">Выйти</button>
+                <button type="submit" class="btn btn-primary login-submit" id="authSubmit">Войти</button>
+            </div>
+        </form>
+    </div>
+
 <script src="/static/js/lottie.min.js?v=5.12.2"></script>
 <script src="/static/js/common.js?v=21"></script>
 <script src="/static/js/lottie-init.js?v=1"></script>
 <script src="/static/js/settings.js?v=17"></script>
+<script src="/static/js/auth-modal.js?v=1"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
