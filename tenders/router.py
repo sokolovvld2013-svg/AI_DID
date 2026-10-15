@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hmac
-import json
 import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -11,7 +10,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from config import (
@@ -31,6 +30,7 @@ from core.prompt_guards import (
     renumber_inline_citations,
 )
 from core.session import get_session_id
+from core.sse import sse, stream_response
 from core.templates import templates
 from core.user_logs import log_query
 from lawyer.citations import select_citations_for_display
@@ -250,7 +250,7 @@ async def query_check(request: Request, body: TendersQuery):
     # отдельном потоке, чтобы не блокировать цикл событий; её ошибки (400)
     # уходят обычным JSON до начала потока.
     plan = await run_in_threadpool(_prepare_check, sid, question)
-    return _stream_response(_check_events(sid, question, plan))
+    return stream_response(_check_events(sid, question, plan))
 
 
 @router.post("/expert/query")
@@ -269,7 +269,7 @@ async def query_expert(request: Request, body: TendersExpertQuery):
         )
         raise HTTPException(400, "Пустой вопрос")
     llm = await run_in_threadpool(get_llm)
-    return _stream_response(_expert_events(sid, question, llm))
+    return stream_response(_expert_events(sid, question, llm))
 
 
 # Потоковый ответ (SSE): проверка документации генерится минутами, и ответ одним
@@ -277,23 +277,7 @@ async def query_expert(request: Request, body: TendersExpertQuery):
 # Time-out, хотя приложение работало (ответ добирался в историю). Теперь первый
 # байт уходит сразу, таймаут прокси не срабатывает, а расход токенов передаётся
 # в log_query явно через LLMUsage: стрим читается из потоков диспетчера, где
-# contextvar между вызовами не переносится.
-# Заголовки ниже отключают буферизацию в прокси впереди (nginx и ему подобные).
-STREAM_HEADERS = {
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-    "X-Accel-Buffering": "no",
-}
-
-
-def _sse(data: dict[str, Any]) -> str:
-    """Одно SSE-сообщение: строка «data: {json}» и пустая строка-разделитель."""
-    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-def _stream_response(events: Iterator[str]) -> StreamingResponse:
-    """Поток событий для браузера: куски текста, затем done/error."""
-    return StreamingResponse(events, media_type="text/event-stream", headers=STREAM_HEADERS)
+# contextvar между вызовами не переносится. Хелперы потока — в core/sse.py.
 
 
 @dataclass
@@ -401,7 +385,7 @@ def _check_events(sid: str, question: str, plan: _CheckPlan) -> Iterator[str]:
         raw_parts: list[str] = []
         for delta in chunks:
             raw_parts.append(delta)
-            yield _sse({"type": "delta", "text": delta})
+            yield sse({"type": "delta", "text": delta})
 
         answer = clean_llm_display_text("".join(raw_parts))
         citations = select_citations_for_display(answer, plan.citations)
@@ -421,7 +405,7 @@ def _check_events(sid: str, question: str, plan: _CheckPlan) -> Iterator[str]:
             status="ok",
             tokens=usage.total_tokens,
         )
-        yield _sse(
+        yield sse(
             {
                 "type": "done",
                 "answer": answer,
@@ -439,7 +423,7 @@ def _check_events(sid: str, question: str, plan: _CheckPlan) -> Iterator[str]:
             error_code=llm_error_code(e.original or e),
         )
         _error_reply(sid, question, e.user_message, "check")
-        yield _sse({"type": "error", "message": e.user_message})
+        yield sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Tenders check failed: %s", e)
         _msg = "Произошла ошибка при проверке. Попробуйте позже."
@@ -451,7 +435,7 @@ def _check_events(sid: str, question: str, plan: _CheckPlan) -> Iterator[str]:
             error_code="INTERNAL_ERROR",
         )
         _error_reply(sid, question, _msg, "check")
-        yield _sse({"type": "error", "message": _msg})
+        yield sse({"type": "error", "message": _msg})
 
 
 def _expert_events(sid: str, question: str, llm: LLMClient) -> Iterator[str]:
@@ -468,7 +452,7 @@ def _expert_events(sid: str, question: str, llm: LLMClient) -> Iterator[str]:
         raw_parts: list[str] = []
         for delta in chunks:
             raw_parts.append(delta)
-            yield _sse({"type": "delta", "text": delta})
+            yield sse({"type": "delta", "text": delta})
 
         answer = clean_llm_display_text("".join(raw_parts))
         answer = renumber_inline_citations(answer)
@@ -483,7 +467,7 @@ def _expert_events(sid: str, question: str, llm: LLMClient) -> Iterator[str]:
             status="ok",
             tokens=usage.total_tokens,
         )
-        yield _sse({"type": "done", "answer": answer, "citations": [], "verification": None})
+        yield sse({"type": "done", "answer": answer, "citations": [], "verification": None})
     except LLMUserFacingError as e:
         logger.warning("Tenders expert LLM error: %s", e.original or e)
         log_query(
@@ -494,7 +478,7 @@ def _expert_events(sid: str, question: str, llm: LLMClient) -> Iterator[str]:
             error_code=llm_error_code(e.original or e),
         )
         _error_reply(sid, question, e.user_message, "expert")
-        yield _sse({"type": "error", "message": e.user_message})
+        yield sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Tenders expert failed: %s", e)
         _msg = "Произошла ошибка при консультации. Попробуйте переформулировать вопрос."
@@ -506,7 +490,7 @@ def _expert_events(sid: str, question: str, llm: LLMClient) -> Iterator[str]:
             error_code="INTERNAL_ERROR",
         )
         _error_reply(sid, question, _msg, "expert")
-        yield _sse({"type": "error", "message": _msg})
+        yield sse({"type": "error", "message": _msg})
 
 
 @router.get("/history")

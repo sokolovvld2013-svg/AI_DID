@@ -242,44 +242,135 @@ document.addEventListener("DOMContentLoaded", () => {
             : App.formatChatMarkdown(text);
     }
 
-    function showBotReply(answer, citations, replyMode) {
-        const text = safeText(answer) || "Ответ пуст. Попробуйте переформулировать вопрос.";
-        const useMode = replyMode || mode;
+    function createBotMessage(replyMode) {
         const msgDiv = document.createElement("div");
         msgDiv.className = "message bot";
 
         const body = document.createElement("div");
         body.className = "message-text";
-        body.innerHTML = formatAnswer(text, replyMode);
         msgDiv.appendChild(body);
+        return { msgDiv, body };
+    }
 
-        if (citations && citations.length && useMode !== "expert") {
-            const box = document.createElement("div");
-            box.className = "citations";
-            const title = document.createElement("strong");
-            title.textContent = "Источники:";
-            box.appendChild(title);
+    function appendCitations(msgDiv, citations, replyMode) {
+        const useMode = replyMode || mode;
+        if (!citations || !citations.length || useMode === "expert") return;
 
-            const list = document.createElement("ul");
-            list.className = "citation-list";
-            citations.forEach((c) => {
-                const li = document.createElement("li");
-                li.className = "citation-source";
-                const label = safeText(c.filename) || "Документ";
-                const page = c.page != null ? c.page : "—";
-                const ref = c.id != null ? `[${c.id}] ` : "";
-                const pageLabel = String(page).startsWith("разд.") ? page : `стр. ${page}`;
-                li.textContent = `${ref}${label}, ${pageLabel}`;
-                list.appendChild(li);
-            });
-            box.appendChild(list);
-            msgDiv.appendChild(box);
-        }
+        const box = document.createElement("div");
+        box.className = "citations";
+        const title = document.createElement("strong");
+        title.textContent = "Источники:";
+        box.appendChild(title);
+
+        const list = document.createElement("ul");
+        list.className = "citation-list";
+        citations.forEach((c) => {
+            const li = document.createElement("li");
+            li.className = "citation-source";
+            const label = safeText(c.filename) || "Документ";
+            const page = c.page != null ? c.page : "—";
+            const ref = c.id != null ? `[${c.id}] ` : "";
+            const pageLabel = String(page).startsWith("разд.") ? page : `стр. ${page}`;
+            li.textContent = `${ref}${label}, ${pageLabel}`;
+            list.appendChild(li);
+        });
+        box.appendChild(list);
+        msgDiv.appendChild(box);
+    }
+
+    function showBotReply(answer, citations, replyMode) {
+        const text = safeText(answer) || "Ответ пуст. Попробуйте переформулировать вопрос.";
+        const useMode = replyMode || mode;
+
+        const { msgDiv, body } = createBotMessage(useMode);
+        body.innerHTML = formatAnswer(text, useMode);
+        appendCitations(msgDiv, citations, useMode);
 
         if (chatMessages) {
             chatMessages.appendChild(msgDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+    }
+
+    async function streamBotReply(endpoint, payload, replyMode) {
+        const useMode = replyMode || mode;
+        const resp = await fetch(endpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+            body: JSON.stringify(payload),
+        });
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || resp.statusText || "Ошибка запроса");
+        }
+
+        const contentType = (resp.headers.get("content-type") || "").toLowerCase();
+        // Запасной путь: если поток не пришёл (сервер без SSE, лишний
+        // буферизатор впереди), отдаём ответ целиком — как раньше.
+        if (!resp.body || !contentType.includes("text/event-stream")) {
+            const data = await resp.json().catch(() => ({}));
+            return { answer: data.answer || "", citations: data.citations || [] };
+        }
+
+        const { msgDiv, body } = createBotMessage(useMode);
+        if (chatMessages) {
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = "";
+        let fullText = "";
+        let lastRender = 0;
+
+        // Живой текст перерисовываем не чаще раза в 150 мс: отчёт длинный,
+        // и построчная отрисовка каждого куска грузит браузер.
+        const renderLive = () => {
+            const now = Date.now();
+            if (now - lastRender < 150) return;
+            lastRender = now;
+            body.innerHTML = formatAnswer(fullText, useMode);
+            if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+        };
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let sep;
+            while ((sep = buffer.indexOf("\n\n")) >= 0) {
+                const frame = buffer.slice(0, sep);
+                buffer = buffer.slice(sep + 2);
+                for (const line of frame.split("\n")) {
+                    if (!line.startsWith("data:")) continue;
+                    let evt;
+                    try {
+                        evt = JSON.parse(line.slice(5).trim());
+                    } catch {
+                        continue;
+                    }
+                    if (evt.type === "delta") {
+                        fullText += evt.text || "";
+                        renderLive();
+                    } else if (evt.type === "done") {
+                        // Итоговая версия очищена на сервере — заменяем живой
+                        // текст и добавляем источники.
+                        body.innerHTML = formatAnswer(safeText(evt.answer) || fullText, useMode);
+                        appendCitations(msgDiv, evt.citations || [], useMode);
+                        if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
+                        return evt;
+                    } else if (evt.type === "error") {
+                        throw new Error(evt.message || "Ошибка запроса");
+                    }
+                }
+            }
+        }
+        // Поток оборвали без события done (обрыв у прокси). На сервере
+        // запрос продолжается и ответ попадёт в историю.
+        throw new Error(
+            "Соединение прервалось. Ответ сохранится в истории — обновите страницу чуть позже.",
+        );
     }
 
     chatForm?.addEventListener("submit", async (e) => {
@@ -298,16 +389,7 @@ document.addEventListener("DOMContentLoaded", () => {
         updateChatAvailability();
 
         try {
-            const resp = await fetch("/procurement/query", {
-                method: "POST",
-                headers: { "Content-Type": "application/json; charset=utf-8" },
-                body: JSON.stringify({ question, mode }),
-            });
-            const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                throw new Error(data.detail || resp.statusText || "Ошибка запроса");
-            }
-            showBotReply(data.answer, data.citations || [], mode);
+            await streamBotReply("/procurement/query", { question, mode }, mode);
             await refreshHistory();
             await loadChatHistory();
         } catch (err) {

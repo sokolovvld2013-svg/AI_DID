@@ -1,6 +1,8 @@
 """API-роутер модуля «Закупка 223-ФЗ»."""
 import hmac
 import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile
@@ -17,7 +19,7 @@ from config import (
     PROCUREMENT_UPLOAD_DIR,
 )
 from core.history import procurement_history
-from core.llm_client import current_usage, get_llm
+from core.llm_client import LLMClient, LLMUsage, current_usage, get_llm
 from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.prompt_guards import (
     ANTI_HALLUCINATION_RULES,
@@ -28,6 +30,7 @@ from core.prompt_guards import (
     renumber_inline_citations,
 )
 from core.session import get_session_id
+from core.sse import sse, stream_response
 from core.templates import templates
 from core.user_logs import log_query
 from lawyer.citations import select_citations_for_display
@@ -263,6 +266,7 @@ async def delete_policy_file(file_id: str):
 
 @router.post("/query")
 async def query(req: ProcurementQuery, request: Request):
+    """Ответ уходит браузеру потоком (SSE) — без 504 у обратного прокси."""
     _check_access(request)
     question = req.question.strip()
     sid = get_session_id(request)
@@ -278,9 +282,13 @@ async def query(req: ProcurementQuery, request: Request):
         )
         raise HTTPException(400, "Пустой вопрос")
 
+    # Подготовка (разбор документации, сборка контекста) синхронная — идёт в
+    # отдельном потоке; её ошибки (400) уходят обычным JSON до начала потока.
     if mode == "check":
-        return await run_in_threadpool(_query_check, sid, question)
-    return await run_in_threadpool(_query_expert, sid, question)
+        plan = await run_in_threadpool(_prepare_check, sid, question)
+        return stream_response(_check_events(sid, question, plan))
+    expert = await run_in_threadpool(_prepare_expert, question)
+    return stream_response(_expert_events(sid, question, expert))
 
 def _build_policy_context(
     question: str,
@@ -334,10 +342,29 @@ def _build_policy_context(
     return "\n\n".join(context_parts), citations
 
 
-# LLM и сборка контекста синхронные и долгие — их запускает run_in_threadpool
-# из эндпоинта, чтобы не блокировать event loop (иначе — 504 у параллельных
-# запросов). Счётчик токенов при этом остаётся в контексте рабочего потока.
-def _query_check(session_id: str, question: str) -> dict:
+# Ответ потоком (SSE): проверка документации генерится минутами, и ответ одним
+# куском упирался в таймаут обратного прокси — браузер получал 504 Gateway
+# Time-out. Теперь первый байт уходит сразу, а расход токенов передаётся в
+# log_query явно через LLMUsage: стрим читается из потоков диспетчера, где
+# contextvar между вызовами не переносится. Хелперы потока — в core/sse.py.
+
+
+@dataclass
+class _CheckPlan:
+    """Подготовленные данные одной потоковой проверки документации."""
+
+    llm: LLMClient | None
+    prompt: str
+    context: str
+    citations: list[dict]
+    label: str
+    # Готовый ответ без генерации LLM (например, разделы не извлечены) —
+    # поток завершается событием done с этим текстом.
+    message: str = ""
+
+
+def _prepare_check(session_id: str, question: str) -> _CheckPlan:
+    """Подготовка проверки: валидация документации и сборка контекста LLM."""
     doc = get_documentation(session_id)
     if not doc:
         log_query(
@@ -388,7 +415,14 @@ def _query_check(session_id: str, question: str) -> dict:
             tokens=current_usage(),
             error_code="DOC_PARSE_FAILED",
         )
-        return {"answer": msg, "citations": []}
+        return _CheckPlan(
+            llm=None,
+            prompt="",
+            context="",
+            citations=[],
+            label=CHECK_HISTORY_LABEL,
+            message=msg,
+        )
 
     policy_budget = max(CHECK_LLM_CONTEXT_CHARS - len(doc_context) - 400, 8000)
     policy_context, policy_citations = _build_policy_context(
@@ -419,43 +453,67 @@ def _query_check(session_id: str, question: str) -> dict:
             "проверь по 223-ФЗ и отметь, что сверка с Положением невозможна."
         )
 
+    return _CheckPlan(
+        llm=get_llm(),
+        prompt=user_prompt,
+        context=context,
+        citations=citations,
+        label=build_history_label(parsed) or CHECK_HISTORY_LABEL,
+    )
+
+
+def _check_events(session_id: str, question: str, plan: _CheckPlan) -> Iterator[str]:
+    """SSE-поток проверки: куски ответа, затем итог с источниками."""
+    sid = session_id
+    usage = LLMUsage()
+    if plan.message:
+        yield sse({"type": "done", "answer": plan.message, "citations": []})
+        return
     try:
-        llm = get_llm()
-        raw_answer = llm.generate(
-            user_prompt,
+        chunks, usage = plan.llm.stream(
+            plan.prompt,
             system_prompt=CHECK_SYSTEM_PROMPT,
-            context=context,
+            context=plan.context,
         )
-        answer = clean_llm_display_text(raw_answer)
-        citations = select_citations_for_display(answer, citations)
+        raw_parts: list[str] = []
+        for delta in chunks:
+            raw_parts.append(delta)
+            yield sse({"type": "delta", "text": delta})
+
+        answer = clean_llm_display_text("".join(raw_parts))
+        citations = select_citations_for_display(answer, plan.citations)
         procurement_history.add(
-            session_id,
+            sid,
             question,
             answer,
             mode="check",
-            label=build_history_label(parsed) or CHECK_HISTORY_LABEL,
+            label=plan.label,
             citations=citations,
         )
         log_query(
             module="procurement",
             question=question,
             status="ok",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
         )
-        return {
-            "answer": answer,
-            "citations": [_citation_ref(c) for c in citations],
-        }
+        yield sse(
+            {
+                "type": "done",
+                "answer": answer,
+                "citations": [_citation_ref(c) for c in citations],
+            }
+        )
     except LLMUserFacingError as e:
         logger.warning("Procurement check LLM error: %s", e.original or e)
         log_query(
             module="procurement",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code=llm_error_code(e.original or e),
         )
-        return _error_reply(session_id, question, e.user_message, "check")
+        _error_reply(sid, question, e.user_message, "check")
+        yield sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Procurement check failed: %s", e)
         _msg = "Произошла ошибка при проверке. Попробуйте переформулировать запрос."
@@ -463,13 +521,25 @@ def _query_check(session_id: str, question: str) -> dict:
             module="procurement",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code="INTERNAL_ERROR",
         )
-        return _error_reply(session_id, question, _msg, "check")
+        _error_reply(sid, question, _msg, "check")
+        yield sse({"type": "error", "message": _msg})
 
 
-def _query_expert(session_id: str, question: str) -> dict:
+@dataclass
+class _ExpertPlan:
+    """Подготовленные данные одной потоковой экспертной консультации."""
+
+    llm: LLMClient
+    prompt: str
+    context: str
+    citations: list[dict]
+
+
+def _prepare_expert(question: str) -> _ExpertPlan:
+    """Подготовка экспертного ответа: фрагменты Положения о закупке."""
     context, citations = _build_policy_context(enrich_policy_query(question))
 
     user_prompt = f"Вопрос пользователя: {question}\n\n"
@@ -492,15 +562,32 @@ def _query_expert(session_id: str, question: str) -> dict:
             f"{EXPERT_FORMAT_HINT} {EXPERT_REFUSAL_HINT}"
         )
 
+    return _ExpertPlan(
+        llm=get_llm(),
+        prompt=user_prompt,
+        context=context,
+        citations=citations,
+    )
+
+
+def _expert_events(session_id: str, question: str, plan: _ExpertPlan) -> Iterator[str]:
+    """SSE-поток экспертного ответа: куски текста, затем итог с источниками."""
+    sid = session_id
+    usage = LLMUsage()
     try:
-        llm = get_llm()
-        raw_answer = llm.generate(
-            user_prompt,
+        chunks, usage = plan.llm.stream(
+            plan.prompt,
             system_prompt=EXPERT_SYSTEM_PROMPT,
-            context=context or None,
+            context=plan.context or None,
         )
-        answer = clean_llm_display_text(raw_answer)
+        raw_parts: list[str] = []
+        for delta in chunks:
+            raw_parts.append(delta)
+            yield sse({"type": "delta", "text": delta})
+
+        answer = clean_llm_display_text("".join(raw_parts))
         answer = renumber_inline_citations(answer)
+        citations = plan.citations
         if citations:
             citations = select_citations_for_display(answer, citations, max_items=20)
         answer = ensure_expert_sources_block(
@@ -508,7 +595,7 @@ def _query_expert(session_id: str, question: str) -> dict:
             fallback_lines=["Федеральный закон от 18.07.2011 № 223-ФЗ"],
         )
         procurement_history.add(
-            session_id,
+            sid,
             question,
             answer,
             mode="expert",
@@ -518,22 +605,26 @@ def _query_expert(session_id: str, question: str) -> dict:
             module="procurement",
             question=question,
             status="ok",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
         )
-        return {
-            "answer": answer,
-            "citations": [_citation_ref(c) for c in citations],
-        }
+        yield sse(
+            {
+                "type": "done",
+                "answer": answer,
+                "citations": [_citation_ref(c) for c in citations],
+            }
+        )
     except LLMUserFacingError as e:
         logger.warning("Procurement expert LLM error: %s", e.original or e)
         log_query(
             module="procurement",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code=llm_error_code(e.original or e),
         )
-        return _error_reply(session_id, question, e.user_message, "expert")
+        _error_reply(sid, question, e.user_message, "expert")
+        yield sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Procurement expert failed: %s", e)
         _msg = "Произошла ошибка при консультации. Попробуйте переформулировать вопрос."
@@ -541,10 +632,11 @@ def _query_expert(session_id: str, question: str) -> dict:
             module="procurement",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code="INTERNAL_ERROR",
         )
-        return _error_reply(session_id, question, _msg, "expert")
+        _error_reply(sid, question, _msg, "expert")
+        yield sse({"type": "error", "message": _msg})
 
 
 @router.get("/history")

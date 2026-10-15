@@ -2,6 +2,8 @@
 import logging
 import re
 import uuid
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -21,9 +23,10 @@ from config import (
     MAX_LAWYER_LLM_CONTEXT_CHARS,
 )
 from core.history import lawyer_history
-from core.llm_client import current_usage, get_llm
+from core.llm_client import LLMClient, LLMUsage, current_usage, get_llm
 from core.llm_errors import LLMUserFacingError, llm_error_code
 from core.session import get_session_id
+from core.sse import sse, stream_response
 from core.templates import templates
 from core.user_logs import log_query
 from lawyer.citations import select_citations_for_display
@@ -400,6 +403,7 @@ async def clear_index():
 
 @router.post("/query")
 async def query(req: LawyerQuery, request: Request):
+    """Ответ уходит браузеру потоком (SSE) — без 504 у обратного прокси."""
     question = req.question.strip()
     sid = get_session_id(request)
     if not question:
@@ -411,14 +415,39 @@ async def query(req: LawyerQuery, request: Request):
             error_code="EMPTY_QUESTION",
         )
         raise HTTPException(400, "Пустой вопрос")
+    # Подготовка (разбор договора, поиск по базе знаний) синхронная — идёт в
+    # отдельном потоке; её ошибки (400) уходят обычным JSON до начала потока.
     if req.mode == "contract":
-        return await run_in_threadpool(_query_contract, sid, question)
-    return await run_in_threadpool(_query_kb, sid, question)
+        plan = await run_in_threadpool(_prepare_contract, sid, question)
+        return stream_response(_contract_events(sid, question, plan))
+    plan = await run_in_threadpool(_prepare_kb, sid, question)
+    return stream_response(_kb_events(sid, question, plan))
 
 
-# Проверка договора синхронная и долгая (LLM) — запускается в потоке из
-# эндпоинта, чтобы не замораживать event loop и не ронять параллельные запросы.
-def _query_contract(session_id: str, question: str) -> dict:
+# Ответ потоком (SSE): проверка договора и ответы по базе знаний генерятся
+# минутами, и ответ одним куском упирался в таймаут обратного прокси — браузер
+# получал 504 Gateway Time-out. Теперь первый байт уходит сразу, а расход
+# токенов передаётся в log_query явно через LLMUsage: стрим читается из
+# потоков диспетчера, где contextvar между вызовами не переносится.
+# Хелперы потока — в core/sse.py.
+
+
+@dataclass
+class _ContractPlan:
+    """Подготовленные данные одной потоковой проверки договора."""
+
+    llm: LLMClient | None
+    prompt: str
+    context: str
+    citations: list[dict]
+    label: str
+    # Готовый ответ без генерации LLM (текст не извлёкся) — поток завершается
+    # событием done с этим текстом.
+    message: str = ""
+
+
+def _prepare_contract(session_id: str, question: str) -> _ContractPlan:
+    """Подготовка проверки договора: валидация загрузки и сборка контекста."""
     contract = get_contract(session_id)
     if not contract:
         log_query(
@@ -458,7 +487,14 @@ def _query_contract(session_id: str, question: str) -> dict:
             error_code="DOC_PARSE_FAILED",
         )
         _lawyer_error_reply(session_id, question, msg, mode="contract")
-        return {"answer": msg, "citations": []}
+        return _ContractPlan(
+            llm=None,
+            prompt="",
+            context="",
+            citations=[],
+            label=CHECK_HISTORY_LABEL,
+            message=msg,
+        )
 
     user_prompt = (
         f"Вопрос пользователя: {question}\n\n"
@@ -471,45 +507,67 @@ def _query_contract(session_id: str, question: str) -> dict:
         "Для пунктов договора указывай номера [N] из блока «Договор»."
     )
 
+    return _ContractPlan(
+        llm=get_llm(),
+        prompt=user_prompt,
+        context=context,
+        citations=citations,
+        label=build_history_label(contract) or CHECK_HISTORY_LABEL,
+    )
+
+
+def _contract_events(session_id: str, question: str, plan: _ContractPlan) -> Iterator[str]:
+    """SSE-поток проверки договора: куски ответа, затем итог с источниками."""
+    sid = session_id
+    usage = LLMUsage()
+    if plan.message:
+        yield sse({"type": "done", "answer": plan.message, "citations": []})
+        return
     try:
-        llm = get_llm()
-        raw_answer = llm.generate(
-            user_prompt,
+        chunks, usage = plan.llm.stream(
+            plan.prompt,
             system_prompt=CONTRACT_SYSTEM_PROMPT,
-            context=context,
+            context=plan.context,
         )
-        answer = clean_llm_display_text(raw_answer)
-        citations = select_citations_for_display(answer, citations)
+        raw_parts: list[str] = []
+        for delta in chunks:
+            raw_parts.append(delta)
+            yield sse({"type": "delta", "text": delta})
+
+        answer = clean_llm_display_text("".join(raw_parts))
+        citations = select_citations_for_display(answer, plan.citations)
         lawyer_history.add(
-            session_id,
+            sid,
             question,
             answer,
             mode="contract",
-            label=build_history_label(contract) or CHECK_HISTORY_LABEL,
+            label=plan.label,
             citations=citations,
         )
         log_query(
             module="lawyer",
             question=question,
             status="ok",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
         )
-        return {
-            "answer": answer,
-            "citations": [_citation_ref(c) for c in citations],
-        }
+        yield sse(
+            {
+                "type": "done",
+                "answer": answer,
+                "citations": [_citation_ref(c) for c in citations],
+            }
+        )
     except LLMUserFacingError as e:
         logger.warning("Lawyer contract check LLM error: %s", e.original or e)
         log_query(
             module="lawyer",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code=llm_error_code(e.original or e),
         )
-        return _lawyer_error_reply(
-            session_id, question, e.user_message, mode="contract"
-        )
+        _lawyer_error_reply(sid, question, e.user_message, mode="contract")
+        yield sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Lawyer contract check failed: %s", e)
         _msg = "Произошла ошибка при проверке договора. Попробуйте ещё раз."
@@ -517,18 +575,29 @@ def _query_contract(session_id: str, question: str) -> dict:
             module="lawyer",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code="INTERNAL_ERROR",
         )
-        return _lawyer_error_reply(
-            session_id,
-            question,
-            _msg,
-            mode="contract",
-        )
+        _lawyer_error_reply(sid, question, _msg, mode="contract")
+        yield sse({"type": "error", "message": _msg})
 
 
-def _query_kb(session_id: str, question: str) -> dict:
+@dataclass
+class _KBPlan:
+    """Подготовленные данные одного потокового ответа по базе знаний."""
+
+    llm: LLMClient | None
+    prompt: str
+    system_prompt: str
+    context: str
+    citations: list[dict]
+    # Готовый ответ без генерации LLM (база пуста или нет релевантных
+    # фрагментов) — поток завершается событием done с этим текстом.
+    message: str = ""
+
+
+def _prepare_kb(session_id: str, question: str) -> _KBPlan:
+    """Подготовка ответа по базе знаний: поиск фрагментов и сборка контекста."""
     all_hits = _rag().search(question)
     if not all_hits:
         answer = "База знаний пуста. Загрузите документы для ответа на вопросы."
@@ -540,89 +609,126 @@ def _query_kb(session_id: str, question: str) -> dict:
             tokens=current_usage(),
             error_code="KB_EMPTY",
         )
-        return {"answer": answer, "citations": []}
-
-    try:
-        hits = _select_relevant_hits(question, all_hits)
-        if not hits:
-            answer = (
-                "По загруженным документам не найдено фрагментов, подходящих к вопросу. "
-                "Переформулируйте вопрос или загрузите другой документ."
-            )
-            lawyer_history.add(session_id, question, answer, mode="kb")
-            log_query(
-                module="lawyer",
-                question=question,
-                status="error",
-                tokens=current_usage(),
-                error_code="NO_RELEVANT_HITS",
-            )
-            return {"answer": answer, "citations": []}
-
-        llm = get_llm()
-
-        context_parts: list[str] = []
-        citations: list[dict] = []
-        context_len = 0
-
-        for i, hit in enumerate(hits, 1):
-            merged_text = _rag().merge_neighbor_context(hit)
-            raw_text = _truncate_fragment(
-                strip_urls(merged_text or hit.get("text") or ""),
-                MAX_LAWYER_CITATION_CHARS,
-            )
-            filename = strip_urls(repair_filename(hit["filename"] or ""))
-            part = f"[{i}] {filename}, стр. {hit['page']}:\n{raw_text}"
-            if context_len + len(part) > MAX_LAWYER_LLM_CONTEXT_CHARS:
-                remaining = MAX_LAWYER_LLM_CONTEXT_CHARS - context_len
-                if remaining > 200:
-                    part = _truncate_fragment(part, remaining)
-                    context_parts.append(part)
-                    context_len += len(part)
-                break
-            context_parts.append(part)
-            context_len += len(part)
-            citations.append({
-                "id": i,
-                "filename": filename,
-                "page": hit["page"],
-                "file_id": hit["file_id"],
-            })
-
-        context = "\n\n".join(context_parts)
-        raw_answer = llm.generate(
-            f"Вопрос пользователя: {question}\n\n"
-            "Используй только фрагменты ниже. Если в них есть слова из вопроса — "
-            "дай ответ по их содержанию и укажи номера [N].",
-            system_prompt=SYSTEM_PROMPT,
-            context=context,
+        return _KBPlan(
+            llm=None,
+            prompt="",
+            system_prompt="",
+            context="",
+            citations=[],
+            message=answer,
         )
 
-        answer = strip_urls(raw_answer)
-        citations = select_citations_for_display(answer, citations)
-        if not citations and hits:
+    hits = _select_relevant_hits(question, all_hits)
+    if not hits:
+        answer = (
+            "По загруженным документам не найдено фрагментов, подходящих к вопросу. "
+            "Переформулируйте вопрос или загрузите другой документ."
+        )
+        lawyer_history.add(session_id, question, answer, mode="kb")
+        log_query(
+            module="lawyer",
+            question=question,
+            status="error",
+            tokens=current_usage(),
+            error_code="NO_RELEVANT_HITS",
+        )
+        return _KBPlan(
+            llm=None,
+            prompt="",
+            system_prompt="",
+            context="",
+            citations=[],
+            message=answer,
+        )
+
+    context_parts: list[str] = []
+    citations: list[dict] = []
+    context_len = 0
+
+    for i, hit in enumerate(hits, 1):
+        merged_text = _rag().merge_neighbor_context(hit)
+        raw_text = _truncate_fragment(
+            strip_urls(merged_text or hit.get("text") or ""),
+            MAX_LAWYER_CITATION_CHARS,
+        )
+        filename = strip_urls(repair_filename(hit["filename"] or ""))
+        part = f"[{i}] {filename}, стр. {hit['page']}:\n{raw_text}"
+        if context_len + len(part) > MAX_LAWYER_LLM_CONTEXT_CHARS:
+            remaining = MAX_LAWYER_LLM_CONTEXT_CHARS - context_len
+            if remaining > 200:
+                part = _truncate_fragment(part, remaining)
+                context_parts.append(part)
+                context_len += len(part)
+            break
+        context_parts.append(part)
+        context_len += len(part)
+        citations.append({
+            "id": i,
+            "filename": filename,
+            "page": hit["page"],
+            "file_id": hit["file_id"],
+        })
+
+    return _KBPlan(
+        llm=get_llm(),
+        prompt=(
+            f"Вопрос пользователя: {question}\n\n"
+            "Используй только фрагменты ниже. Если в них есть слова из вопроса — "
+            "дай ответ по их содержанию и укажи номера [N]."
+        ),
+        system_prompt=SYSTEM_PROMPT,
+        context="\n\n".join(context_parts),
+        citations=citations,
+    )
+
+
+def _kb_events(session_id: str, question: str, plan: _KBPlan) -> Iterator[str]:
+    """SSE-поток ответа по базе знаний: куски текста, затем итог с источниками."""
+    sid = session_id
+    usage = LLMUsage()
+    if plan.message:
+        yield sse({"type": "done", "answer": plan.message, "citations": []})
+        return
+    try:
+        chunks, usage = plan.llm.stream(
+            plan.prompt,
+            system_prompt=plan.system_prompt,
+            context=plan.context,
+        )
+        raw_parts: list[str] = []
+        for delta in chunks:
+            raw_parts.append(delta)
+            yield sse({"type": "delta", "text": delta})
+
+        answer = strip_urls("".join(raw_parts))
+        citations = select_citations_for_display(answer, plan.citations)
+        if not citations and plan.citations:
             logger.info("В ответе нет ссылок [N] — источники не показаны")
-        lawyer_history.add(session_id, question, answer, mode="kb", citations=citations)
+        lawyer_history.add(sid, question, answer, mode="kb", citations=citations)
         log_query(
             module="lawyer",
             question=question,
             status="ok",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
         )
-        return {
-            "answer": answer,
-            "citations": [_citation_ref(c) for c in citations],
-        }
+        yield sse(
+            {
+                "type": "done",
+                "answer": answer,
+                "citations": [_citation_ref(c) for c in citations],
+            }
+        )
     except LLMUserFacingError as e:
         logger.warning("Lawyer query LLM error: %s", e.original or e)
         log_query(
             module="lawyer",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code=llm_error_code(e.original or e),
         )
-        return _lawyer_error_reply(session_id, question, e.user_message, mode="kb")
+        _lawyer_error_reply(sid, question, e.user_message, mode="kb")
+        yield sse({"type": "error", "message": e.user_message})
     except Exception as e:
         logger.exception("Lawyer query failed: %s", e)
         _msg = "Произошла ошибка при обработке запроса. Попробуйте переформулировать вопрос."
@@ -630,15 +736,11 @@ def _query_kb(session_id: str, question: str) -> dict:
             module="lawyer",
             question=question,
             status="error",
-            tokens=current_usage(),
+            tokens=usage.total_tokens,
             error_code="INTERNAL_ERROR",
         )
-        return _lawyer_error_reply(
-            session_id,
-            question,
-            _msg,
-            mode="kb",
-        )
+        _lawyer_error_reply(sid, question, _msg, mode="kb")
+        yield sse({"type": "error", "message": _msg})
 
 
 @router.get("/history")
