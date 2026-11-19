@@ -172,3 +172,11 @@ async def test_check_without_documents_returns_json_400(client):
 
     assert resp.status_code == 400
     assert "торговую документацию" in resp.json()["detail"]
+
+
+def test_check_prompt_keeps_documentation_clause_reference_verbatim():
+    """Номер пункта в «Где» не должен выдумываться моделью (1.9 → 1.10)."""
+    from tenders.services.check_context import CHECK_SYSTEM_PROMPT
+
+    assert "поле «Где» бери только из переданных фрагментов документации" in CHECK_SYSTEM_PROMPT
+    assert "1.9 — не пиши 1.10" in CHECK_SYSTEM_PROMPT
